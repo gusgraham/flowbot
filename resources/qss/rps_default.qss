@@ -1,0 +1,115 @@
+/* MainWindow: */
+
+QMenuBar {
+    padding: 3px 10px 3px 10px;
+    spacing: 3px;
+    min-width: 15px;
+    text-align: center;
+    border-radius: 5px;
+}
+
+QMenuBar::item {
+    padding: 3px 10px 3px 10px;
+    text-align: center;
+    border-radius: 5px;
+}
+
+QMenuBar::item:selected { /* when selected using mouse or keyboard */
+	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(113, 0, 75, 255), stop:1 rgba(230, 230, 230, 255));
+    padding: 3px 10px 3px 10px;
+	text-align: center;
+	color:white;
+    border-radius: 5px;
+}
+
+QMenu {
+    text-align: center;
+    padding: 5px 20px 5px 10px;
+    border-radius: 5px;
+}
+
+QMenu::item {
+    text-align: center;
+    padding: 5px 20px 5px 10px;
+    border-radius: 5px;
+}
+
+QMenu::item:selected { /* when selected using mouse or keyboard */
+	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(113, 0, 75, 255), stop:1 rgba(230, 230, 230, 255));
+	color:white;
+	text-align: center;
+    padding: 5px 20px 5px 10px;
+    border-radius: 5px;
+}
+
+/* toolBox */
+
+QToolBox#toolBox::tab{
+	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(210, 210, 210, 255), stop:1 rgba(230, 230, 230, 255));
+    border-radius: 5px;
+    color: black;
+     }
+QToolBox#toolBox::tab:selected{
+	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(113, 0, 75, 255), stop:1 rgba(230, 230, 230, 255));
+    border-radius: 5px;
+    color: white;
+        }
+
+/* tbxGraphs */
+
+QToolBox#tbxGraphs::tab{
+	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(210, 210, 210, 255), stop:1 rgba(230, 230, 230, 255));
+    border-radius: 5px;
+    color: black;
+        }
+QToolBox#tbxGraphs::tab:selected{
+	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(113, 0, 75, 255), stop:1 rgba(230, 230, 230, 255));
+    border-radius: 5px;
+    color: white;
+        }
+
+QTabBar::tab {
+	background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 rgba(210, 210, 210, 255), stop: 1.0 rgba(230, 230, 230, 255));
+	border-radius: 5px;
+    min-width: 30ex;
+	min-height: 7ex;
+	margin-top:1ex;
+    margin-right: -1px;
+}
+
+QTabBar::tab:top, QTabBar::tab:bottom {
+    min-width: 8ex;
+    margin-right: -1px;
+    padding: 2px 10px 2px 5px;
+}
+
+QTabBar::tab:selected{
+	background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 rgba(113, 0, 75, 255), stop: 1.0 rgba(230, 230, 230, 255));
+	color: white
+}
+
+QTabBar::tab:!selected {
+    margin-bottom: 2px; /* make non-selected tabs look smaller */
+}
+
+/* tbxVerification */
+QToolBox#tbxVerification::tab{
+	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(210, 210, 210, 255), stop:1 rgba(230, 230, 230, 255));
+    border-radius: 5px;
+    color: black;
+        }
+QToolBox#tbxVerification::tab:selected{
+	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(113, 0, 75, 255), stop:1 rgba(230, 230, 230, 255));
+    border-radius: 5px;
+    color: white;
+        }
+
+QProgressBar { 
+    color: rgb(255, 255, 255);
+}
+
+QProgressBar::chunk {
+    background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(113, 0, 75, 255), stop:1 rgba(230, 230, 230, 255));
+    border: 1px solid grey;
+    border-radius: 5px;
+}

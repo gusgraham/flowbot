@@ -1,0 +1,29 @@
+{
+	"folders": [
+		{
+			"path": "D:\\vscode\\_qgis_bundled_apps\\flowbot_v4_qgis"
+		}
+	],
+	"settings": {
+		"qtForPython.designer.path": "C:\\Program Files\\QGIS 3.32.3\\bin\\qgis-designer.bat",
+		"qtForPython.rcc.path": "D:\\vscode\\_qgis_bundled_apps\\flowbot_v4_qgis\\flowbot_qgis_bundle_env\\pyrcc5.bat",
+		"qtForPython.uic.path": "D:\\vscode\\_qgis_bundled_apps\\flowbot_v4_qgis\\flowbot_qgis_bundle_env\\pyuic5.bat",
+		"qtForPython.uic.options": [
+			"-o",
+			"${resourceDirname}${pathSeparator}${resourceBasenameNoExtension}.py"
+		],
+		"pylint.args": [
+			"--extension-pkg-allow-list=PyQt5"
+		],
+		// "[python]": {
+		// 	"editor.defaultFormatter": "ms-python.autopep8"
+		// },
+		"[python]": {
+			"editor.defaultFormatter": "ms-python.black-formatter"
+		},
+		"python.analysis.extraPaths": [
+			"./flowbot_qgis_bundle_env/Library/python",
+			"./flowbot_qgis_bundle_env/Lib/site-packages"
+		]
+	},
+}
