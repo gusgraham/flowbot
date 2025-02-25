@@ -93,6 +93,30 @@
           </widget>
          </item>
          <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_4">
+           <item>
+            <widget class="QComboBox" name="cbo_onoff_other_install">
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>120</width>
+               <height>0</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QCheckBox" name="chk_onoff_compare_install">
+             <property name="text">
+              <string>Compare Other Install</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
           <spacer name="horizontalSpacer_4">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -127,7 +151,7 @@
           <enum>Qt::RightToLeft</enum>
          </property>
          <property name="text">
-          <string>FM Review Complete</string>
+          <string>PL Review Complete</string>
          </property>
         </widget>
        </item>

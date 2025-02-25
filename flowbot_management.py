@@ -11,8 +11,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from scipy.stats import entropy, skew, kurtosis
 from scipy.signal import welch
 import joblib
-from flowbot_helper import resource_path
-
+from flowbot_helper import resource_path, parse_file, parse_date
 # models
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -399,7 +398,7 @@ class fsmInstall(object):
         self.fm_pipe_shape: str = "Circular"
         self.fm_pipe_height_mm: int = 225
         self.fm_pipe_width_mm: int = 225
-        self.fm_pipe_depth_to_invert_mm: int = 2000
+        self.fm_pipe_depth_to_invert_mm: int = 0
         self.fm_sensor_offset_mm: int = 0
         self.rg_position: str = "Ground"
         self.data: Optional[pd.DataFrame] = None
@@ -523,160 +522,277 @@ class fsmInstall(object):
     #     if isinstance(row[24], str):
     #         self.class_data_user_date_updated = datetime.fromisoformat(row[24])
 
+    # def get_fdv_data_from_file(self, fileSpec: str):
+
+    #     dateRange: List[datetime] = []
+    #     flowDataRange: List[float] = []
+    #     depthDataRange: List[float] = []
+    #     velocityDataRange: List[float] = []
+
+    #     with open(fileSpec, "r", encoding="utf-8") as org_data:
+    #         # self.fdvFileSpec = fileSpec
+    #         in_data_section = False
+    #         # org_data.readline()
+    #         previous_line = ""
+    #         i_data_count = 0
+    #         for line in org_data:
+    #             if in_data_section:
+    #                 if line.startswith("*END"):
+    #                     break
+    #                 if line.strip() and line[3:6] != "":
+    #                     dateRange.append(
+    #                         self.data_start
+    #                         + timedelta(minutes=i_data_count * self.data_interval)
+    #                     )
+    #                     flowDataRange.append(float(line[0:5]))
+    #                     depthDataRange.append(float(line[5:10]))
+    #                     velocityDataRange.append(float(line[10:15]))
+    #                     i_data_count += 1
+    #                     if line[16:20]:
+    #                         dateRange.append(
+    #                             self.data_start
+    #                             + timedelta(minutes=i_data_count * self.data_interval)
+    #                         )
+    #                         flowDataRange.append(float(line[15:20]))
+    #                         depthDataRange.append(float(line[20:25]))
+    #                         velocityDataRange.append(float(line[25:30]))
+    #                         i_data_count += 1
+    #                     if line[31:35]:
+    #                         dateRange.append(
+    #                             self.data_start
+    #                             + timedelta(minutes=i_data_count * self.data_interval)
+    #                         )
+    #                         flowDataRange.append(float(line[30:35]))
+    #                         depthDataRange.append(float(line[35:40]))
+    #                         velocityDataRange.append(float(line[40:45]))
+    #                         i_data_count += 1
+    #                     if line[46:50]:
+    #                         dateRange.append(
+    #                             self.data_start
+    #                             + timedelta(minutes=i_data_count * self.data_interval)
+    #                         )
+    #                         flowDataRange.append(float(line[45:50]))
+    #                         depthDataRange.append(float(line[50:55]))
+    #                         velocityDataRange.append(float(line[55:60]))
+    #                         i_data_count += 1
+    #                     if line[61:65]:
+    #                         dateRange.append(
+    #                             self.data_start
+    #                             + timedelta(minutes=i_data_count * self.data_interval)
+    #                         )
+    #                         flowDataRange.append(float(line[60:65]))
+    #                         depthDataRange.append(float(line[65:70]))
+    #                         velocityDataRange.append(float(line[70:75]))
+    #                         i_data_count += 1
+
+    #             elif line.startswith("*CEND"):
+    #                 start_timestamp, end_timestamp, interval_minutes = map(
+    #                     int, previous_line.split()
+    #                 )
+    #                 try:
+    #                     self.data_start = datetime.strptime(
+    #                         str(start_timestamp), "%y%m%d%H%M"
+    #                     )
+    #                 except ValueError:
+    #                     self.data_start = datetime.strptime(
+    #                         str(start_timestamp), "%Y%m%d%H%M"
+    #                     )
+    #                 try:
+    #                     self.data_end = datetime.strptime(
+    #                         str(end_timestamp), "%y%m%d%H%M"
+    #                     )
+    #                 except ValueError:
+    #                     self.data_end = datetime.strptime(
+    #                         str(end_timestamp), "%Y%m%d%H%M"
+    #                     )
+    #                 self.data_interval = interval_minutes
+    #                 in_data_section = True
+    #             else:
+    #                 previous_line = line
+    #                 continue
+
+    #     data = {
+    #         "Date": dateRange,
+    #         "FlowData": flowDataRange,
+    #         "DepthData": depthDataRange,
+    #         "VelocityData": velocityDataRange,
+    #     }
+
+    #     self.data = pd.DataFrame(data)
+    #     self.data_date_updated = datetime.now()
+
     def get_fdv_data_from_file(self, fileSpec: str):
 
-        dateRange: List[datetime] = []
-        flowDataRange: List[float] = []
-        depthDataRange: List[float] = []
-        velocityDataRange: List[float] = []
+        try:
+            with open(fileSpec, 'r') as org_data:
 
-        with open(fileSpec, "r", encoding="utf-8") as org_data:
-            # self.fdvFileSpec = fileSpec
-            in_data_section = False
-            # org_data.readline()
-            previous_line = ""
-            i_data_count = 0
-            for line in org_data:
-                if in_data_section:
-                    if line.startswith("*END"):
-                        break
-                    if line.strip() and line[3:6] != "":
-                        dateRange.append(
-                            self.data_start
-                            + timedelta(minutes=i_data_count * self.data_interval)
-                        )
-                        flowDataRange.append(float(line[0:5]))
-                        depthDataRange.append(float(line[5:10]))
-                        velocityDataRange.append(float(line[10:15]))
-                        i_data_count += 1
-                        if line[16:20]:
-                            dateRange.append(
-                                self.data_start
-                                + timedelta(minutes=i_data_count * self.data_interval)
-                            )
-                            flowDataRange.append(float(line[15:20]))
-                            depthDataRange.append(float(line[20:25]))
-                            velocityDataRange.append(float(line[25:30]))
-                            i_data_count += 1
-                        if line[31:35]:
-                            dateRange.append(
-                                self.data_start
-                                + timedelta(minutes=i_data_count * self.data_interval)
-                            )
-                            flowDataRange.append(float(line[30:35]))
-                            depthDataRange.append(float(line[35:40]))
-                            velocityDataRange.append(float(line[40:45]))
-                            i_data_count += 1
-                        if line[46:50]:
-                            dateRange.append(
-                                self.data_start
-                                + timedelta(minutes=i_data_count * self.data_interval)
-                            )
-                            flowDataRange.append(float(line[45:50]))
-                            depthDataRange.append(float(line[50:55]))
-                            velocityDataRange.append(float(line[55:60]))
-                            i_data_count += 1
-                        if line[61:65]:
-                            dateRange.append(
-                                self.data_start
-                                + timedelta(minutes=i_data_count * self.data_interval)
-                            )
-                            flowDataRange.append(float(line[60:65]))
-                            depthDataRange.append(float(line[65:70]))
-                            velocityDataRange.append(float(line[70:75]))
-                            i_data_count += 1
+                file_data = parse_file(fileSpec)
 
-                elif line.startswith("*CEND"):
-                    start_timestamp, end_timestamp, interval_minutes = map(
-                        int, previous_line.split()
-                    )
-                    try:
-                        self.data_start = datetime.strptime(
-                            str(start_timestamp), "%y%m%d%H%M"
-                        )
-                    except ValueError:
-                        self.data_start = datetime.strptime(
-                            str(start_timestamp), "%Y%m%d%H%M"
-                        )
-                    try:
-                        self.data_end = datetime.strptime(
-                            str(end_timestamp), "%y%m%d%H%M"
-                        )
-                    except ValueError:
-                        self.data_end = datetime.strptime(
-                            str(end_timestamp), "%Y%m%d%H%M"
-                        )
-                    self.data_interval = interval_minutes
-                    in_data_section = True
-                else:
-                    previous_line = line
-                    continue
+                all_units = [unit for record in file_data["payload"] for unit in record]
 
-        data = {
-            "Date": dateRange,
-            "FlowData": flowDataRange,
-            "DepthData": depthDataRange,
-            "VelocityData": velocityDataRange,
-        }
+                constants = file_data["constants"]
 
-        self.data = pd.DataFrame(data)
-        self.data_date_updated = datetime.now()
+                # Parse the START and END dates using the helper.
+                start_dt = parse_date(constants["START"])
+                end_dt = parse_date(constants["END"])
+                duration_mins = (end_dt - start_dt).total_seconds() / 60
+
+                # Get the INTERVAL (assumed to be in minutes)
+                interval_minutes = int(constants["INTERVAL"])
+                interval = timedelta(minutes=interval_minutes)
+
+                # # Generate the date range.
+                # dateRange: List[datetime] = []
+                # current_dt = start_dt
+                # while current_dt <= end_dt:
+                #     dateRange.append(current_dt)
+                #     current_dt += interval
+                # Generate the date range.
+                # import numpy as np
+                dateRange: List[datetime] = np.arange(start_dt, end_dt + interval, interval).tolist()                    
+
+                no_of_records = int(duration_mins / interval_minutes) + 1
+                i_record = 0
+
+                flowDataRange: List[float] = []
+                depthDataRange: List[float] = []
+                velocityDataRange: List[float] = []
+                for unit in all_units:
+                    i_record += 1
+                    if i_record <= no_of_records:
+                        flowDataRange.append(float(unit["FLOW"]))
+                        depthDataRange.append(float(unit["DEPTH"]))
+                        velocityDataRange.append(float(unit["VELOCITY"]))
+
+                # Check that the number of dates matches the number of data units.
+                if len(dateRange) != len(flowDataRange):
+                    print("Warning: Mismatch in number of timestamps and data points!")
+
+            data = {
+                "Date": dateRange,
+                "FlowData": flowDataRange,
+                "DepthData": depthDataRange,
+                "VelocityData": velocityDataRange,
+            }
+
+            self.data = pd.DataFrame(data)
+            self.data_date_updated = datetime.now()
+
+        except Exception as e:  # Capture the exception details
+            QMessageBox.critical(
+                None,
+                'Error Parsing FDV Data',
+                f"Error parsing: {os.path.basename(fileSpec)}\n\nException: {str(e)}",
+                QMessageBox.Ok
+            )        
+
+    # def get_r_data_from_file(self, fileSpec: str):
+    #     dateRange: List[datetime] = []
+    #     intensityDataRange: List[float] = []
+
+    #     with open(fileSpec, "r", encoding="utf-8") as org_data:
+    #         print(fileSpec)
+    #         in_data_section = False
+    #         previous_line = ""
+    #         i_data_count = 0
+
+    #         for line in org_data:
+    #             if in_data_section:
+    #                 if line.startswith("*END"):
+    #                     break
+    #                 # /line = line.strip()
+    #                 if line:
+    #                     # Process the line in chunks of 15 characters
+    #                     for i in range(0, len(line), 15):
+    #                         chunk = line[i : i + 15].strip()
+    #                         if chunk:  # Only process non-empty chunks
+    #                             try:
+    #                                 value = float(chunk)
+    #                                 dateRange.append(
+    #                                     self.data_start
+    #                                     + timedelta(
+    #                                         minutes=i_data_count * self.data_interval
+    #                                     )
+    #                                 )
+    #                                 intensityDataRange.append(value)
+    #                                 i_data_count += 1
+    #                             except ValueError:
+    #                                 # Handle the case where chunk is not a valid float
+    #                                 print(
+    #                                     f"Warning: Unable to convert chunk to float: {chunk}"
+    #                                 )
+    #             elif line.startswith("*CEND"):
+    #                 # Extract start timestamp, end timestamp, and interval from the previous line
+    #                 previous_line = previous_line.strip()
+    #                 if previous_line:
+    #                     start_timestamp, end_timestamp, interval_minutes = (
+    #                         previous_line.split()
+    #                     )
+    #                     self.data_start = datetime.strptime(
+    #                         start_timestamp, "%y%m%d%H%M"
+    #                     )
+    #                     self.data_end = datetime.strptime(end_timestamp, "%y%m%d%H%M")
+    #                     self.data_interval = int(interval_minutes)
+    #                     in_data_section = True
+    #             else:
+    #                 previous_line = line
+
+    #     data = {"Date": dateRange, "IntensityData": intensityDataRange}
+
+    #     self.data = pd.DataFrame(data)
+    #     self.data_date_updated = datetime.now()
 
     def get_r_data_from_file(self, fileSpec: str):
-        dateRange: List[datetime] = []
-        intensityDataRange: List[float] = []
 
-        with open(fileSpec, "r", encoding="utf-8") as org_data:
-            print(fileSpec)
-            in_data_section = False
-            previous_line = ""
-            i_data_count = 0
+        try:
+            with open(fileSpec, 'r', encoding="utf-8") as org_data:
 
-            for line in org_data:
-                if in_data_section:
-                    if line.startswith("*END"):
-                        break
-                    # /line = line.strip()
-                    if line:
-                        # Process the line in chunks of 15 characters
-                        for i in range(0, len(line), 15):
-                            chunk = line[i : i + 15].strip()
-                            if chunk:  # Only process non-empty chunks
-                                try:
-                                    value = float(chunk)
-                                    dateRange.append(
-                                        self.data_start
-                                        + timedelta(
-                                            minutes=i_data_count * self.data_interval
-                                        )
-                                    )
-                                    intensityDataRange.append(value)
-                                    i_data_count += 1
-                                except ValueError:
-                                    # Handle the case where chunk is not a valid float
-                                    print(
-                                        f"Warning: Unable to convert chunk to float: {chunk}"
-                                    )
-                elif line.startswith("*CEND"):
-                    # Extract start timestamp, end timestamp, and interval from the previous line
-                    previous_line = previous_line.strip()
-                    if previous_line:
-                        start_timestamp, end_timestamp, interval_minutes = (
-                            previous_line.split()
-                        )
-                        self.data_start = datetime.strptime(
-                            start_timestamp, "%y%m%d%H%M"
-                        )
-                        self.data_end = datetime.strptime(end_timestamp, "%y%m%d%H%M")
-                        self.data_interval = int(interval_minutes)
-                        in_data_section = True
-                else:
-                    previous_line = line
+                file_data = parse_file(fileSpec)
 
-        data = {"Date": dateRange, "IntensityData": intensityDataRange}
+                all_units = [unit for record in file_data["payload"] for unit in record]
 
-        self.data = pd.DataFrame(data)
-        self.data_date_updated = datetime.now()
+                constants = file_data["constants"]
+
+                # Parse the START and END dates using the helper.
+                start_dt = parse_date(constants["START"])
+                end_dt = parse_date(constants["END"])
+                duration_hrs = (end_dt - start_dt).total_seconds() / 3600
+                duration_mins = (end_dt - start_dt).total_seconds() / 60
+
+                # Get the INTERVAL (assumed to be in minutes)
+                interval_minutes = int(constants["INTERVAL"])
+                interval = timedelta(minutes=interval_minutes)
+
+                # Generate the date range.
+                # import numpy as np
+                dateRange: List[datetime] = np.arange(start_dt, end_dt + interval, interval).tolist()
+
+                no_of_records = int(duration_mins / interval_minutes) + 1
+                i_record = 0
+
+                intensityDataRange: List[float] = []
+                for unit in all_units:
+                    i_record += 1
+                    if i_record <= no_of_records:
+                        intensityDataRange.append(float(unit["INTENSITY"]))
+
+                # Check that the number of dates matches the number of data units.
+                if len(dateRange) != len(intensityDataRange):
+                    print("Warning: Mismatch in number of timestamps and data points!")
+
+            data = {"Date": dateRange, "IntensityData": intensityDataRange}
+
+            self.data = pd.DataFrame(data)
+            self.data_date_updated = datetime.now()            
+
+        except Exception as e:  # Capture the exception details
+            QMessageBox.critical(
+                None,
+                'Error Parsing FDV Data',
+                f"Error parsing: {os.path.basename(fileSpec)}\n\nException: {str(e)}",
+                QMessageBox.Ok
+            )        
+
 
     def get_peak_intensity_as_str(self, dt_start: datetime, dt_end: datetime) -> str:
         if self.install_type == "Rain Gauge":
@@ -1001,11 +1117,11 @@ class fsmRawData(object):
         self.silt_levels: Optional[pd.DataFrame] = None
         self.pipe_shape_intervals: int = 20
         self.file_path: str = ''
-        self.rainfall_file_format: str = '{pmac_id}_02.dat'
-        self.depth_file_format: str = '{pmac_id}_06.dat'
-        self.velocity_file_format: str = '{pmac_id}_07.dat'
-        self.battery_file_format: str = '{pmac_id}_08.dat'
-        self.pumplogger_file_format: str = '{pmac_id}.csv'
+        self.rainfall_file_format: str = '{inst_id}_02.dat'
+        self.depth_file_format: str = '{inst_id}_06.dat'
+        self.velocity_file_format: str = '{inst_id}_07.dat'
+        self.battery_file_format: str = '{inst_id}_08.dat'
+        self.pumplogger_file_format: str = '{inst_id}.csv'
 
     def from_database_row_dict(self, row_dict:Dict):
         self.rawdata_id = row_dict.get('rawdata_id')
@@ -1177,7 +1293,7 @@ class fsmSite(object):
 class fsmInterim(object):
 
     def __init__(self):
-        self.interimID: int = 1
+        self.interim_id: int = 1
         self.interim_start_date: datetime = datetime.strptime(
             '2172-05-12', '%Y-%m-%d')
         self.interim_end_date: datetime = datetime.strptime(
@@ -1194,7 +1310,7 @@ class fsmInterim(object):
 
     # def from_database_row(self, row):
 
-    #     self.interimID = row[0]
+    #     self.interim_id = row[0]
     #     self.interim_start_date = datetime.fromisoformat(row[1])
     #     self.interim_end_date = datetime.fromisoformat(row[2])
     #     self.data_import_complete = bool(row[3])
@@ -1209,7 +1325,7 @@ class fsmInterim(object):
 
     def from_database_row_dict(self, row_dict:Dict):
 
-        self.interimID = row_dict.get('interimID')
+        self.interim_id = row_dict.get('interim_id')
         if isinstance(row_dict.get('interim_start_date'), str):
             self.interim_start_date = datetime.fromisoformat(row_dict['interim_start_date'])
         if isinstance(row_dict.get('interim_end_date'), str):
@@ -1374,8 +1490,8 @@ class fsmStormEvent(object):
     def from_database_row_dict(self, row_dict:Dict):
 
         self.storm_event_id = row_dict.get('storm_event_id')
-        self.se_start = datetime.fromisoformat(row[1])
-        self.se_end = datetime.fromisoformat(row[2])
+        # self.se_start = datetime.fromisoformat(row[1])
+        # self.se_end = datetime.fromisoformat(row[2])
         if isinstance(row_dict.get('se_start'), str):
             self.se_start = datetime.fromisoformat(row_dict['se_start'])
         if isinstance(row_dict.get('se_end'), str):
@@ -1525,7 +1641,7 @@ class fsmProject(object):
             row_dict = dict(zip(column_names, row))                
             interim = fsmInterim()
             interim.from_database_row_dict(row_dict)
-            self.dict_fsm_interims[interim.interimID] = interim
+            self.dict_fsm_interims[interim.interim_id] = interim
 
         try:
             c.execute(f"SELECT * FROM {Tables.FSM_INTERIM_REVIEW}")
@@ -1729,7 +1845,7 @@ class fsmProject(object):
                         )''')
             for a_int in self.dict_fsm_interims.values():
                 conn.execute(f'''INSERT OR REPLACE INTO {Tables.FSM_INTERIM} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                             (a_int.interimID, a_int.interim_start_date.isoformat(), a_int.interim_end_date.isoformat(),
+                             (a_int.interim_id, a_int.interim_start_date.isoformat(), a_int.interim_end_date.isoformat(),
                               int(a_int.data_import_complete), int(
                                   a_int.site_inspection_review_complete),
                               int(a_int.fm_data_review_complete), int(
@@ -1942,6 +2058,18 @@ class fsmProject(object):
         if monitor_id in self.dict_fsm_monitors:
             self.dict_fsm_monitors.pop(monitor_id)
 
+    def add_install(self, objInstall: fsmInstall) -> bool:
+
+        if objInstall.install_id not in self.dict_fsm_installs:
+            self.dict_fsm_installs[objInstall.install_id] = objInstall
+            return True
+        return False
+
+    def get_install(self, install_id: str) -> Optional[fsmInstall]:
+
+        if install_id in self.dict_fsm_installs:
+            return self.dict_fsm_installs[install_id]
+        
     def delete_install(self, install_id: str) -> bool:
         """Remove an install record by its ID."""
         if install_id in self.dict_fsm_installs:
@@ -2053,8 +2181,8 @@ class fsmProject(object):
 
     def add_interim(self, objInt: fsmInterim) -> bool:
 
-        if objInt.interimID not in self.dict_fsm_interims:
-            self.dict_fsm_interims[objInt.interimID] = objInt
+        if objInt.interim_id not in self.dict_fsm_interims:
+            self.dict_fsm_interims[objInt.interim_id] = objInt
             return True
         return False
 
@@ -2213,8 +2341,10 @@ class fsmProject(object):
             return False
 
     def get_pipe_shape_code(self, pipe_text: str) -> str:
-        if pipe_text in ['Circular', 'Egg', 'Oval', 'Rectangular']:
+        if pipe_text in ['Circular', 'Rectangular', 'Arched', 'Egg', 'Egg 2', 'Oval', 'U-Shaped']:
             return pipe_text[0]
+        elif pipe_text in ['Cunette']:
+            return 'Cn'
         else:
             return 'X'
 

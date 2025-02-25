@@ -3034,7 +3034,8 @@
       <string>Job</string>
      </property>
      <addaction name="action_new_job"/>
-     <addaction name="action_new_job_bacth_import"/>
+     <addaction name="action_new_job_batch_import"/>
+     <addaction name="action_new_batch_import_template"/>
     </widget>
     <widget class="QMenu" name="menuMonitor">
      <property name="title">
@@ -3379,9 +3380,14 @@
     <string>Processed Data</string>
    </property>
   </action>
-  <action name="action_new_job_bacth_import">
+  <action name="action_new_job_batch_import">
    <property name="text">
-    <string>Batch Import</string>
+    <string>New (from Batch Import)</string>
+   </property>
+  </action>
+  <action name="action_new_batch_import_template">
+   <property name="text">
+    <string>Create Template Batch Import File</string>
    </property>
   </action>
  </widget>

@@ -4151,14 +4151,14 @@ class graph_fsm_classification:
                     )
 
         for a_interim in self.a_project.dict_fsm_interims.values():
-            if a_interim.interimID <= self.interim_id:
-                col_list.extend(self.a_project.get_column_list(a_interim.interimID))
-                week_list.extend(self.a_project.get_week_list(a_interim.interimID))
-                days_list.extend(self.a_project.get_day_list(a_interim.interimID))
-                dates_list.extend(self.a_project.get_date_list(a_interim.interimID))
+            if a_interim.interim_id <= self.interim_id:
+                col_list.extend(self.a_project.get_column_list(a_interim.interim_id))
+                week_list.extend(self.a_project.get_week_list(a_interim.interim_id))
+                days_list.extend(self.a_project.get_day_list(a_interim.interim_id))
+                dates_list.extend(self.a_project.get_date_list(a_interim.interim_id))
 
                 for a_int_rev in self.a_project.dict_fsm_interim_reviews.values():
-                    if a_int_rev.interim_id == a_interim.interimID:
+                    if a_int_rev.interim_id == a_interim.interim_id:
                         if (
                             self.a_project.dict_fsm_installs[
                                 a_int_rev.install_id
@@ -4173,7 +4173,7 @@ class graph_fsm_classification:
                             )
                             current_list.extend(
                                 self.a_project.get_class_list(
-                                    a_interim.interimID, a_int_rev.install_id
+                                    a_interim.interim_id, a_int_rev.install_id
                                 )
                             )
                             fm_data_dict[
@@ -4195,7 +4195,7 @@ class graph_fsm_classification:
                             )
                             current_list.extend(
                                 self.a_project.get_class_list(
-                                    a_interim.interimID, a_int_rev.install_id
+                                    a_interim.interim_id, a_int_rev.install_id
                                 )
                             )
                             dm_data_dict[
@@ -4217,7 +4217,7 @@ class graph_fsm_classification:
                             )
                             current_list.extend(
                                 self.a_project.get_class_list(
-                                    a_interim.interimID, a_int_rev.install_id
+                                    a_interim.interim_id, a_int_rev.install_id
                                 )
                             )
                             rg_data_dict[
@@ -5801,9 +5801,9 @@ class graph_fsm_cumulative_interim_summary:
         data = []
         ss_data = []
         for a_int in self.a_project.dict_fsm_interims.values():
-            if a_int.interimID <= self.interim_id:
+            if a_int.interim_id <= self.interim_id:
                 data_list = []
-                data_list.append(a_int.interimID)
+                data_list.append(a_int.interim_id)
                 data_list.append(a_int.interim_start_date.strftime("%d/%m/%Y"))
                 data_list.append(a_int.interim_end_date.strftime("%d/%m/%Y"))
                 data_list.append(a_int.interim_summary_text)
@@ -7670,7 +7670,7 @@ class graphFSMInstall:
                 )
             )
 
-            if self.plotted_raw.bat_data is not None:
+            if self.plotted_raw is not None and self.plotted_raw.bat_data is not None:
                 plot_axis_battery.plot(
                     self.plotted_raw.bat_data["Timestamp"],
                     self.plotted_raw.bat_data["Value"],
@@ -7680,7 +7680,7 @@ class graphFSMInstall:
             plot_axis_battery.set_ylabel("Voltage (V)")
             plot_axis_battery.set_title("Battery", loc="left", fontsize=16)
 
-            if self.plotted_raw.rg_data is not None:
+            if self.plotted_raw is not None and self.plotted_raw.rg_data is not None:
                 plot_axis_intensity.stem(
                     self.plotted_raw.rg_data["Timestamp"],
                     [1] * len(self.plotted_raw.rg_data["Timestamp"]),
@@ -7745,14 +7745,19 @@ class graphFSMInstall:
 
         a_linewidth = 1
         if self.plot_raw:
-
-            (plot_axis_battery, plot_axis_depth, plot_axis_velocity) = (
-                self.main_window_plot_widget.figure.subplots(
-                    nrows=3, sharex=True, gridspec_kw={"height_ratios": [1, 1, 1]}
+            if self.plotted_raw is None:
+                ax = self.main_window_plot_widget.figure.subplots()
+                ax.text(0.5, 0.5, 'No raw data found', horizontalalignment='center', verticalalignment='center', fontsize=16)
+                ax.set_axis_off()  # Hide the axes
+                return
+            
+            else:
+                (plot_axis_battery, plot_axis_depth, plot_axis_velocity) = (
+                    self.main_window_plot_widget.figure.subplots(
+                        nrows=3, sharex=True, gridspec_kw={"height_ratios": [1, 1, 1]}
+                    )
                 )
-            )
-
-            if self.plotted_raw is not None:
+            
                 if self.plotted_raw.bat_data is not None:
                     plot_axis_battery.plot(
                         self.plotted_raw.bat_data["Timestamp"],
@@ -7760,6 +7765,8 @@ class graphFSMInstall:
                         color="blue",
                         linewidth=a_linewidth,
                     )
+                else:
+                    plot_axis_battery.text(0.5, 0.5, 'No battery data found', horizontalalignment='center', verticalalignment='center', fontsize=16)
                 plot_axis_battery.set_ylabel("Voltage (V)")
                 plot_axis_battery.set_title("Battery", loc="left", fontsize=16)
 
@@ -7770,6 +7777,8 @@ class graphFSMInstall:
                         color="red",
                         linewidth=a_linewidth,
                     )
+                else:
+                    plot_axis_depth.text(0.5, 0.5, 'No depth data found', horizontalalignment='center', verticalalignment='center', fontsize=16)
                 plot_axis_depth.set_ylabel("Depth (m)")
                 plot_axis_depth.set_title("Depth", loc="left", fontsize=16)
 
@@ -7780,6 +7789,8 @@ class graphFSMInstall:
                         color="green",
                         linewidth=a_linewidth,
                     )
+                else:
+                    plot_axis_velocity.text(0.5, 0.5, 'No velocity data found', horizontalalignment='center', verticalalignment='center', fontsize=16)
                 plot_axis_velocity.set_ylabel("Velocity (m/sec)")
                 plot_axis_velocity.set_title("Velocity", loc="left", fontsize=16)
 
@@ -7884,6 +7895,10 @@ class graphFSMInstall:
                     color="green",
                     linewidth=a_linewidth,
                 )
+            else:
+                plot_axis_flow.text(0.5, 0.5, 'No flow data found', horizontalalignment='center', verticalalignment='center', fontsize=16)
+                plot_axis_depth.text(0.5, 0.5, 'No depth data found', horizontalalignment='center', verticalalignment='center', fontsize=16)
+                plot_axis_velocity.text(0.5, 0.5, 'No velocity data found', horizontalalignment='center', verticalalignment='center', fontsize=16)
 
             plot_axis_flow.set_ylabel("Flow (l/sec)")
             plot_axis_flow.set_title("Flow", loc="left", fontsize=16)

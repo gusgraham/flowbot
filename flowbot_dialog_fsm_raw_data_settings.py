@@ -135,7 +135,7 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
 
     def mapIdentifierToFlag(self, ident_text: str) -> str:
 
-        map_dict = {'PMAC ID': '{pmac_id}', 'Asset ID': '{ast_id}', 'Install ID': '{ast_id}',
+        map_dict = {'PMAC ID': '{pmac_id}', 'Asset ID': '{ast_id}', 'Install ID': '{inst_id}',
                     'Client Ref': '{cl_ref}', 'Site ID': '{site_id}', 'Project ID': '{prj_id}'}
         return map_dict[ident_text]
 
@@ -367,9 +367,9 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
             self.txtBatteryFileNameFormat.setVisible(True)
             self.txtBatteryFileName.setVisible(True)
 
-            self.lblPumpLoggerFileFormat.setVisible(True)
-            self.txtPumpLoggerFileNameFormat.setVisible(True)
-            self.txtPumpLoggerFileName.setVisible(True)
+            self.lblPumpLoggerFileFormat.setVisible(False)
+            self.txtPumpLoggerFileNameFormat.setVisible(False)
+            self.txtPumpLoggerFileName.setVisible(False)
 
             self.txtFolderLocation.textChanged.connect(self.updateFolder)
 

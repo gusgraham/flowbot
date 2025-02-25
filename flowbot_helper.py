@@ -1,4 +1,5 @@
 # from PyQt5 import QtWidgets
+import re
 import math
 import matplotlib.dates as mpl_dates
 from matplotlib.figure import Figure
@@ -541,6 +542,472 @@ class PlotWidget(QWidget):
 
         self.scrollZoomCompleted.emit()
 
+def parse_format_token(token):
+    """
+    Given a token string (e.g. "I5", "F5.2", "A20", "D10", "2X", or "[5]"),
+    this function now distinguishes skip tokens (e.g. "2X") from tokens with
+    an explicit repetition prefix (e.g. "15F5.1"). The token "2X" will be parsed
+    as a skip token with width 2 and rep=1.
+    
+    For tokens with a repetition prefix, the return value is a tuple:
+      - For int:    ('int', width, rep)
+      - For float:  ('float', width, decimals, rep)
+      - For string: ('string', width, rep)
+      - For date:   ('date', width, rep)
+      - For skip:   ('skip', width, rep)
+      - For repeat markers (like "[5]"): ('repeat', 5)
+    """
+    token = token.strip()
+    # Handle the repeat marker token first.
+    if token.startswith('[') and token.endswith(']'):
+        return ('repeat', int(token.strip('[]')))
+    
+    # Check if token is exactly a skip token (e.g. "2X") before checking for a repetition prefix.
+    m_skip = re.match(r'^(\d+)X$', token)
+    if m_skip:
+        return ('skip', int(m_skip.group(1)), 1)
+    
+    # Check for an optional repetition prefix for tokens other than X.
+    m = re.match(r'^(\d+)([A-Z].*)$', token)
+    if m:
+        rep = int(m.group(1))
+        rest = m.group(2)
+        if rest.startswith('I'):
+            m2 = re.match(r'^I(\d+)$', rest)
+            if m2:
+                width = int(m2.group(1))
+                return ('int', width, rep)
+        elif rest.startswith('F'):
+            m2 = re.match(r'^F(\d+)\.(\d+)$', rest)
+            if m2:
+                width = int(m2.group(1))
+                decimals = int(m2.group(2))
+                return ('float', width, decimals, rep)
+        elif rest.startswith('A'):
+            m2 = re.match(r'^A(\d+)$', rest)
+            if m2:
+                width = int(m2.group(1))
+                return ('string', width, rep)
+        elif rest.startswith('D'):
+            m2 = re.match(r'^D(\d+)$', rest)
+            if m2:
+                width = int(m2.group(1))
+                return ('date', width, rep)
+        raise ValueError("Unknown format token: " + token)
+    
+    # Handle tokens without any repetition prefix.
+    m = re.match(r'^I(\d+)$', token)
+    if m:
+        return ('int', int(m.group(1)), 1)
+    m = re.match(r'^F(\d+)\.(\d+)$', token)
+    if m:
+        return ('float', int(m.group(1)), int(m.group(2)), 1)
+    m = re.match(r'^A(\d+)$', token)
+    if m:
+        return ('string', int(m.group(1)), 1)
+    m = re.match(r'^D(\d+)$', token)
+    if m:
+        return ('date', int(m.group(1)), 1)
+    
+    raise ValueError("Unknown format token: " + token)
+
+def parse_fixed_width(text, format_tokens):
+    """
+    Given a text string and a list of format tokens (e.g. ["I5", "15F5.1", "A20"]),
+    extract and convert each field from the text.
+    This version honors an embedded repetition count.
+    Returns a list of parsed values.
+    """
+    pos = 0
+    results = []
+    for token in format_tokens:
+        token_info = parse_format_token(token)
+        typ = token_info[0]
+        if typ == 'repeat':
+            continue
+        rep = token_info[-1]  # repetition count is the last element
+        for _ in range(rep):
+            width = token_info[1]
+            segment = text[pos:pos+width]
+            pos += width
+            if typ == 'int':
+                try:
+                    results.append(int(segment.strip()))
+                except ValueError:
+                    results.append(None)
+            elif typ == 'float':
+                try:
+                    results.append(float(segment.strip()))
+                except ValueError:
+                    results.append(None)
+            elif typ in ('string', 'date'):
+                results.append(segment.strip())
+            elif typ == 'skip':
+                continue
+    return results
+
+def split_format_tokens(tokens):
+    """
+    Given a list of tokens (from splitting the C_FORMAT by commas, after removing the count),
+    further split any token containing one or more slashes into groups.
+    The slash acts as a newline (group) separator.
+    
+    Returns a list of token groups (each group is a list of tokens).
+    """
+    groups = []
+    current_group = []
+    for token in tokens:
+        if '/' in token:
+            parts = token.split('/')
+            # Add the first part to the current group.
+            if parts[0]:
+                current_group.append(parts[0])
+            # End the current group.
+            groups.append(current_group)
+            # For any intermediate parts, each becomes its own complete group.
+            for mid in parts[1:-1]:
+                if mid:
+                    groups.append([mid])
+            # The last part becomes the new current group.
+            current_group = []
+            if parts[-1]:
+                current_group.append(parts[-1])
+        else:
+            current_group.append(token)
+    if current_group:
+        groups.append(current_group)
+    return groups
+
+def parse_constants(const_lines, c_format, constants_names):
+    """
+    Given the lines between *CSTART and *CEND, the C_FORMAT string, and the
+    constant names, this function now supports tokens with embedded repetition
+    counts (e.g. "15F5.1") and correctly splits tokens on '/' into separate groups.
+    """
+    # Split the C_FORMAT string by commas and remove empty tokens.
+    tokens = [tok.strip() for tok in c_format.split(",") if tok.strip()]
+    # Remove the first token if it's a count.
+    if tokens and tokens[0].isdigit():
+        i_tokens = int(tokens[0])
+        tokens = tokens[1:]
+
+    # Use the helper to split tokens by slash into groups.
+    token_groups = split_format_tokens(tokens)
+
+    # Remove any empty constant data lines.
+    const_data_lines = [line.rstrip("\n") for line in const_lines if line.strip()]
+    if len(const_data_lines) < len(token_groups):
+        raise ValueError("Not enough constant data lines to match C_FORMAT groups.")
+
+    values = []
+    token_count = 0
+    has_rg_id = False
+    rg_id = ""
+    # Process each group using its corresponding constant data line.
+    for i, token_group in enumerate(token_groups):
+        line_text = const_data_lines[i]
+        # Compute expected width for this group.
+        expected_width = 0
+        original_token_count = token_count
+        original_token_group = token_group
+        for token in token_group:
+            token_count += 1
+            if (
+                token_count > i_tokens
+            ):  # assume that some numpty has stuck the rain gauge ID on the end
+                has_rg_id = True
+                rg_id = token_group[-1]
+                token_group.pop()
+                break
+            token_info = parse_format_token(token)
+            if token_info[0] == "repeat":
+                continue
+            expected_width += token_info[1] * token_info[-1]
+        if len(line_text) != expected_width:
+            #This is some horrible code to accout for poorly written files.
+            redo_parsing = False
+            #This extends the with of the last value if its a string.
+            if parse_format_token(token_group[-1])[0] == 'string':
+                line_text = line_text.ljust(expected_width)
+                redo_parsing = True
+
+            #This tries to replace dates that have been incorrectly coded.
+            token_group = original_token_group
+            # orig_tokens = token_group
+            token_group = ["D12" if token == "D10" else token for token in token_group]
+
+            if token_group != original_token_group:  # Check if lists differ
+                redo_parsing = True
+            
+            #If either of those things have been done it will tryo to redo the parsing
+            if redo_parsing:
+                expected_width = 0
+                token_count = original_token_count
+                # token_group = original_token_group
+                for token in token_group:
+                    token_count += 1
+                    if (
+                        token_count > i_tokens
+                    ):  # assume that some numpty has stuck the rain gauge ID on the end
+                        has_rg_id = True
+                        rg_id = token_group[-1]
+                        token_group.pop()
+                        break
+                    token_info = parse_format_token(token)
+                    if token_info[0] == "repeat":
+                        continue
+                    expected_width += token_info[1] * token_info[-1]
+                if len(line_text) != expected_width:
+                    raise ValueError(
+                        f"Error with expected length of constants data line:\n\n'{line_text}'.\n\nCheck the '**C_FORMAT' definition"
+                    )                            
+            else:
+                raise ValueError(
+                    f"Error with expected length of constants data line:\n\n'{line_text}'.\n\nCheck the '**C_FORMAT' definition"
+                )
+            # line_text = line_text.ljust(expected_width)
+        group_values = parse_fixed_width(line_text, token_group)
+        values.extend(group_values)
+
+    # Process constant names (removing the count if present).
+    names_tokens = [tok.strip() for tok in constants_names.split(",") if tok.strip()]
+    if names_tokens and names_tokens[0].isdigit():
+        names_tokens = names_tokens[1:]
+
+    if has_rg_id:
+        names_tokens.append("RAINGAUGE")
+        values.append(rg_id)
+
+    if len(names_tokens) != len(values):
+        raise ValueError(f"Warning: Number of constant names and parsed values do not match.")
+
+    constants = dict(zip(names_tokens, values))
+    return constants
+
+# def parse_constants(const_lines, c_format, constants_names):
+#     """
+#     Given the lines between *CSTART and *CEND, the C_FORMAT string, and the
+#     constant names, this function now supports tokens with embedded repetition
+#     counts (e.g. "15F5.1") and correctly splits tokens on '/' into separate groups.
+#     """
+#     # Split the C_FORMAT string by commas and remove empty tokens.
+#     tokens = [tok.strip() for tok in c_format.split(",") if tok.strip()]
+#     # Remove the first token if it's a count.
+#     if tokens and tokens[0].isdigit():
+#         i_tokens = int(tokens[0])
+#         tokens = tokens[1:]
+
+#     # Use the helper to split tokens by slash into groups.
+#     token_groups = split_format_tokens(tokens)
+
+#     # Remove any empty constant data lines.
+#     const_data_lines = [line.rstrip("\n") for line in const_lines if line.strip()]
+#     if len(const_data_lines) < len(token_groups):
+#         raise ValueError("Not enough constant data lines to match C_FORMAT groups.")
+
+#     values = []
+#     token_count = 0
+#     has_rg_id = False
+#     rg_id = ""
+#     # Process each group using its corresponding constant data line.
+#     for i, token_group in enumerate(token_groups):
+#         line_text = const_data_lines[i]
+#         # Compute expected width for this group.
+#         expected_width = 0
+#         for token in token_group:
+#             token_count += 1
+#             if (
+#                 token_count > i_tokens
+#             ):  # assume that some numpty has stuck the rain gauge ID on the end
+#                 has_rg_id = True
+#                 rg_id = token_group[-1]
+#                 token_group.pop()
+#                 break
+#             token_info = parse_format_token(token)
+#             if token_info[0] == "repeat":
+#                 continue
+#             expected_width += token_info[1] * token_info[-1]
+#         if len(line_text) != expected_width:
+#             raise ValueError(
+#                 f"Error with expected length of constants data line:\n\n'{line_text}'.\n\nCheck the '**C_FORMAT' definition"
+#             )
+#             # line_text = line_text.ljust(expected_width)
+#         group_values = parse_fixed_width(line_text, token_group)
+#         values.extend(group_values)
+
+#     # Process constant names (removing the count if present).
+#     names_tokens = [tok.strip() for tok in constants_names.split(",") if tok.strip()]
+#     if names_tokens and names_tokens[0].isdigit():
+#         names_tokens = names_tokens[1:]
+
+#     if has_rg_id:
+#         names_tokens.append("RAINGAUGE")
+#         values.append(rg_id)
+
+#     if len(names_tokens) != len(values):
+#         raise ValueError(f"Warning: Number of constant names and parsed values do not match.")
+
+#     constants = dict(zip(names_tokens, values))
+#     return constants
+
+
+def parse_header(lines):
+    """
+    Parses header lines (those starting with "**" and "*+")
+    and returns a dictionary of header keys to their (raw) value strings.
+    """
+    header = {}
+    current_key = None
+    for line in lines:
+        line = line.rstrip('\n')
+        if line.startswith('**'):
+            parts = line.split(':', 1)
+            if len(parts) < 2:
+                continue
+            key = parts[0].lstrip('*').strip()
+            value = parts[1].strip()
+            header[key] = value
+            current_key = key
+        elif line.startswith('*+'):
+            if current_key:
+                continuation = line[2:].strip()
+                header[current_key] += " " + continuation
+        elif line.startswith('*CSTART'):
+            break
+    return header
+
+def parse_payload(payload_lines, record_format, record_length, field_names):
+    """
+    Parses the payload section (after *CEND up to *END).
+    Each record is of fixed length (record_length) and consists of
+    a number of repeated units. The record_format string defines both
+    the unit format and the repeat count (e.g. "4,I5,I5,F5.2,[5]").
+    Returns a list of records, where each record is a list of dictionaries,
+    each dictionary mapping field names to values.
+    """
+    tokens = [tok.strip() for tok in record_format.split(',') if tok.strip()]
+    # Remove the count token.
+    tokens.pop(0)
+    # The last token should be a repeat indicator like [5].
+    repeat_token = tokens.pop(-1)
+    repeat_count = int(repeat_token.strip('[]'))
+    unit_format_tokens = tokens
+    fields = [f.strip() for f in field_names.split(',')]
+    records = []
+    for line in payload_lines:
+        line = line.rstrip('\n')
+        if line.startswith('*END'):
+            break
+        if not line.strip():
+            continue
+        if len(line) < record_length:
+            line = line.ljust(record_length)
+        record = []
+        unit_width = record_length // repeat_count
+        for i in range(repeat_count):
+            unit_text = line[i*unit_width:(i+1)*unit_width]
+            values = parse_fixed_width(unit_text, unit_format_tokens)
+            unit_data = dict(zip(fields, values))
+            record.append(unit_data)
+        records.append(record)
+    return records
+
+def parse_file(filename):
+    """
+    Main parser function. It reads the file, splits it into header,
+    constants, and payload sections, and parses each section according
+    to the header definitions.
+    """
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    
+    header_lines = []
+    constants_lines = []
+    payload_lines = []
+    
+    in_constants = False
+    in_payload = False
+    for line in lines:
+        if line.startswith('*CSTART'):
+            in_constants = True
+            continue
+        elif line.startswith('*CEND'):
+            in_constants = False
+            in_payload = True
+            continue
+        elif line.startswith('*END'):
+            in_payload = False
+            continue
+        
+        if not in_constants and not in_payload:
+            header_lines.append(line)
+        elif in_constants:
+            constants_lines.append(line)
+        elif in_payload:
+            payload_lines.append(line)
+    
+    header = parse_header(header_lines)
+    
+    # Extract header fields.
+    data_format = header.get('DATA_FORMAT', '')
+    identifier = header.get('IDENTIFIER', '')
+    
+    # Process FIELD and UNITS.
+    field_line = header.get('FIELD', '')
+    field_tokens = [tok.strip() for tok in field_line.split(',') if tok.strip()]
+    if field_tokens and field_tokens[0].isdigit():
+        field_names = ",".join(field_tokens[1:])
+    else:
+        field_names = ",".join(field_tokens)
+    
+    # RECORD_LENGTH e.g., "I2,75"
+    record_length = None
+    record_line = header.get('RECORD_LENGTH', '')
+    if record_line:
+        parts = [p.strip() for p in record_line.split(',')]
+        if len(parts) >= 2:
+            record_length = int(parts[1])
+    
+    # FORMAT for the payload record.
+    record_format = header.get('FORMAT', '')
+    
+    # CONSTANTS names.
+    constants_line = header.get('CONSTANTS', '')
+    constants_tokens = [tok.strip() for tok in constants_line.split(',') if tok.strip()]
+    if constants_tokens and constants_tokens[0].isdigit():
+        constants_names = ",".join(constants_tokens[1:])
+    else:
+        constants_names = ",".join(constants_tokens)
+    
+    # C_FORMAT for the constants block.
+    c_format = header.get('C_FORMAT', '')
+    
+    constants = parse_constants(constants_lines, c_format, constants_names)
+    payload = parse_payload(payload_lines, record_format, record_length, field_names)
+    
+    return {
+        'header': header,
+        'constants': constants,
+        'payload': payload,
+        'data_format': data_format,
+        'identifier': identifier
+    }
+
+def parse_date(date_str: str) -> datetime:
+    """
+    Parse a date string using the appropriate format.
+    If the string is 10 characters long, assume format d10: YYMMDDHHMM.
+    If the string is 12 characters long, assume format d12: YYYYMMDDHHMM.
+    """
+    if len(date_str) == 10:
+        # d10: YYMMDDHHMM
+        return datetime.strptime(date_str, "%y%m%d%H%M")
+    elif len(date_str) == 12:
+        # d12: YYYYMMDDHHMM
+        return datetime.strptime(date_str, "%Y%m%d%H%M")
+    else:
+        raise ValueError("Unsupported date format: " + date_str)
+    
     # def resizeEvent(self, event):
     #     new_size = event.size()
     #     self.update_figure_size(new_size.width(), new_size.height())

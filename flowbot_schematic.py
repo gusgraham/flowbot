@@ -1,13 +1,13 @@
-
 import math
 from typing import Optional, List
 # from flowbot_helper import cstCONNECTION
 from PyQt5 import (QtWidgets, QtCore, QtGui)
 from PyQt5.QtWidgets import (QInputDialog, QMenu, QGraphicsScene, QGraphicsTextItem, QGraphicsView, QGraphicsItem,
-                             QStyle, QGraphicsEllipseItem, QAction, QLineEdit, QApplication)
+                             QStyle, QGraphicsEllipseItem, QAction, QLineEdit, QApplication, QLabel)
 from PyQt5.QtCore import (Qt, QRectF, QPointF)
 from PyQt5.QtGui import (QBrush, QPen, QColor, QPainter, QPainterPath)
 from PyQt5.QtPrintSupport import QPrintPreviewDialog
+from flowbot_survey_events import surveyEvent
 
 cstWWPS = 'WWPS'
 cstCSO = 'CSO'
@@ -183,7 +183,6 @@ class fmGraphicsItem(genericGraphicsItem):
             self.hideControlPoints(True)
         else:
             self._thisApp.instance().restoreOverrideCursor()
-
 
 class rgGraphicsItem(genericGraphicsItem):
 
@@ -667,6 +666,7 @@ class ConnectionPath(QtWidgets.QGraphicsPathItem):
         # self._arrow_width = 6
         self._systemType: str = "COMB"
         self._inTrace: bool = False
+        self.setZValue(-1)
 
         self.setPath(self.directPath())
 
@@ -725,13 +725,6 @@ class ConnectionPath(QtWidgets.QGraphicsPathItem):
                     fx = int_dx / orig_dx
                 if orig_dy != 0:
                     fy = int_dy / orig_dy
-
-                # if sourceMoved:
-                #     dx = new_dx * fx
-                #     dy = new_dy * fy
-                # else:
-                #     dx = new_dx * (1 - fx)
-                #     dy = new_dy * (1 - fy)
 
                 dx = new_dx * fx
                 dy = new_dy * fy
@@ -797,7 +790,7 @@ class ConnectionPath(QtWidgets.QGraphicsPathItem):
 
         if triangle_source is not None:
             painter.drawPolyline(triangle_source)
-            
+
 class SchematicGraphicsScene(QGraphicsScene):
     currentlyPrinting = False
 
@@ -821,16 +814,11 @@ class SchematicGraphicsView(QGraphicsView):
     _contextMenuClickPos = None
     _itemNumber = 0
     _rgItemNumber = 0
-    # _thisApp = None
     _panning = False
     _origin = None
     _anchorMode = 0
-    # _connecting = False
-    # endItem = None
-    # newConnection = None
     _curretSchematicTool = ''
     _currentContextItem = None
-    # _currentTrace = []
 
     def __init__(self, parent):
         super(SchematicGraphicsView, self).__init__(parent)
@@ -845,6 +833,35 @@ class SchematicGraphicsView(QGraphicsView):
         self._current_path: Optional[ConnectionPath] = None
         self._currentTrace: List = []
         self.startItem: Optional[ControlPoint] = None
+
+        self._currentEvent: Optional[surveyEvent] = None
+        self.overlayLabel = QLabel("Full Period", self)
+        self.overlayLabel.setStyleSheet("background-color: rgba(0, 0, 0, 127); color: white; padding: 5px;")
+        self.overlayLabel.setFixedSize(250, 30)  # Set a fixed size
+        self.updateOverlayLabel()
+
+    def resizeEvent(self, event):
+        """ Update label position when the view is resized """
+        super().resizeEvent(event)
+        self.updateOverlayLabel()
+
+    def updateOverlayLabel(self):
+        """ Position the overlay label in the bottom-left corner """
+        margin = 20  # Padding from the edge
+        self.overlayLabel.move(int(margin / 2), self.height() - self.overlayLabel.height() - margin)
+
+    def addEvent(self, se: surveyEvent):
+        self._currentEvent = se
+        event_label = f"{se.eventName}: {se.eventStart.strftime('%d/%m/%Y %H:%M')} - {se.eventEnd.strftime('%d/%m/%Y %H:%M')}"
+        self.overlayLabel.setText(event_label)
+        self.updateOverlayLabel()
+        self.volumeBalance(True)
+
+    def removeEvent(self):
+        self._currentEvent = None
+        self.overlayLabel.setText("Full Period")
+        self.updateOverlayLabel()
+        self.volumeBalance(True)
 
     def createNewScene(self):
         self._scene = SchematicGraphicsScene(self)
@@ -886,7 +903,7 @@ class SchematicGraphicsView(QGraphicsView):
                 if item._text == rgName:
                     return item
         return None
-    
+
     def contextMenuEvent(self, event):
         menu = None
 
@@ -957,6 +974,13 @@ class SchematicGraphicsView(QGraphicsView):
                 aCallback.triggered.connect(self.clearCurrentTrace)
                 menu.addAction(aCallback)
 
+            if self._currentEvent is not None:
+                if menu is None:
+                    menu = QMenu()
+                aCallback = QAction("Remove Event", menu)
+                aCallback.triggered.connect(self.removeEvent)
+                menu.addAction(aCallback)
+
         if menu is not None:
             if not len(menu.actions()) == 0:
                 self._contextMenuClickPos = self.mapToScene(event.pos())
@@ -979,16 +1003,11 @@ class SchematicGraphicsView(QGraphicsView):
         if fmName is not None:
             self._currentContextItem = self.getSchematicFlowMonitorsByName(
                 fmName)
-        # self._currentContextItem
         if self._currentContextItem is not None:
             itemsToTrace.append(self._currentContextItem)
-        # firstTraceStep = True
 
         while len(itemsToTrace) > 0:
             traceItem = itemsToTrace.pop()
-            # if not stopAtFM:
-            #     itemsInTrace.append(traceItem)
-            #     traceItem._inTrace = True
             itemsInTrace.append(traceItem)
             traceItem._inTrace = True
             if isinstance(traceItem, ConnectionPath):
@@ -1015,7 +1034,6 @@ class SchematicGraphicsView(QGraphicsView):
         self.clearCurrentTrace()
         itemsInTrace = []
         itemsToTrace = []
-        # itemsToTrace = []
         itemsToTrace.append(self._currentContextItem)
 
         while len(itemsToTrace) > 0:
@@ -1059,36 +1077,26 @@ class SchematicGraphicsView(QGraphicsView):
                 ogList.append(line)
         return ogList
 
-    # def volumeBalance(self):
+    def volumeBalance(self, update:bool = False):
 
-    #     self.schematicFMUSTrace(stopAtFM=True)
-    #     fmVolume = 0
-    #     fm = self._thisApp.activeWindow().openFlowMonitors.getFlowMonitor(
-    #         self._currentContextItem._text)
-    #     fmVolume += fm.getFlowVolumeBetweenDates(
-    #         fm.dateRange[0], fm.dateRange[len(fm.dateRange)-1])
+        if update:
+            if self._currentTrace is not None:
+                self._currentContextItem = self._currentTrace[0]
+        else:
+            self.schematicFMUSTrace(stopAtFM=True)
 
-    #     cumUsVolume = 0
-    #     incUsVolume = 0
-    #     for item in self._currentTrace:
-    #         if isinstance(item, fmGraphicsItem):
-    #             fm = self._thisApp.activeWindow().openFlowMonitors.getFlowMonitor(item._text)
-    #             incUsVolume = fm.getFlowVolumeBetweenDates(
-    #                 fm.dateRange[0], fm.dateRange[len(fm.dateRange)-1])
-    #             cumUsVolume += incUsVolume
-    #             item.toggleVolumeLabel(incUsVolume)
-
-    #     volDiff = fmVolume - cumUsVolume
-    #     self._currentContextItem.toggleVolumeLabel(fmVolume, volDiff)
-
-    def volumeBalance(self):
-
-        self.schematicFMUSTrace(stopAtFM=True)
         fmVolume = 0
         fm = self._thisApp.activeWindow().openFlowMonitors.getFlowMonitor(
             self._currentContextItem._text)
-        fmVolume += fm.getFlowVolumeBetweenDates(
-            fm.dateRange[0], fm.dateRange[len(fm.dateRange)-1])
+
+        startDate = fm.dateRange[0]
+        endDate = fm.dateRange[len(fm.dateRange)-1]
+
+        if self._currentEvent is not None:
+            startDate = self._currentEvent.eventStart
+            endDate = self._currentEvent.eventEnd
+
+        fmVolume += fm.getFlowVolumeBetweenDates(startDate, endDate)
 
         cumUsVolume = 0
         incUsVolume = 0
@@ -1098,8 +1106,7 @@ class SchematicGraphicsView(QGraphicsView):
                 if item is not self._currentContextItem:
                     hasUSFM = True
                     fm = self._thisApp.activeWindow().openFlowMonitors.getFlowMonitor(item._text)
-                    incUsVolume = fm.getFlowVolumeBetweenDates(
-                        fm.dateRange[0], fm.dateRange[len(fm.dateRange)-1])
+                    incUsVolume = fm.getFlowVolumeBetweenDates(startDate, endDate)
                     cumUsVolume += incUsVolume
                     item.toggleVolumeLabel(incUsVolume)
 
@@ -1177,18 +1184,6 @@ class SchematicGraphicsView(QGraphicsView):
         else:
             self.deleteItem(self._currentContextItem)
 
-    #     if not isinstance(self._currentContextItem, Connection):
-    #         self._currentContextItem.removeAnyConnections()
-    #         if isinstance(self._currentContextItem, fmGraphicsItem):
-    #             fm = self._thisApp.activeWindow().openFlowMonitors.getFlowMonitor(
-    #                 self._currentContextItem._text)
-    #             fm._schematicGraphicItem = None
-    #         elif isinstance(self._currentContextItem, rgGraphicsItem):
-    #             rg = self._thisApp.activeWindow().openRainGauges.getRainGauge(
-    #                 self._currentContextItem._text)
-    #             rg._schematicGraphicItem = None
-    #         self.scene().removeItem(self._currentContextItem)
-
     def deleteItem(self, gItem):
         if not isinstance(gItem, ConnectionPath):
             gItem.removeAnyConnections()
@@ -1202,20 +1197,6 @@ class SchematicGraphicsView(QGraphicsView):
                 rg._schematicGraphicItem = None
             self.scene().removeItem(gItem)
 
-    # def schematicDeleteItem(self):
-    #     # for gItem in self.scene().selectedItems():
-    #     if not isinstance(self._currentContextItem, Connection):
-    #         self._currentContextItem.removeAnyConnections()
-    #         if isinstance(self._currentContextItem, fmGraphicsItem):
-    #             fm = self._thisApp.activeWindow().openFlowMonitors.getFlowMonitor(
-    #                 self._currentContextItem._text)
-    #             fm._schematicGraphicItem = None
-    #         elif isinstance(self._currentContextItem, rgGraphicsItem):
-    #             rg = self._thisApp.activeWindow().openRainGauges.getRainGauge(
-    #                 self._currentContextItem._text)
-    #             rg._schematicGraphicItem = None
-    #         self.scene().removeItem(self._currentContextItem)
-
     def schematicDeleteConnection(self):
         if isinstance(self._currentContextItem, ConnectionPath):
             self._currentContextItem.fromControlPoint.removeLine(
@@ -1225,27 +1206,14 @@ class SchematicGraphicsView(QGraphicsView):
             self.scene().removeItem(self._currentContextItem)
 
     def schematicSetSystemTypeComb(self):
-        # self._currentContextItem.setPen(self._currentContextItem.combinedPen)
-        # self._currentContextItem.setBrush(
-        #     self._currentContextItem.combinedBrush)
-        # self._currentContextItem._systemType = "COMB"
-        # self.viewport().repaint()
         self._currentContextItem.updateSystemType("COMB")
         self.viewport().repaint()
 
     def schematicSetSystemTypeFoul(self):
-        # self._currentContextItem.setPen(self._currentContextItem.foulPen)
-        # self._currentContextItem.setBrush(self._currentContextItem.foulBrush)
-        # self._currentContextItem._systemType = "FOUL"
-        # self.viewport().repaint()
         self._currentContextItem.updateSystemType("FOUL")
         self.viewport().repaint()
 
     def schematicSetSystemTypeStorm(self):
-        # self._currentContextItem.setPen(self._currentContextItem.stormPen)
-        # self._currentContextItem.setBrush(self._currentContextItem.stormBrush)
-        # self._currentContextItem._systemType = "STORM"
-        # self.viewport().repaint()
         self._currentContextItem.updateSystemType("STORM")
         self.viewport().repaint()
 
@@ -1300,55 +1268,24 @@ class SchematicGraphicsView(QGraphicsView):
                 self.addOutfall('', self.mapToScene(event.pos()))
             elif self._curretSchematicTool == cstWWTW:
                 self.addWwTW('', self.mapToScene(event.pos()))
-            # elif self._curretSchematicTool == cstCONNECTION:
-            #     if self._isdrawingPath:
-            #         item = self.controlPointAt(
-            #             self.mapToScene(event.pos()))
-            #         if item and item != self.startItem:
-            #             self._current_path.setDestination(
-            #                 item.scenePos(), item)
-            #             if self.startItem.addLine(self._current_path):
-            #                 item.addLine(self._current_path)
-            #             # else:
-            #             #     self.scene().removeItem(self._current_path)
-            #                 self._isdrawingPath = False
-            #                 self._current_path = None
-
-            #                 self.startItem = self._current_path = None
-            #                 self.clearAllVisibleControlPoints()
-
-            #         else:
-            #             self._current_path.addVertex(
-            #                 self.mapToScene(event.pos()))
-
-            #         self.viewport().repaint()
             elif self._curretSchematicTool == cstCONNECTION:
-                # print("MousePress with Connection tool selected")
                 if self._isdrawingPath:
-                    # print("Drawing path")
                     item = self.controlPointAt(self.mapToScene(event.pos()))
-                    # print("Item:", item)
                     if item and item != self.startItem:
-                        # print("Setting destination")
                         self._current_path.setDestination(item.scenePos(), item)
                         if self.startItem:
                             if self.startItem.addLine(self._current_path):
                                 item.addLine(self._current_path)
                         else:
                             pass
-                        #     print("Start item is None")
-                        # print("Drawing path finished")
                         self._isdrawingPath = False
                         self._current_path = None
                         self.startItem = self._current_path = None
                         self.clearAllVisibleControlPoints()
                     else:
-                        # print("Adding vertex to path")
                         self._current_path.addVertex(self.mapToScene(event.pos()))
-                    # print("Repainting viewport")
                     self.viewport().repaint()
                 else:
-                    # print("Not drawing path")
                     self.setDragMode(QGraphicsView.NoDrag)
                     if event.button() == Qt.LeftButton:
                         item = self.controlPointAt(self.mapToScene(event.pos()))
@@ -1366,7 +1303,7 @@ class SchematicGraphicsView(QGraphicsView):
                 self.setDragMode(QGraphicsView.RubberBandDrag)
                 self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         super(SchematicGraphicsView, self).mousePressEvent(event)
-               
+
     def mouseMoveEvent(self, event):
         if self._panning:
             oldP = self._origin
@@ -1391,8 +1328,6 @@ class SchematicGraphicsView(QGraphicsView):
                     p2 = self.mapToScene(event.pos())
 
                 self._current_path.setDestination(p2)
-                # self.scene().removeItem(self._current_path)
-                # self.scene().addItem(self._current_path)
 
                 self.viewport().repaint()
                 return
@@ -1421,5 +1356,3 @@ class SchematicGraphicsView(QGraphicsView):
             self.scale(1, 1)
 
         self.scale(factor, factor)
-
-

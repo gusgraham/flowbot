@@ -797,7 +797,7 @@ class icmTraces():
         result = False
 
         try:
-            # with closing(conn.cursor()) as c:
+            conn.execute(f'''DROP TABLE IF EXISTS {Tables.ICM_TRACE}''')
             conn.execute(f'''CREATE TABLE IF NOT EXISTS {Tables.ICM_TRACE} (
                          traceID TEXT PRIMARY KEY,
                          csvFileSpec TEXT,

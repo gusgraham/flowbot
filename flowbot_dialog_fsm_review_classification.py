@@ -397,66 +397,120 @@ class flowbot_dialog_fsm_review_classification(QtWidgets.QDialog, Ui_Dialog):
 
         if self.current_inst.install_type == 'Flow Monitor':
 
-            self.plot_axis_depth.plot(
-                self.df_filtered['Date'], self.df_filtered['DepthData'], label='Depth', color='b')
-            self.plot_axis_depth.yaxis.set_major_locator(
-                MaxNLocator(integer=True))
-            self.plot_axis_depth.xaxis.set_major_locator(
-                MaxNLocator(integer=False))
-            self.plot_axis_depth.xaxis.set_major_formatter(
-                FuncFormatter(major_tick_format))
-            self.plot_axis_depth.set_ylabel('Depth')
+            if len(self.df_filtered["Date"]) > 0:
+                self.plot_axis_depth.plot(
+                    self.df_filtered['Date'], self.df_filtered['DepthData'], label='Depth', color='b')
+                self.plot_axis_depth.yaxis.set_major_locator(
+                    MaxNLocator(integer=True))
+                self.plot_axis_depth.xaxis.set_major_locator(
+                    MaxNLocator(integer=False))
+                self.plot_axis_depth.xaxis.set_major_formatter(
+                    FuncFormatter(major_tick_format))
+                self.plot_axis_depth.set_ylabel('Depth')
 
-            self.plot_axis_flow.plot(
-                self.df_filtered['Date'], self.df_filtered['FlowData'], label='Flow', color='g')
-            self.plot_axis_flow.yaxis.set_major_locator(
-                MaxNLocator(integer=True))
-            self.plot_axis_flow.xaxis.set_major_locator(
-                MaxNLocator(integer=False))
-            self.plot_axis_flow.xaxis.set_major_formatter(
-                FuncFormatter(major_tick_format))
-            self.plot_axis_flow.set_ylabel('Flow')
+                self.plot_axis_flow.plot(
+                    self.df_filtered['Date'], self.df_filtered['FlowData'], label='Flow', color='g')
+                self.plot_axis_flow.yaxis.set_major_locator(
+                    MaxNLocator(integer=True))
+                self.plot_axis_flow.xaxis.set_major_locator(
+                    MaxNLocator(integer=False))
+                self.plot_axis_flow.xaxis.set_major_formatter(
+                    FuncFormatter(major_tick_format))
+                self.plot_axis_flow.set_ylabel('Flow')
 
-            self.plot_axis_velocity.plot(
-                self.df_filtered['Date'], self.df_filtered['VelocityData'], label='Velocity', color='r')
-            self.plot_axis_velocity.yaxis.set_major_locator(MaxNLocator(8))
-            self.plot_axis_velocity.xaxis.set_major_locator(
-                MaxNLocator(integer=False))
-            self.plot_axis_velocity.xaxis.set_major_formatter(
-                FuncFormatter(major_tick_format))
-            self.plot_axis_velocity.set_ylabel('Velocity')
+                self.plot_axis_velocity.plot(
+                    self.df_filtered['Date'], self.df_filtered['VelocityData'], label='Velocity', color='r')
+                self.plot_axis_velocity.yaxis.set_major_locator(MaxNLocator(8))
+                self.plot_axis_velocity.xaxis.set_major_locator(
+                    MaxNLocator(integer=False))
+                self.plot_axis_velocity.xaxis.set_major_formatter(
+                    FuncFormatter(major_tick_format))
+                self.plot_axis_velocity.set_ylabel('Velocity')
 
-            self.plot_axis_velocity.set_xlim(self.df_filtered['Date'].min().floor(
-                'D'), self.df_filtered['Date'].max().ceil('D'))
-            self.plot_axis_velocity.xaxis.set_major_locator(
-                HourLocator(byhour=0))
-            self.plot_axis_velocity.xaxis.set_minor_locator(
-                HourLocator(interval=6))
-            self.plot_axis_velocity.xaxis.set_major_formatter(
-                major_tick_format)
+                self.plot_axis_velocity.set_xlim(self.df_filtered['Date'].min().floor(
+                    'D'), self.df_filtered['Date'].max().ceil('D'))
+                self.plot_axis_velocity.xaxis.set_major_locator(
+                    HourLocator(byhour=0))
+                self.plot_axis_velocity.xaxis.set_minor_locator(
+                    HourLocator(interval=6))
+                self.plot_axis_velocity.xaxis.set_major_formatter(
+                    major_tick_format)
+            else:
+                # ax = self.main_window_plot_widget.figure.subplots()
+                self.plot_axis_depth.text(
+                    0.5,
+                    0.5,
+                    "No data found",
+                    horizontalalignment="center",
+                    verticalalignment="center",
+                    fontsize=16,
+                )
+                self.plot_axis_depth.set_axis_off()  # Hide the axes
+                self.plot_axis_flow.text(
+                    0.5,
+                    0.5,
+                    "No data found",
+                    horizontalalignment="center",
+                    verticalalignment="center",
+                    fontsize=16,
+                )
+                self.plot_axis_flow.set_axis_off()  # Hide the axes
+                self.plot_axis_velocity.text(
+                    0.5,
+                    0.5,
+                    "No data found",
+                    horizontalalignment="center",
+                    verticalalignment="center",
+                    fontsize=16,
+                )
+                self.plot_axis_velocity.set_axis_off()  # Hide the axes
 
         elif self.current_inst.install_type == 'Depth Monitor':
 
-            self.plot_axis_depth.plot(
-                self.df_filtered['Date'], self.df_filtered['DepthData'], label='Depth', color='b')
-            self.plot_axis_depth.set_xlim(self.df_filtered['Date'].min().floor(
-                'D'), self.df_filtered['Date'].max().ceil('D'))
-            self.plot_axis_depth.xaxis.set_major_locator(HourLocator(byhour=0))
-            self.plot_axis_depth.xaxis.set_minor_locator(
-                HourLocator(interval=6))
-            self.plot_axis_depth.xaxis.set_major_formatter(major_tick_format)
-            self.plot_axis_depth.set_ylabel('Depth')
+            if len(self.df_filtered["Date"]) > 0:
+                self.plot_axis_depth.plot(
+                    self.df_filtered['Date'], self.df_filtered['DepthData'], label='Depth', color='b')
+                self.plot_axis_depth.set_xlim(self.df_filtered['Date'].min().floor(
+                    'D'), self.df_filtered['Date'].max().ceil('D'))
+                self.plot_axis_depth.xaxis.set_major_locator(HourLocator(byhour=0))
+                self.plot_axis_depth.xaxis.set_minor_locator(
+                    HourLocator(interval=6))
+                self.plot_axis_depth.xaxis.set_major_formatter(major_tick_format)
+                self.plot_axis_depth.set_ylabel('Depth')
+            else:
+                # ax = self.main_window_plot_widget.figure.subplots()
+                self.plot_axis_depth.text(
+                    0.5,
+                    0.5,
+                    "No data found",
+                    horizontalalignment="center",
+                    verticalalignment="center",
+                    fontsize=16,
+                )
+                self.plot_axis_depth.set_axis_off()  # Hide the axes
 
         else:
 
-            self.plot_axis_rg.plot(
-                self.df_filtered['Date'], self.df_filtered['IntensityData'], label='Intensity', color='b')
-            self.plot_axis_rg.set_xlim(self.df_filtered['Date'].min().floor(
-                'D'), self.df_filtered['Date'].max().ceil('D'))
-            self.plot_axis_rg.xaxis.set_major_locator(HourLocator(byhour=0))
-            self.plot_axis_rg.xaxis.set_minor_locator(HourLocator(interval=6))
-            self.plot_axis_rg.xaxis.set_major_formatter(major_tick_format)
-            self.plot_axis_rg.set_ylabel('Rainfall Intensity')
+            if len(self.df_filtered["Date"]) > 0:
+                self.plot_axis_rg.plot(
+                    self.df_filtered['Date'], self.df_filtered['IntensityData'], label='Intensity', color='b')
+                self.plot_axis_rg.set_xlim(self.df_filtered['Date'].min().floor(
+                    'D'), self.df_filtered['Date'].max().ceil('D'))
+                self.plot_axis_rg.xaxis.set_major_locator(HourLocator(byhour=0))
+                self.plot_axis_rg.xaxis.set_minor_locator(HourLocator(interval=6))
+                self.plot_axis_rg.xaxis.set_major_formatter(major_tick_format)
+                self.plot_axis_rg.set_ylabel('Rainfall Intensity')
+            else:
+                # ax = self.main_window_plot_widget.figure.subplots()
+                self.plot_axis_rg.text(
+                    0.5,
+                    0.5,
+                    "No data found",
+                    horizontalalignment="center",
+                    verticalalignment="center",
+                    fontsize=16,
+                )
+                self.plot_axis_rg.set_axis_off()  # Hide the axes
 
     def add_classifications(self):
         color_mapping = get_classification_color_mapping()

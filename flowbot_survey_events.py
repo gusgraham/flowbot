@@ -68,7 +68,7 @@ class surveyEvents():
 
         result = False
         try:
-
+            conn.execute(f'''DROP TABLE IF EXISTS {Tables.SURVEY_EVENT}''')
             conn.execute(f'''CREATE TABLE IF NOT EXISTS {Tables.SURVEY_EVENT} (
                             eventName TEXT PRIMARY KEY,
                             eventType TEXT,

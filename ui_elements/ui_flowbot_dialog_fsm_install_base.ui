@@ -568,7 +568,27 @@
                 </item>
                 <item>
                  <property name="text">
+                  <string>Rectangular</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>Arched</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>Cunette</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
                   <string>Egg</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>Egg 2</string>
                  </property>
                 </item>
                 <item>
@@ -578,7 +598,7 @@
                 </item>
                 <item>
                  <property name="text">
-                  <string>Rectangular</string>
+                  <string>U-Shaped</string>
                  </property>
                 </item>
                 <item>

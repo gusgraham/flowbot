@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (QMessageBox)
 
 from flowbot_schematic import rgGraphicsItem, fmGraphicsItem
 from flowbot_verification import icmTraceLocation
-from flowbot_helper import serialize_list, deserialize_list, serialize_item, deserialize_item
+from flowbot_helper import serialize_list, deserialize_list, serialize_item, deserialize_item, parse_file, parse_date
 from flowbot_database import Tables
 # from contextlib import closing
 
@@ -140,7 +140,7 @@ class flowMonitors():
         result = False
         try:
             # with closing(conn.cursor()) as c:
-
+            conn.execute(f'''DROP TABLE IF EXISTS {Tables.FLOW_MONIOTOR}''')
             conn.execute(f'''CREATE TABLE IF NOT EXISTS {Tables.FLOW_MONIOTOR} (
                             fdvFileSpec TEXT,
                             monitorName TEXT PRIMARY KEY,
@@ -200,12 +200,32 @@ class flowMonitors():
         #     conn.close()
 
     def addFlowMonitor(self, fileSpec: str):
-
         if not self.alreadyOpen(fileSpec):
-
             objFM = self.getFlowMonitorFromFDVFile(fileSpec)
             if objFM is not None:
                 self.dictFlowMonitors[objFM.monitorName] = objFM
+
+    # def addFlowMonitor(self, fileSpec: str):
+
+    #     if not self.alreadyOpen(fileSpec):
+
+    #         start_old = time.perf_counter()
+    #         objFM = self.getFlowMonitorFromFDVFile(fileSpec)
+    #         end_old = time.perf_counter()
+
+    #         start_new = time.perf_counter()
+    #         objFM_alt = self.getFlowMonitorFromFDVFile_NEW(fileSpec)
+    #         end_new = time.perf_counter()
+
+    #         time_old = end_old - start_old
+    #         time_new = end_new - start_new
+
+    #         print(f"Old method time: {time_old:.6f} seconds")
+    #         print(f"New method time: {time_new:.6f} seconds")
+    #         print(f"Time difference (new - old): {time_new - time_old:.6f} seconds")
+
+    #     if objFM is not None:
+    #         self.dictFlowMonitors[objFM.monitorName] = objFM
 
     def flowMonitorCount(self) -> int:
 
@@ -238,310 +258,339 @@ class flowMonitors():
 
         return False
 
-# This is a potential refactoring of getFlowMonitorFromFDVFile..... needs debugged
     # def getFlowMonitorFromFDVFile(self, fileSpec: str) -> flowMonitor:
-    #     with open(fileSpec, 'r', encoding="utf-8") as org_data:
+
+    #     with open(fileSpec, 'r') as org_data:
+
     #         myFM = flowMonitor()
     #         myFM.fdvFileSpec = fileSpec
-    #         lines = org_data.readlines()
 
-    #         for i, line in enumerate(lines):
-    #             if line.startswith("**IDENTIFIER:"):
-    #                 myFM.monitorName = line[15:36].replace(" ", "").strip()
-    #             elif line.startswith("**UNITS:"):
-    #                 myFM.flowUnits = f"Flow {line[31:34]}"
-    #                 myFM.depthUnits = f"Depth {line[35:37]}"
-    #                 myFM.velocityUnits = f"Velocity {line[38:41]}"
-    #             elif line.startswith("**C_FORMAT:"):
-    #                 myFM.rainGaugeName = line[60:65]
-    #             elif line.startswith("*CEND"):
-    #                 self._process_date_range(myFM, lines[i - 1])
-    #                 self._process_data_range(myFM, lines, i)
-    #                 break
+    #         dynamicDateRange = []
 
-    #     return myFM
+    #         lines = []
+    #         countCEND = 0
 
-    # def _process_date_range(self, myFM: flowMonitor, raw_dates: str):
-    #     stripped_raw_dates = raw_dates.replace(" ", "").strip()
-    #     raw_dates_length = len(stripped_raw_dates)
+    #         myFM.dateRange = []
+    #         myFM.flowDataRange = []
+    #         myFM.depthDataRange = []
+    #         myFM.velocityDataRange = []
 
-    #     if raw_dates_length in (22, 23):
-    #         myFM.fmTimestep = float(stripped_raw_dates[20:-1])
-    #         start_date = datetime.strptime(stripped_raw_dates[0:10], "%d%m%Y%H%M")
-    #     elif raw_dates_length in (26, 27):
-    #         myFM.fmTimestep = float(stripped_raw_dates[24:-1])
-    #         start_date = datetime.strptime(stripped_raw_dates[0:12], "%d%m%Y%H%M")
+    #         dataAppend = False
 
-    #     dynamic_date_range = [start_date]
-    #     delta_minutes = timedelta(minutes=myFM.fmTimestep)
-    #     while start_date < myFM.dateRange[-1]:
-    #         start_date += delta_minutes
-    #         dynamic_date_range.append(start_date)
-    #     myFM.dateRange = dynamic_date_range
+    #         for line in org_data:
 
-    # def _process_data_range(self, myFM: flowMonitor, lines: List[str], start_index: int):
-    #     data_append = False
-    #     d1 = d2 = 0
-    #     count_cend = 0
+    #             lines.append(line)
 
-    #     for line in lines[start_index:]:
-    #         if line.startswith("*CEND"):
-    #             count_cend += 1
-    #             if count_cend == 1:
-    #                 d1 = myFM.dateRange[-1]
-    #                 data_append = True
-    #             elif count_cend > 1:
-    #                 data_append = False
-    #             if count_cend > 1 and d1 > myFM.dateRange[-1]:
-    #                 gap_diff = (d1 - timedelta(minutes=myFM.fmTimestep)) - d2
-    #                 rows_to_add = int(gap_diff.total_seconds() / 60 / myFM.fmTimestep)
-    #                 for _ in range(rows_to_add):
-    #                     myFM.flowDataRange.append(0)
-    #                     myFM.depthDataRange.append(0)
-    #                     myFM.velocityDataRange.append(0)
-    #         elif data_append and (line[3:6] != ""):
-    #             myFM.flowDataRange.append(float(line[0:5]))
-    #             myFM.depthDataRange.append(float(line[5:10]))
-    #             myFM.velocityDataRange.append(float(line[10:15]))
-    #             if line[16:20] != '':
-    #                 myFM.flowDataRange.append(float(line[15:20]))
-    #                 myFM.depthDataRange.append(float(line[20:25]))
-    #                 myFM.velocityDataRange.append(float(line[25:30]))
-    #             if line[31:35] != '':
-    #                 myFM.flowDataRange.append(float(line[30:35]))
-    #                 myFM.depthDataRange.append(float(line[35:40]))
-    #                 myFM.velocityDataRange.append(float(line[40:45]))
-    #             if line[46:50] != '':
-    #                 myFM.flowDataRange.append(float(line[45:50]))
-    #                 myFM.depthDataRange.append(float(line[50:55]))
-    #                 myFM.velocityDataRange.append(float(line[55:60]))
-    #             if line[61:65] != '':
-    #                 myFM.flowDataRange.append(float(line[60:65]))
-    #                 myFM.depthDataRange.append(float(line[65:70]))
-    #                 myFM.velocityDataRange.append(float(line[70:75]))
-    #         elif line.startswith("*END") or line.startswith("*$"):
-    #             data_append = False
-    #         if count_cend == 2:
-    #             break
+    #         for i in range(len(lines)):
+
+    #             if (lines[i])[:13] == "**IDENTIFIER:":
+
+    #                 rawMonitorName = lines[i]
+
+    #                 strippedRawMonitorName = rawMonitorName.replace(
+    #                     " ", "").strip()
+
+    #                 myFM.monitorName = strippedRawMonitorName[15:36]
+
+    #             if (lines[i])[:8] == "**UNITS:":
+
+    #                 myFM.flowUnits = 'Flow '+(lines[i])[31:34]
+    #                 myFM.depthUnits = 'Depth '+(lines[i])[35:37]
+    #                 myFM.velocityUnits = 'Velocity '+(lines[i])[38:41]
+
+    #             if (lines[i])[:11] == "**C_FORMAT:":
+    #                 myFM.rainGaugeName = (lines[i])[60:65]
+    #             if (lines[i])[:5] == "*CEND":
+
+    #                 countCEND += 1
+
+    #                 rawDates = (lines[i-1])
+
+    #                 strippedRawDates = rawDates.replace(" ", "")
+    #                 # ____________________________________________________________________________________________________________________________________
+    #                 # ____________________________________________________________________________________________________________________________________
+    #                 # This section is to acount for when there is a break in the data, and it is restarted, acounting for and missing time with Zeros
+
+    #                 if len(strippedRawDates) == 22 or len(strippedRawDates) == 23:
+    #                     myFM.fmTimestep = float(strippedRawDates[20:-1])
+    #                     strippedRawDatesStartDate = strippedRawDates[0:10]
+    #                     strippedStartDate = strippedRawDatesStartDate[4:6]+'/'+strippedRawDatesStartDate[2:4]+'/' + '20' + \
+    #                         strippedRawDatesStartDate[0:2]+' ' + \
+    #                         strippedRawDatesStartDate[6:8] + \
+    #                         ":"+strippedRawDatesStartDate[8:10]
+    #                     d1Working = datetime.strptime(
+    #                         strippedStartDate, "%d/%m/%Y %H:%M")
+
+    #                 elif len(strippedRawDates) == 26 or len(strippedRawDates) == 27:
+    #                     myFM.fmTimestep = float(strippedRawDates[24:-1])
+    #                     strippedRawDatesStartDate = strippedRawDates[0:12]
+    #                     strippedStartDate = strippedRawDatesStartDate[6:8]+'/'+strippedRawDatesStartDate[4:6]+'/' + \
+    #                         strippedRawDatesStartDate[0:4]+' '+strippedRawDatesStartDate[8:10] + \
+    #                         ":"+strippedRawDatesStartDate[10:12]
+    #                     d1Working = datetime.strptime(
+    #                         strippedStartDate, "%d/%m/%Y %H:%M")
+
+    #                 if countCEND == 1:
+
+    #                     dynamicDateRange.append(d1Working)
+    #                     d1 = d1Working
+
+    #                 if countCEND > 1:
+
+    #                     # the d1 working is the start of the current, dynamic is the generated date range
+    #                     if d1Working > (dynamicDateRange[-1]):
+
+    #                         gapDiff = (
+    #                             (d1Working - timedelta(minutes=myFM.fmTimestep)) - d2)
+
+    #                         rowsToAdd = (
+    #                             gapDiff/timedelta(minutes=myFM.fmTimestep))
+
+    #                         z = 0
+    #                         # Append ZEROS to list
+    #                         while z < rowsToAdd:
+
+    #                             myFM.flowDataRange.append(0)
+    #                             myFM.depthDataRange.append(0)
+    #                             myFM.velocityDataRange.append(0)
+
+    #                             # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
+
+    #                             z += 1
+
+    #                     elif (d1Working - timedelta(minutes=myFM.fmTimestep)) == d2:
+
+    #                         gapDiff = (
+    #                             (d1Working - timedelta(minutes=myFM.fmTimestep)) - d2)
+
+    #                 if len(strippedRawDates) == 22 or len(strippedRawDates) == 23:
+    #                     # myFM.fmTimestep = float(strippedRawDates[20:-1])
+    #                     strippedRawDatesEndDate = strippedRawDates[10:20]
+    #                     strippedEndDate = strippedRawDatesEndDate[4:6]+'/'+strippedRawDatesEndDate[2:4]+'/'+'20' + \
+    #                         strippedRawDatesEndDate[0:2]+' ' + \
+    #                         strippedRawDatesEndDate[6:8] + \
+    #                         ":"+strippedRawDatesEndDate[8:10]
+    #                     d2 = datetime.strptime(
+    #                         strippedEndDate, "%d/%m/%Y %H:%M")
+
+    #                 elif len(strippedRawDates) == 26 or len(strippedRawDates) == 27:
+    #                     # myFM.fmTimestep = float(strippedRawDates[24:-1])
+    #                     strippedRawDatesEndDate = strippedRawDates[12:24]
+    #                     strippedEndDate = strippedRawDatesEndDate[6:8]+'/'+strippedRawDatesEndDate[4:6]+'/' + \
+    #                         strippedRawDatesEndDate[0:4]+' '+strippedRawDatesEndDate[8:10] + \
+    #                         ":"+strippedRawDatesEndDate[10:12]
+    #                     d2 = datetime.strptime(
+    #                         strippedEndDate, "%d/%m/%Y %H:%M")
+
+    #                 startRow = i+1
+    #                 dataAppend = True
+
+    #             if (lines[i])[:4] == "*END" or (lines[i])[:2] == "*$":
+
+    #                 # end_row = i-1
+    #                 dataAppend = False
+
+    #             if dataAppend == True and (lines[i])[3:6] != "" and i >= startRow:
+
+    #                 if (lines[i])[1:5] != '':
+    #                     myFM.flowDataRange.append(float((lines[i])[0:5]))  # 1
+    #                     myFM.depthDataRange.append(float((lines[i])[5:10]))
+    #                     myFM.velocityDataRange.append(float((lines[i])[10:15]))
+
+    #                     # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
+
+    #                 if (lines[i])[16:20] != '':
+    #                     myFM.flowDataRange.append(
+    #                         float((lines[i])[15:20]))  # 2
+    #                     myFM.depthDataRange.append(float((lines[i])[20:25]))
+    #                     myFM.velocityDataRange.append(float((lines[i])[25:30]))
+
+    #                     # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
+
+    #                 if (lines[i])[31:35] != '':
+    #                     myFM.flowDataRange.append(
+    #                         float((lines[i])[30:35]))  # 3
+    #                     myFM.depthDataRange.append(float((lines[i])[35:40]))
+    #                     myFM.velocityDataRange.append(float((lines[i])[40:45]))
+
+    #                     # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
+
+    #                 if (lines[i])[46:50] != '':
+    #                     myFM.flowDataRange.append(
+    #                         float((lines[i])[45:50]))  # 4
+    #                     myFM.depthDataRange.append(float((lines[i])[50:55]))
+    #                     myFM.velocityDataRange.append(float((lines[i])[55:60]))
+
+    #                     # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
+
+    #                 if (lines[i])[61:65] != '':
+    #                     myFM.flowDataRange.append(
+    #                         float((lines[i])[60:65]))  # 5
+    #                     myFM.depthDataRange.append(float((lines[i])[65:70]))
+    #                     myFM.velocityDataRange.append(float((lines[i])[70:75]))
+
+    #                     # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
+
+    #         # ___________________________________________________________
+    #         # This re-formates the datetime from the file & creates the list of dates between the start & end dates
+
+    #         delta = d2 - d1
+
+    #         # _____________________________________________________
+    #         for i in range(len(myFM.flowDataRange)):
+
+    #             # print(d1 + timedelta(minutes=i))
+    #             myFM.dateRange.append(
+    #                 d1 + timedelta(minutes=i*myFM.fmTimestep))
+
+    #         dateRangeStart = myFM.dateRange[0]
+    #         dateRangeEnd = myFM.dateRange[len(myFM.dateRange)-1]
+
+    #         # ____________________________________________________________________
+    #         #####################################################################
+    #         ##### THESE WILL ONLY NEED TO BE CALCULATED FOR INTIALLY SELECTED#####
+
+    #         myFM.minFlow = (min(myFM.flowDataRange))
+    #         myFM.maxFlow = (max(myFM.flowDataRange))
+    #         myFM.totalVolume = round(
+    #             ((sum(myFM.flowDataRange))/1000)*myFM.fmTimestep*60, 1)
+
+    #         myFM.minDepth = (min(myFM.depthDataRange))
+    #         myFM.maxDepth = (max(myFM.depthDataRange))
+
+    #         myFM.minVelocity = (min(myFM.velocityDataRange))
+    #         myFM.maxVelocity = (max(myFM.velocityDataRange))
+
+    #         # This allows for the combination of the flow, depth and velocity data with the dates into a list
+    #         fdvZipListDates = []
+    #         fdvZipList = []
+
+    #         for i in range(len(myFM.dateRange)):
+    #             fdvZipListDates.append(
+    #                 myFM.dateRange[i].strftime("%d/%m/%Y %H:%M"))
+
+    #         fdvZipList = list(zip(fdvZipListDates, myFM.flowDataRange,
+    #                           myFM.depthDataRange, myFM.velocityDataRange))
+
+    #         # myFM.fdvDataframe = pd.DataFrame(fdvZipList, columns=['Date', 'Flow', 'Depth', 'Velocity'])
+
+    #         return myFM
+
+        #     try:
+        #     if not self.alreadyOpen(fileSpec):
+
+        #         start_old = time.perf_counter()
+        #         objRG = self.getRainGaugeFromRFile(fileSpec)
+        #         end_old = time.perf_counter()
+
+        #         start_new = time.perf_counter()
+        #         objRG_alt = self.getRainGaugeFromRFile_NEW(fileSpec)
+        #         end_new = time.perf_counter()
+
+        #         time_old = end_old - start_old
+        #         time_new = end_new - start_new
+
+        #         print(f"Old method time: {time_old:.6f} seconds")
+        #         print(f"New method time: {time_new:.6f} seconds")
+        #         print(f"Time difference (new - old): {time_new - time_old:.6f} seconds")
+
+        #         if objRG is not None:
+        #             self.dictRainGauges[objRG.gaugeName] = objRG
+        #             self.updateRGsMinMaxValues()
+        # except Exception as e:  # Capture the exception details
+        #     QMessageBox.critical(
+        #         None,
+        #         'Error Adding Rain Gauge',
+        #         f"Error parsing: {os.path.basename(fileSpec)}\n\nException: {str(e)}",
+        #         QMessageBox.Ok
+        #     )
+        
 
     def getFlowMonitorFromFDVFile(self, fileSpec: str) -> flowMonitor:
 
-        with open(fileSpec, 'r') as org_data:
+        try:
+            with open(fileSpec, 'r') as org_data:
 
-            myFM = flowMonitor()
-            myFM.fdvFileSpec = fileSpec
+                file_data = parse_file(fileSpec)
 
-            dynamicDateRange = []
+                all_units = [unit for record in file_data["payload"] for unit in record]
 
-            lines = []
-            countCEND = 0
+                myFM = flowMonitor()
+                myFM.fdvFileSpec = fileSpec
+                # myFM.dateRange = []
 
-            myFM.dateRange = []
-            myFM.flowDataRange = []
-            myFM.depthDataRange = []
-            myFM.velocityDataRange = []
+                # myFM.flowDataRange = [float(unit["FLOW"]) for unit in all_units]
+                # myFM.depthDataRange = [float(unit["DEPTH"]) for unit in all_units]
+                # myFM.velocityDataRange = [float(unit["VELOCITY"]) for unit in all_units]
 
-            dataAppend = False
+                constants = file_data["constants"]
 
-            for line in org_data:
+                # Parse the START and END dates using the helper.
+                start_dt = parse_date(constants["START"])
+                end_dt = parse_date(constants["END"])
+                duration_mins = (end_dt - start_dt).total_seconds() / 60
 
-                lines.append(line)
+                # Get the INTERVAL (assumed to be in minutes)
+                interval_minutes = int(constants["INTERVAL"])
+                myFM.fmTimestep = interval_minutes
+                interval = timedelta(minutes=interval_minutes)
 
-            for i in range(len(lines)):
+                # Generate the date range.
+                myFM.dateRange = []
+                current_dt = start_dt
+                while current_dt <= end_dt:
+                    myFM.dateRange.append(current_dt)
+                    current_dt += interval
 
-                if (lines[i])[:13] == "**IDENTIFIER:":
+                no_of_records = int(duration_mins / interval_minutes) + 1
+                i_record = 0
 
-                    rawMonitorName = lines[i]
+                myFM.flowDataRange = []
+                myFM.depthDataRange = []
+                myFM.velocityDataRange = []
+                for unit in all_units:
+                    i_record += 1
+                    if i_record <= no_of_records:
+                        myFM.flowDataRange.append(float(unit["FLOW"]))
+                        myFM.depthDataRange.append(float(unit["DEPTH"]))
+                        myFM.velocityDataRange.append(float(unit["VELOCITY"]))
 
-                    strippedRawMonitorName = rawMonitorName.replace(
-                        " ", "").strip()
+                # (Optional) Check that the number of dates matches the number of data units.
+                if len(myFM.dateRange) != len(myFM.flowDataRange):
+                    print("Warning: Mismatch in number of timestamps and data points!")
 
-                    myFM.monitorName = strippedRawMonitorName[15:36]
+                record_line = file_data['header'].get('IDENTIFIER', '')
+                if record_line:
+                    parts = [p.strip() for p in record_line.split(',')]
+                    if len(parts) >= 2:
+                        myFM.monitorName = parts[1]
 
-                if (lines[i])[:8] == "**UNITS:":
+                record_line = file_data['header'].get('UNITS', '')
+                if record_line:
+                    parts = [p.strip() for p in record_line.split(',')]
+                    if len(parts) >= 4:
+                        myFM.flowUnits = f'Flow {parts[1]}'
+                        myFM.depthUnits = f'Depth {parts[2]}'
+                        myFM.velocityUnits = f'Velocity {parts[3]}'
 
-                    myFM.flowUnits = 'Flow '+(lines[i])[31:34]
-                    myFM.depthUnits = 'Depth '+(lines[i])[35:37]
-                    myFM.velocityUnits = 'Velocity '+(lines[i])[38:41]
+                if 'RAINGAUGE' in constants:
+                    myFM.rainGaugeName = constants['RAINGAUGE']
 
-                if (lines[i])[:11] == "**C_FORMAT:":
-                    myFM.rainGaugeName = (lines[i])[60:65]
-                if (lines[i])[:5] == "*CEND":
-
-                    countCEND += 1
-
-                    rawDates = (lines[i-1])
-
-                    strippedRawDates = rawDates.replace(" ", "")
-    # ____________________________________________________________________________________________________________________________________
-    # ____________________________________________________________________________________________________________________________________
-    # This section is to acount for when there is a break in the data, and it is restarted, acounting for and missing time with Zeros
-
-                    if len(strippedRawDates) == 22 or len(strippedRawDates) == 23:
-                        myFM.fmTimestep = float(strippedRawDates[20:-1])
-                        strippedRawDatesStartDate = strippedRawDates[0:10]
-                        strippedStartDate = strippedRawDatesStartDate[4:6]+'/'+strippedRawDatesStartDate[2:4]+'/' + '20' + \
-                            strippedRawDatesStartDate[0:2]+' ' + \
-                            strippedRawDatesStartDate[6:8] + \
-                            ":"+strippedRawDatesStartDate[8:10]
-                        d1Working = datetime.strptime(
-                            strippedStartDate, "%d/%m/%Y %H:%M")
-
-                    elif len(strippedRawDates) == 26 or len(strippedRawDates) == 27:
-                        myFM.fmTimestep = float(strippedRawDates[24:-1])
-                        strippedRawDatesStartDate = strippedRawDates[0:12]
-                        strippedStartDate = strippedRawDatesStartDate[6:8]+'/'+strippedRawDatesStartDate[4:6]+'/' + \
-                            strippedRawDatesStartDate[0:4]+' '+strippedRawDatesStartDate[8:10] + \
-                            ":"+strippedRawDatesStartDate[10:12]
-                        d1Working = datetime.strptime(
-                            strippedStartDate, "%d/%m/%Y %H:%M")
-
-                    if countCEND == 1:
-
-                        dynamicDateRange.append(d1Working)
-                        d1 = d1Working
-
-                    if countCEND > 1:
-
-                        # the d1 working is the start of the current, dynamic is the generated date range
-                        if d1Working > (dynamicDateRange[-1]):
-
-                            gapDiff = (
-                                (d1Working - timedelta(minutes=myFM.fmTimestep)) - d2)
-
-                            rowsToAdd = (
-                                gapDiff/timedelta(minutes=myFM.fmTimestep))
-
-                            z = 0
-                            # Append ZEROS to list
-                            while z < rowsToAdd:
-
-                                myFM.flowDataRange.append(0)
-                                myFM.depthDataRange.append(0)
-                                myFM.velocityDataRange.append(0)
-
-                                # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
-
-                                z += 1
-
-                        elif (d1Working - timedelta(minutes=myFM.fmTimestep)) == d2:
-
-                            gapDiff = (
-                                (d1Working - timedelta(minutes=myFM.fmTimestep)) - d2)
-
-                    if len(strippedRawDates) == 22 or len(strippedRawDates) == 23:
-                        # myFM.fmTimestep = float(strippedRawDates[20:-1])
-                        strippedRawDatesEndDate = strippedRawDates[10:20]
-                        strippedEndDate = strippedRawDatesEndDate[4:6]+'/'+strippedRawDatesEndDate[2:4]+'/'+'20' + \
-                            strippedRawDatesEndDate[0:2]+' ' + \
-                            strippedRawDatesEndDate[6:8] + \
-                            ":"+strippedRawDatesEndDate[8:10]
-                        d2 = datetime.strptime(
-                            strippedEndDate, "%d/%m/%Y %H:%M")
-
-                    elif len(strippedRawDates) == 26 or len(strippedRawDates) == 27:
-                        # myFM.fmTimestep = float(strippedRawDates[24:-1])
-                        strippedRawDatesEndDate = strippedRawDates[12:24]
-                        strippedEndDate = strippedRawDatesEndDate[6:8]+'/'+strippedRawDatesEndDate[4:6]+'/' + \
-                            strippedRawDatesEndDate[0:4]+' '+strippedRawDatesEndDate[8:10] + \
-                            ":"+strippedRawDatesEndDate[10:12]
-                        d2 = datetime.strptime(
-                            strippedEndDate, "%d/%m/%Y %H:%M")
-
-                    startRow = i+1
-                    dataAppend = True
-
-                if (lines[i])[:4] == "*END" or (lines[i])[:2] == "*$":
-
-                    # end_row = i-1
-                    dataAppend = False
-
-                if dataAppend == True and (lines[i])[3:6] != "" and i >= startRow:
-
-                    if (lines[i])[1:5] != '':
-                        myFM.flowDataRange.append(float((lines[i])[0:5]))  # 1
-                        myFM.depthDataRange.append(float((lines[i])[5:10]))
-                        myFM.velocityDataRange.append(float((lines[i])[10:15]))
-
-                        # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
-
-                    if (lines[i])[16:20] != '':
-                        myFM.flowDataRange.append(
-                            float((lines[i])[15:20]))  # 2
-                        myFM.depthDataRange.append(float((lines[i])[20:25]))
-                        myFM.velocityDataRange.append(float((lines[i])[25:30]))
-
-                        # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
-
-                    if (lines[i])[31:35] != '':
-                        myFM.flowDataRange.append(
-                            float((lines[i])[30:35]))  # 3
-                        myFM.depthDataRange.append(float((lines[i])[35:40]))
-                        myFM.velocityDataRange.append(float((lines[i])[40:45]))
-
-                        # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
-
-                    if (lines[i])[46:50] != '':
-                        myFM.flowDataRange.append(
-                            float((lines[i])[45:50]))  # 4
-                        myFM.depthDataRange.append(float((lines[i])[50:55]))
-                        myFM.velocityDataRange.append(float((lines[i])[55:60]))
-
-                        # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
-
-                    if (lines[i])[61:65] != '':
-                        myFM.flowDataRange.append(
-                            float((lines[i])[60:65]))  # 5
-                        myFM.depthDataRange.append(float((lines[i])[65:70]))
-                        myFM.velocityDataRange.append(float((lines[i])[70:75]))
-
-                        # dynamicDateRange.append(dynamicDateRange[-1] + timedelta(minutes=ts))########
-
-    # ___________________________________________________________
-    # This re-formates the datetime from the file & creates the list of dates between the start & end dates
-
-            delta = d2 - d1
-
-            # _____________________________________________________
-            for i in range(len(myFM.flowDataRange)):
-
-                # print(d1 + timedelta(minutes=i))
-                myFM.dateRange.append(
-                    d1 + timedelta(minutes=i*myFM.fmTimestep))
-
-            dateRangeStart = myFM.dateRange[0]
-            dateRangeEnd = myFM.dateRange[len(myFM.dateRange)-1]
-
-    # ____________________________________________________________________
-    #####################################################################
-    ##### THESE WILL ONLY NEED TO BE CALCULATED FOR INTIALLY SELECTED#####
-
-            myFM.minFlow = (min(myFM.flowDataRange))
-            myFM.maxFlow = (max(myFM.flowDataRange))
-            myFM.totalVolume = round(
-                ((sum(myFM.flowDataRange))/1000)*myFM.fmTimestep*60, 1)
-
-            myFM.minDepth = (min(myFM.depthDataRange))
-            myFM.maxDepth = (max(myFM.depthDataRange))
-
-            myFM.minVelocity = (min(myFM.velocityDataRange))
-            myFM.maxVelocity = (max(myFM.velocityDataRange))
-
-    # This allows for the combination of the flow, depth and velocity data with the dates into a list
-            fdvZipListDates = []
-            fdvZipList = []
-
-            for i in range(len(myFM.dateRange)):
-                fdvZipListDates.append(
-                    myFM.dateRange[i].strftime("%d/%m/%Y %H:%M"))
-
-            fdvZipList = list(zip(fdvZipListDates, myFM.flowDataRange,
-                              myFM.depthDataRange, myFM.velocityDataRange))
-
-            # myFM.fdvDataframe = pd.DataFrame(fdvZipList, columns=['Date', 'Flow', 'Depth', 'Velocity'])
-
-            return myFM
-
+                myFM.minFlow = (min(myFM.flowDataRange))
+                myFM.maxFlow = (max(myFM.flowDataRange))
+                myFM.totalVolume = round(((sum(myFM.flowDataRange))/1000)*myFM.fmTimestep*60, 1)
+                myFM.minDepth = (min(myFM.depthDataRange))
+                myFM.maxDepth = (max(myFM.depthDataRange))
+                myFM.minVelocity = (min(myFM.velocityDataRange))
+                myFM.maxVelocity = (max(myFM.velocityDataRange))
+                return myFM
+        except Exception as e:  # Capture the exception details
+            QMessageBox.critical(
+                None,
+                'Error Adding Flow Monitor',
+                f"Error parsing: {os.path.basename(fileSpec)}\n\nException: {str(e)}",
+                QMessageBox.Ok
+            )        
 
 class plottedFlowMonitors():
 
@@ -1374,8 +1423,7 @@ class rainGauges:
     def write_to_database(self, conn: sqlite3.Connection) -> bool:
         result = False
         try:
-            # with closing(conn.cursor()) as c:
-
+            conn.execute(f'''DROP TABLE IF EXISTS {Tables.RAIN_GAUGE}''')
             conn.execute(f'''CREATE TABLE IF NOT EXISTS {Tables.RAIN_GAUGE} (
                             gaugeName TEXT PRIMARY KEY,
                             rFileSpec TEXT,
@@ -1406,14 +1454,53 @@ class rainGauges:
             return result
         #     conn.close()
 
+    # def addRainGauge(self, fileSpec: str):
+
+    #     try:
+    #         if not self.alreadyOpen(fileSpec):
+
+    #             objRG = self.getRainGaugeFromRFile(fileSpec)
+    #             if objRG is not None:
+    #                 self.dictRainGauges[objRG.gaugeName] = objRG
+    #                 self.updateRGsMinMaxValues()
+    #     except Exception as e:  # Capture the exception details
+    #         QMessageBox.critical(
+    #             None,
+    #             'Error Adding Rain Gauge',
+    #             f"Error parsing: {os.path.basename(fileSpec)}\n\nException: {str(e)}",
+    #             QMessageBox.Ok
+    #         )
+
     def addRainGauge(self, fileSpec: str):
 
-        if not self.alreadyOpen(fileSpec):
+        try:
+            if not self.alreadyOpen(fileSpec):
 
-            objRG = self.getRainGaugeFromRFile(fileSpec)
-            if objRG is not None:
-                self.dictRainGauges[objRG.gaugeName] = objRG
-                self.updateRGsMinMaxValues()
+                start_old = time.perf_counter()
+                objRG = self.getRainGaugeFromRFile(fileSpec)
+                end_old = time.perf_counter()
+
+                start_new = time.perf_counter()
+                objRG_alt = self.getRainGaugeFromRFile_NEW(fileSpec)
+                end_new = time.perf_counter()
+
+                time_old = end_old - start_old
+                time_new = end_new - start_new
+
+                print(f"Old method time: {time_old:.6f} seconds")
+                print(f"New method time: {time_new:.6f} seconds")
+                print(f"Time difference (new - old): {time_new - time_old:.6f} seconds")
+
+                if objRG is not None:
+                    self.dictRainGauges[objRG.gaugeName] = objRG
+                    self.updateRGsMinMaxValues()
+        except Exception as e:  # Capture the exception details
+            QMessageBox.critical(
+                None,
+                'Error Adding Rain Gauge',
+                f"Error parsing: {os.path.basename(fileSpec)}\n\nException: {str(e)}",
+                QMessageBox.Ok
+            )
 
     def updateRGsMinMaxValues(self):
 
@@ -1441,11 +1528,11 @@ class rainGauges:
 
         for rg in self.dictRainGauges.items():
             if rg[1].rFileSpec == fileSpec:
-                reply = QtGui.QMessageBox.question(None, 'R file opened already!',
-                                                   rg[1].gaugeName +
-                                                   'was added with that R file.\n\nDo you want to replace it?',
-                                                   QMessageBox.Yes | QMessageBox.No,
-                                                   QMessageBox.No)
+                reply = QMessageBox.question(None, 'R file opened already!',
+                                             rg[1].gaugeName +
+                                             'was added with that R file.\n\nDo you want to replace it?',
+                                             QMessageBox.Yes | QMessageBox.No,
+                                             QMessageBox.No)
                 if reply == QMessageBox.Yes:
                     self.dictRainGauges.pop(rg[1].gaugeName)
                     return False
@@ -1583,8 +1670,8 @@ class rainGauges:
                     rawRainDates = (lines[i-1])
                     strippedRawRainDates = rawRainDates.replace(" ", "")
                     myRG.rgTimestep = float(strippedRawRainDates[-2:])
-    # ____________________________________________________________________________________________________________________________________
-                # This section is to acount for when there is a break in the data, and it is restarted, acounting for and missing time with
+                    # ____________________________________________________________________________________________________________________________________
+                    # This section is to acount for when there is a break in the data, and it is restarted, acounting for and missing time with
                     #  Zeros
                     if len(strippedRawRainDates) == 22:
                         strippedRawRainDatesStartDate = strippedRawRainDates[0:10]
@@ -1680,8 +1767,8 @@ class rainGauges:
                         myRG.rainfallDataRange.append(
                             float((lines[i])[69:75]))  # 5
 
-    # __________________________
-    # RG date range extract
+            # __________________________
+            # RG date range extract
 
             delta = d2 - d1
 
@@ -1728,6 +1815,66 @@ class rainGauges:
 
             return myRG
 
+    def getRainGaugeFromRFile_NEW(self, fileSpec: str):
+
+        with open(fileSpec, 'r', encoding="utf-8") as org_data:
+
+            file_data = parse_file(fileSpec)
+
+            all_units = [unit for record in file_data["payload"] for unit in record]
+
+            myRG = rainGauge()
+            myRG.rFileSpec = fileSpec
+
+            constants = file_data["constants"]
+
+            # Parse the START and END dates using the helper.
+            start_dt = parse_date(constants["START"])
+            end_dt = parse_date(constants["END"])
+            duration_hrs = (end_dt - start_dt).total_seconds() / 3600
+            duration_mins = (end_dt - start_dt).total_seconds() / 60
+
+            # Get the INTERVAL (assumed to be in minutes)
+            interval_minutes = int(constants["INTERVAL"])
+            myRG.rgTimestep = interval_minutes
+            interval = timedelta(minutes=interval_minutes)
+
+            # Generate the date range.
+            # import numpy as np
+
+            myRG.dateRange = np.arange(start_dt, end_dt + interval, interval).tolist()
+            # myRG.dateRange = []
+            # current_dt = start_dt
+            # while current_dt <= end_dt:
+            #     myRG.dateRange.append(current_dt)
+            #     current_dt += interval
+
+            no_of_records = int(duration_mins / interval_minutes) + 1
+            i_record = 0
+
+            myRG.rainfallDataRange = []
+            for unit in all_units:
+                i_record += 1
+                if i_record <= no_of_records:
+                    myRG.rainfallDataRange.append(float(unit["INTENSITY"]))
+
+            # myRG.rainfallDataRange = [float(unit["INTENSITY"]) for unit in all_units]
+
+            # Check that the number of dates matches the number of data units.
+            if len(myRG.dateRange) != len(myRG.rainfallDataRange):
+                print("Warning: Mismatch in number of timestamps and data points!")
+
+            record_line = file_data['header'].get('IDENTIFIER', '')
+            if record_line:
+                parts = [p.strip() for p in record_line.split(',')]
+                if len(parts) >= 2:
+                    myRG.gaugeName = parts[1]
+
+            myRG.maxIntensity = (max(myRG.rainfallDataRange))
+            myRG.totalDepth = round((sum(myRG.rainfallDataRange))/(60/myRG.rgTimestep), 1)
+            myRG.returnPeriod = round(10/(1.25*duration_hrs*(((0.0394*myRG.totalDepth)+0.1)**-3.55)), 2)
+
+            return myRG
 
 class plottedRainGauges():
 

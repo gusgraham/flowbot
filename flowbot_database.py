@@ -109,101 +109,11 @@ class DatabaseManager:
         if self.connection_pool is not None:
             self.connection_pool.close_all_connections()
             self.connection_pool = None
-            self._instance = None
+            # DatabaseManager._instance = None
 
-    def is_connected(self):
-        """
-        Check if the database connection is initialized.
-
-        Returns:
-            bool: True if database is connected, False otherwise.
-        """
-        return self.connection_pool is not None
-
-
-class TemporaryDatabaseManager:
-    """
-    A class for managing database connections using a Singleton pattern.
-    """
-
-    _instance = None
-    """
-    Singleton instance of the DatabaseManager class.
-    """
-
-    def __new__(cls):
-        """
-        Create a new instance of DatabaseManager only if one does not already exist.
-
-        Returns:
-            DatabaseManager: An instance of the DatabaseManager class.
-        """
-        if cls._instance is None:
-            cls._instance = super(DatabaseManager, cls).__new__(cls)
-            cls._instance.database = None
-            cls._instance.connection_pool = None
-        return cls._instance
-
-    def __init__(self):
-        """
-        Initialize the DatabaseManager instance.
-        """
-        if self.connection_pool is None:
-            self.connection_pool = None
-        if self.database is None:
-            self.database = None
-
-    def initialize(self, database, **kwargs):
-        """
-        Initialize the database connection pool.
-
-        Args:
-            database (str): The path to the SQLite database file.
-            **kwargs: Additional keyword arguments to pass to the SQLiteConnectionPool constructor.
-        """
-        if self.connection_pool is None:
-            self.database = database
-            self.connection_pool = SQLiteConnectionPool(database, **kwargs)
-
-    def get_connection(self):
-        """
-        Get a database connection from the connection pool.
-
-        Returns:
-            Connection: A database connection.
-
-        Raises:
-            Exception: If the connection pool is not initialized.
-        """
-        if self.connection_pool is None:
-            raise Exception("Connection pool not initialized. Call initialize() first.")
-        return self.connection_pool.get_connection()
-
-    def return_connection(self, conn):
-        """
-        Return a database connection to the connection pool.
-
-        Args:
-            conn (Connection): The database connection to return.
-
-        Raises:
-            Exception: If the connection pool is not initialized.
-        """
-        if self.connection_pool is None:
-            raise Exception("Connection pool not initialized. Call initialize() first.")
-        self.connection_pool.return_connection(conn)
-
-    def close_all_connections(self):
-        """
-        Close all database connections and reset the connection pool.
-
-        Raises:
-            Exception: If the connection pool is not initialized.
-        """
-        if self.connection_pool is not None:
-            self.connection_pool.close_all_connections()
-            self.connection_pool = None
-            self._instance = None
+    def __del__(self):
+        self.close_all_connections()
+        # DatabaseManager._instance = None
 
     def is_connected(self):
         """

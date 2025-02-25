@@ -20,6 +20,7 @@ from flowbot_dialog_fsm_install import flowbot_dialog_fsm_install
 from flowbot_dialog_fsm_interim_data_imports import flowbot_dialog_fsm_interim_data_imports
 from flowbot_dialog_fsm_review_flowmonitor import flowbot_dialog_fsm_review_flowmonitor
 from flowbot_dialog_fsm_review_raingauge import flowbot_dialog_fsm_review_raingauge
+from flowbot_dialog_fsm_review_pumplogger import flowbot_dialog_fsm_review_pumplogger
 from flowbot_dialog_fsm_uninstall import flowbot_dialog_fsm_uninstall
 from flowbot_dialog_fsm_view_photographs import flowbot_dialog_fsm_view_photographs
 from flowbot_water_quality import fwqMonitor, fwqMonitors, plottedWQMonitors, MappingDialog
@@ -41,6 +42,7 @@ from reportlab.lib.units import cm
 from PIL import Image
 import tempfile
 import numpy as np
+import gc
 
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -90,7 +92,7 @@ from flowbot_dialog_scattergraph_export import flowbot_dialog_scattergraph_expor
 from flowbot_dialog_verification_setpeaks import flowbot_dialog_verification_setpeaks, icmTraceLocation
 from flowbot_dialog_verification_viewfitmeasure import flowbot_dialog_verification_viewfitmeasure
 from flowbot_dialog_projection import fsp_flowbot_projectionDialog
-from flowbot_database import DatabaseManager, Tables, TemporaryDatabaseManager
+from flowbot_database import DatabaseManager, Tables
 from flowbot_dialog_fsm_add_site import flowbot_dialog_fsm_add_site
 from flowbot_management import fsmDataClassification, fsmInspection, fsmInstall, fsmInterim, fsmInterimReview, fsmMonitor, fsmProject, fsmSite, fsmRawData, MonitorDataFlowCalculator, PumpLoggerDataCalculator
 from flowbot_dialog_fsm_set_interim_dates import flowbot_dialog_fsm_set_interim_dates
@@ -161,6 +163,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.mainPageIsSetup = False
         self.tabMapIsSetup = False
+        
+        self.db_manager: Optional[DatabaseManager] = None
 
         self.setupMainWindow()
         self.setupMainMenu()
@@ -172,8 +176,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.initialiseAllVariables()
 
-        self.load_project_from_filespec(
-            'C:/Temp/Flowbot/Flowbot Test Data/FSM/T1172.fbsqlite')
+        # self.load_project_from_filespec('C:/Temp/Flowbot/Flowbot Test Data/FSM/T1172.fbsqlite')
+        # self.load_project_from_filespec('C:/Temp/Flowbot/Flowbot Test Data/RealWorldData/Sutton/test.fbsqlite')
 
     # def update_fsm_project_standard_item_model(self):
 
@@ -945,9 +949,221 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def create_fsm_project_from_csv(self):
 
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Please locate the batch file CSV', self.lastOpenDialogPath, 'Flowbot FSM Batch File (*.csv)')
+        if self.fsmProject is not None:
+            msg = QMessageBox(self)
+            msg.setWindowIcon(self.myIcon)
+
+            ret = msg.warning(self, 'Warning', 'A Flow Survey Job already exists\nAre you sure you want to overwrite it?',
+                                QMessageBox.Yes | QMessageBox.No)
+            if ret == QMessageBox.No:
+                return
+                        
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Please locate the batch import file CSV', self.lastOpenDialogPath, 'Flowbot FSM Batch File (*.csv)')
         if not path:
             return
+        try:
+            key_value_pairs = {}
+            table_data = []
+            with open(path, mode='r') as file:
+                reader = csv.reader(file)
+                # Read key-value pairs
+                for row in reader:
+                    if row and row[0].strip().lower() != 'install reference':
+                        key = row[0].strip()
+                        value = row[1].strip()
+                        key_value_pairs[key] = value
+                    else:
+                        # Now read the table headers
+                        table_headers = row
+                        break
+                # Read the rest as table data
+                for row in reader:
+                    if row:
+                        table_data.append(row)
+                
+
+            self.fsmProject = fsmProject()
+            self.fsmProject.job_number = key_value_pairs['Survey Number']
+            self.fsmProject.job_name = key_value_pairs['Survey Name']
+            self.fsmProject.client = key_value_pairs['Client']
+            self.fsmProject.client_job_ref = key_value_pairs['Client Job Ref']
+            self.fsmProject.survey_start_date = datetime.strptime(key_value_pairs['Survey Start (DD/MM/YYYY)'], "%d/%m/%Y")
+
+            for row in table_data:
+                if row:
+                    if 'Site ID' in table_headers:
+                        column_index = table_headers.index('Site ID')
+                        sSiteID = row[column_index]
+                    if 'Location' in table_headers:
+                        column_index = table_headers.index('Location')
+                        sLocation = row[column_index]
+                    if 'Monitor Type (FM/DM/PL/RG)' in table_headers:
+                        column_index = table_headers.index('Monitor Type (FM/DM/PL/RG)')
+                        sMonitorType = row[column_index]
+                    if 'MH Ref' in table_headers:
+                        column_index = table_headers.index('MH Ref')
+                        sMHRef = row[column_index]                                        
+                    if 'Asset ID' in table_headers:
+                        column_index = table_headers.index('Asset ID')
+                        sMonID = row[column_index]
+                    if 'Install Reference' in table_headers:
+                        column_index = table_headers.index('Install Reference')
+                        sInstallRef = row[column_index]
+                    if 'Client Ref' in table_headers:
+                        column_index = table_headers.index('Client Ref')
+                        sClientRef = row[column_index]
+                    if 'Installed Date (DD/MM/YYYY)' in table_headers:
+                        column_index = table_headers.index('Installed Date (DD/MM/YYYY)')
+                        sInstalledDate = row[column_index]
+                    if 'Height (mm)' in table_headers:
+                        column_index = table_headers.index('Height (mm)')
+                        sHeight = row[column_index]
+                    if 'Width (mm)' in table_headers:
+                        column_index = table_headers.index('Width (mm)')
+                        sWidth = row[column_index]
+                    if 'Shape (C/R)' in table_headers:
+                        column_index = table_headers.index('Shape (C/R)')
+                        sShape = row[column_index]
+                    if 'Depth Offset mm' in table_headers:
+                        column_index = table_headers.index('Depth Offset mm')
+                        sDepthOffset = row[column_index]
+
+                    a_site = self.fsmProject.get_site(sSiteID)
+                    if a_site is None:
+                        a_site = fsmSite()
+                        a_site.siteID = sSiteID
+                        if sMonitorType in ['FM', 'DM', 'PL']:
+                            a_site.siteType = 'Network Asset'
+                        else:
+                            a_site.siteType = 'Location'
+                        a_site.address = sLocation
+                        a_site.mh_ref = sMHRef
+                        self.fsmProject.add_site(a_site)
+                    
+                    if (sMonitorType in ['FM', 'DM', 'PL'] and a_site.siteType == 'Location') or (sMonitorType in ['RG'] and a_site.siteType == 'Network Asset'):
+                        raise Exception(f"A Monitor of type '{sMonitorType}' can't be installed in a Site of type '{a_site.siteType}'")
+                    
+                    
+
+                    a_mon = self.fsmProject.get_monitor(sMonID)
+                    if a_mon is None:
+                        a_mon = fsmMonitor()
+                        a_mon.monitor_asset_id = sMonID
+                        if sMonitorType == 'FM':
+                            a_mon.monitor_type = 'Flow Monitor'
+                        elif sMonitorType == 'DM':
+                            a_mon.monitor_type = 'Depth Monitor'
+                        elif sMonitorType == 'PL':
+                            a_mon.monitor_type = 'Pump Logger'
+                        else:
+                            a_mon.monitor_type = 'Rain Gauge'
+                        self.fsmProject.add_monitor(a_mon)
+                    else:
+                        raise Exception(f"A Monitor with an Asset ID of '{sMonID}' already exisits")
+                        # a_ins_check = self.fsmProject.get_current_install_by_monitor(sMonID)
+                        # if a_ins_check is not None:
+
+
+                    a_ins = self.fsmProject.get_install(sInstallRef)
+                    if a_ins is None:
+                        a_ins = fsmInstall()
+                        a_ins.install_id = sInstallRef
+                        a_ins.install_site_id = a_site.siteID
+                        a_ins.install_monitor_asset_id = a_mon.monitor_asset_id
+                        a_ins.install_type = a_mon.monitor_type
+                        a_ins.client_ref = sClientRef
+                        a_ins.install_date = datetime.strptime(sInstalledDate, "%d/%m/%Y")
+                        if sShape == "C":
+                            a_ins.fm_pipe_shape = "Circular"
+                        else:
+                            a_ins.fm_pipe_shape = "Rectangular"
+                        a_ins.fm_pipe_height_mm = int(sHeight)
+                        a_ins.fm_pipe_width_mm = int(sWidth)
+                        a_ins.fm_sensor_offset_mm = int(sDepthOffset)
+                        self.fsmProject.add_install(a_ins)
+
+                    a_raw = fsmRawData()
+                    a_raw.rawdata_id = self.fsmProject.get_next_rawdata_id()
+                    a_raw.install_id = a_ins.install_id
+                    a_raw.file_path = key_value_pairs['Default Data Path']
+                    self.fsmProject.add_rawdata(a_raw)
+
+            self.update_fsm_project_standard_item_model()
+            self.enable_fsm_menu()
+        except Exception as e:
+            logger.error('Exception occurred', exc_info=True)
+            msg = QMessageBox(self)
+            msg.critical(self, 'Error', f'An error occurred: {e}', QMessageBox.Ok)
+            
+
+# 'Install Reference'
+# 'Site ID'
+# 'Location'
+# 'Monitor Type (FM/DM/PL/RG)'
+# 'Asset ID'
+# 'Client Ref'
+# 'Installed Date (DD/MM/YYYY)'
+# 'Height (mm)'
+# 'Width (mm)'
+# 'Shape (C/R)'
+# 'Depth Offset mm'
+# 'MH Ref'
+# 'Rain Reference'
+# 'Silt Level mm'
+
+#     print(f"Column '{header_name}' is at index {column_index}")
+# else:
+#     print(f"Column '{header_name}' not found in table headers")                
+
+
+    #     return key_value_pairs, table_headers, table_data
+
+    # file_path = 'ProjectSetup.csv'
+    # key_values, headers, data = parse_custom_csv(file_path)
+    # print("Key-Value Pairs:", key_values)
+    # print("Headers:", headers)
+    # print("Data:", data)
+
+        
+        
+
+    def create_fsm_job_csv_template(self):
+
+        fileSpec, filter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Batch Import Template File...", self.lastOpenDialogPath, 'Flowbot FSM Batch File (*.csv)')
+        if len(fileSpec) == 0:
+            return
+        
+# Define metadata
+        metadata = [
+            ["Survey Name", "Clevedon"],
+            ["Survey Number", "M9999"],
+            ["Client", "Some Client Ltd"],
+            ["Client Job Ref", "CLI9999"],
+            ["Survey Start (DD/MM/YYYY)", "18/09/2024"],
+            ["Default Data Path", r"C:\Some\File\Path"]
+        ]
+
+        # Define table headers and data
+        headers = [
+            "Install Reference", "Site ID", "Location", "Monitor Type (FM/DM/PL/RG)",
+            "Asset ID", "Client Ref", "Installed Date (DD/MM/YYYY)", "Height (mm)",
+            "Width (mm)", "Shape (C/R)", "Depth Offset mm", "MH Ref",
+            "Rain Reference", "Silt Level mm"
+        ]
+
+        table_data = [
+            ["FM001", 4165, "Corner of Wishaw High Rd & Swinstie Rd (5791)", "FM", 4165, "FM001", "20/09/2024", 375, 375, "C", 0, "NS80571601", "RG001", 0]
+        ]
+
+        # Write to CSV file
+        with open(fileSpec, "w", newline="") as file:
+            writer = csv.writer(file, delimiter=",")
+            writer.writerows(metadata)
+            writer.writerow(headers)  # Write table headers
+            writer.writerows(table_data)  # Write data rows
+
+        msg = QMessageBox(self)
+        msg.information(self, f"CSV file '{csv_filename}' created successfully.", QMessageBox.Ok)
 
     def create_fsm_project(self):
 
@@ -1418,8 +1634,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 a_raw.install_id = a_inst.install_id
 
                 if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
-                    dict_ConvertShape = {'Circular': 'CIRC', 'Egg': 'EGG',
-                                         'Oval': 'OVAL', 'Rectangular': 'RECT', 'Other': 'CIRC'}
+                    dict_ConvertShape = {'Circular': 'CIRC', 'Rectangular': 'RECT', 'Arched': 'ARCH', 'Cunette': 'CNET',
+                                         'Egg': 'EGG', 'Egg 2': 'EGG2', 'Oval': 'OVAL', 'U-Shaped': 'UTOP', 'Other': 'USER'}
                     a_raw.pipe_shape = dict_ConvertShape.get(
                         a_inst.fm_pipe_shape, 'CIRC')
                     a_raw.pipe_width = a_inst.fm_pipe_width_mm
@@ -1488,12 +1704,10 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         try:
             for a_inst in self.fsmProject.dict_fsm_installs.values():
-                self.statusBar().showMessage('Importing Raw Data for ' +
-                                             a_inst.install_monitor_asset_id + '/' + a_inst.client_ref)
+                self.statusBar().showMessage('Importing Raw Data for ' + a_inst.install_id + '/' + a_inst.client_ref)
                 self.progressBar.setValue(i_count)
                 self._thisApp.processEvents()
-                self.import_fsm_raw_data(
-                    a_inst.install_monitor_asset_id, False)
+                self.import_fsm_raw_data(a_inst, False)
 
                 i_count += 1
 
@@ -1625,6 +1839,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         if '{pmac_id}' in file_format:
             file_format = file_format.replace('{pmac_id}', self.fsmProject.get_monitor(
                 a_inst.install_monitor_asset_id).pmac_id)
+        if '{inst_id}' in file_format:
+            file_format = file_format.replace('{inst_id}', a_inst.install_id)
         if '{ast_id}' in file_format:
             file_format = file_format.replace(
                 '{ast_id}', a_inst.install_monitor_asset_id)
@@ -1797,12 +2013,10 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         try:
             for a_inst in self.fsmProject.dict_fsm_installs.values():
-                self.statusBar().showMessage('Processing Raw Data for ' +
-                                             a_inst.install_monitor_asset_id + '/' + a_inst.client_ref)
+                self.statusBar().showMessage('Processing Raw Data for ' + a_inst.install_id + '/' + a_inst.client_ref)
                 self.progressBar.setValue(i_count)
                 self._thisApp.processEvents()
-                self.fsm_process_raw_data(
-                    a_inst.install_monitor_asset_id, False)
+                self.fsm_process_raw_data(a_inst, False)
 
                 i_count += 1
 
@@ -2398,7 +2612,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                                     interim_id, a_inst, pdf)
 
                     output_pdf = os.path.join(dlg_interim.txt_output_folder.text(),
-                                              f'{self.fsmProject.job_number} {self.fsmProject.job_name} Interim {self.fsmProject.dict_fsm_interims[interim_id].interimID} Report.pdf')
+                                              f'{self.fsmProject.job_number} {self.fsmProject.job_name} Interim {self.fsmProject.dict_fsm_interims[interim_id].interim_id} Report.pdf')
 
                     if self.i_current_page_no > 0:
                         # Move the temporary PDF to the final location
@@ -2801,7 +3015,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             ret = dlgInterimDates.exec_()
             if ret == QDialog.Accepted:
                 a_int = fsmInterim()
-                a_int.interimID = int(dlgInterimDates.txt_interim_id.text())
+                a_int.interim_id = int(dlgInterimDates.txt_interim_id.text())
                 a_int.interim_start_date = dlgInterimDates.dte_interim_start.dateTime().toPyDateTime()
                 a_int.interim_end_date = dlgInterimDates.dte_interim_end.dateTime().toPyDateTime()
 
@@ -2822,7 +3036,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             dlgInterimDates = flowbot_dialog_fsm_set_interim_dates()
 
             dlgInterimDates.txt_interim_id.setText(
-                str(self.fsmProject.dict_fsm_interims[interim_id].interimID))
+                str(self.fsmProject.dict_fsm_interims[interim_id].interim_id))
             dlgInterimDates.dte_interim_start.setDateTime(
                 QDateTime(self.fsmProject.dict_fsm_interims[interim_id].interim_start_date))
             dlgInterimDates.dte_interim_end.setDateTime(
@@ -3969,9 +4183,9 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.actionInfo.triggered.connect(self.aboutBox)
         self.actionClose.triggered.connect(self.close)
         # self.actionClose.triggered.connect(self.closeApplication)
-
         self.action_new_job.triggered.connect(self.create_fsm_project)
-        self.action_new_job_bacth_import.triggered.connect(self.create_fsm_project_from_csv)
+        self.action_new_job_batch_import.triggered.connect(self.create_fsm_project_from_csv)
+        self.action_new_batch_import_template.triggered.connect(self.create_fsm_job_csv_template)
         self.action_fsm_add_site.triggered.connect(self.add_fsm_site)
         self.action_fsm_add_monitor.triggered.connect(self.add_fsm_monitor)
         # self.action_fsm_import_data_pmac.triggered.connect(self.fsm_import_data_pmac)
@@ -5443,6 +5657,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 sizes = [int(total_width * 0.2), int(total_width * 0.8)]
                 self.map_splitter.setSizes(sizes)
                 self.tabMapIsSetup = True
+        elif self.tabWidgetMainWindow.currentWidget().objectName() == 'tabGraphs':
+            self.update_plot()
 
     def setCurrentTrace(self, newLocation: int):
         if self.aTraceGraph is not None:
@@ -5563,12 +5779,30 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             self.schematicGraphicsView._curretSchematicTool = cstCONNECTION
 
     def aboutBox(self):
+        # strVersion = "1.0"  # Replace this with your actual version variable
+        email = "fergus.graham@tetratech.com"
+        bug_report_url = "https://forms.office.com/Pages/ResponsePage.aspx?id=uuQPpMer_kiHkrQ4iZNkAC6AlxSXlp5Bo31NAdQ13QJUNzdTRUg0RUZGWE02SUdOOFgxMjBTRU1CUCQlQCN0PWcu"
 
-        myTxt = "Flowbot " + strVersion + "\n" + "\n" + \
-            "Refactored from Flowbot v1.3.4" + "\n" + "by Fergus.Graham@rpsgroup.com"
+        myTxt = f"""<p><b>Flowbot {strVersion}</b></p>
+                    <p>Contact: <a href="mailto:{email}">{email}</a></p>
+                    <p>Report Bugs: <a href="{bug_report_url}">TAPS Bugs/Issues Report</a></p>"""
+
         msg = QMessageBox(self)
-        msg.setWindowIcon(self.myIcon)
-        msg.information(self, 'About', myTxt, QMessageBox.Ok)
+        msg.setWindowTitle("About")
+        # msg.setWindowIcon(self.myIcon)
+        msg.setIcon(QMessageBox.Information)
+        msg.setTextFormat(1)  # Enables rich text (HTML support)
+        msg.setText(myTxt)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
+    # def aboutBox(self):
+
+    #     myTxt = "Flowbot " + strVersion + "\n" + "\n" + \
+    #         + "Contact: fergus.graham@tetratech.com"
+    #     msg = QMessageBox(self)
+    #     msg.setWindowIcon(self.myIcon)
+    #     msg.information(self, 'About', myTxt, QMessageBox.Ok)
 
     def eventFilter(self, o, e):
         if e.type() == QtCore.QEvent.Type.Drop:
@@ -5644,6 +5878,19 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                     rg._schematicGraphicItem = self.schematicGraphicsView.addRaingauge(
                         rg.gaugeName, self.schematicGraphicsView.mapToScene(e.pos()), offset)
                     offset += 50
+
+        elif e.source() == self.trwEvents:
+
+            source_item = QStandardItemModel()
+            source_item.dropMimeData(
+                e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+
+            for i in range(source_item.rowCount()):
+                se = self.identifiedSurveyEvents.getSurveyEvent(source_item.item(i, 0).text())
+                break
+
+            if se is not None:
+                self.schematicGraphicsView.addEvent(se)
 
     def summedFM_drop_action(self, e):
 
@@ -5949,7 +6196,11 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def initialiseAllVariables(self):
 
-        # self.isDirty = False
+        if not self.db_manager is None:
+            self.db_manager.close_all_connections()
+            del self.db_manager
+            DatabaseManager._instance = None
+            gc.collect()
         self.db_manager = DatabaseManager()
         self.aFDVGraph = GraphFDV(self.plotCanvasMain)
         self.aScattergraph = graphScatter(self.plotCanvasMain)
@@ -6000,6 +6251,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             self, 'Warning', 'Are you sure you want to start a new project?', QMessageBox.Yes | QMessageBox.No)
         if ret == QMessageBox.Yes:
             self.initialiseAllVariables()
+            self.setWindowTitle(f"Flowbot v{strVersion}")
 
     def getPointListFromString(self, myString):
         newList = []
@@ -6476,8 +6728,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             self.update_database(conn)
 
             if self.fsmProject is None:
-                self.fsmProject = fsmProject()
-                self.fsmProject.read_from_database(conn)
+
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (Tables.FSM_PROJECT,))
+                exists = cursor.fetchone()
+
+                if exists:
+                    self.fsmProject = fsmProject()
+                    self.fsmProject.read_from_database(conn)
             if self.openFlowMonitors is None:
                 self.openFlowMonitors = flowMonitors()
                 self.openFlowMonitors.read_from_database(conn)
@@ -6686,6 +6944,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     #                             'Project Saved Sucessfully', QMessageBox.Ok)
 
     def saveProject(self):
+
         if not self.db_manager.is_connected():
 
             self.saveProjectAs()
@@ -6804,6 +7063,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         result = False
 
         try:
+            conn.execute(f'''DROP TABLE IF EXISTS {Tables.SUMMED_FLOW_MONITOR}''')
             if len(self.summedFMs) > 0:
                 # c = conn.cursor()
                 conn.execute(f'''CREATE TABLE IF NOT EXISTS {Tables.SUMMED_FLOW_MONITOR} (
@@ -6840,11 +7100,10 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     def write_schematic_graphics_view_to_database(self, conn: sqlite3.Connection) -> bool:
         result = False
         try:
+            conn.execute(
+                f'''DROP TABLE IF EXISTS {Tables.SCHEMATIC_GRAPHICS_VIEW}''')
             if len(self.schematicGraphicsView.scene().items()) > 0:
                 # c = conn.cursor()
-                conn.execute(
-                    f'''DROP TABLE IF EXISTS {Tables.SCHEMATIC_GRAPHICS_VIEW}''')
-
                 conn.execute(f'''CREATE TABLE {Tables.SCHEMATIC_GRAPHICS_VIEW} (
                                 itemType TEXT,
                                 labelName TEXT,
@@ -7735,7 +7994,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             remCallback.triggered.connect(self.removeFMSPlotItem)
             menu.addAction(remCallback)
 
-        menu.exec_(self.trwSummedFMs.viewport().mapToGlobal(position))
+        menu.exec_(self.trw_PlottedFSMInstalls.viewport().mapToGlobal(position))
 
     def openPlotTreeViewContextMenu(self, position):
 
@@ -9001,7 +9260,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         if self.aFSMInstallGraph.plotted_install is not None:
                             it = QtWidgets.QTreeWidgetItem()
                             it.setText(
-                                0, f'Site ID: {self.aFSMInstallGraph.plotted_install.install_site_id}/Monitor ID: {self.aFSMInstallGraph.plotted_install.install_monitor_asset_id}')
+                                0, f'Install ID: {self.aFSMInstallGraph.plotted_install.install_id}')
                             item.addChild(it)
 
                         if item.childCount() > 0:

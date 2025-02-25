@@ -123,6 +123,10 @@ class flowbot_dialog_fsm_storm_events(QtWidgets.QDialog, Ui_Dialog):
         self.btnEventCapture.clicked.connect(
             lambda: self.createNewSurveyEvent(True))
 
+        a_interim = self.a_project.dict_fsm_interims[interim_id]
+        if a_interim is not None:
+            self.chk_event_review_complete.setChecked(a_interim.identify_events_complete)
+
         # result = True
         # for a_int_ser in self.fsmProject.dict_fsm_interim_reviews.values():
         #     if a_int_ser.interim_id == interim_id:

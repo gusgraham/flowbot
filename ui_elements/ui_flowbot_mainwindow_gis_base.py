@@ -1318,8 +1318,10 @@ class Ui_MainWindow(object):
         self.action_fsm_process_raw_data.setObjectName("action_fsm_process_raw_data")
         self.action_fsm_export_data_processed = QtWidgets.QAction(MainWindow)
         self.action_fsm_export_data_processed.setObjectName("action_fsm_export_data_processed")
-        self.action_new_job_bacth_import = QtWidgets.QAction(MainWindow)
-        self.action_new_job_bacth_import.setObjectName("action_new_job_bacth_import")
+        self.action_new_job_batch_import = QtWidgets.QAction(MainWindow)
+        self.action_new_job_batch_import.setObjectName("action_new_job_batch_import")
+        self.action_new_batch_import_template = QtWidgets.QAction(MainWindow)
+        self.action_new_batch_import_template.setObjectName("action_new_batch_import_template")
         self.menuFile.addAction(self.actionNew_Project)
         self.menuFile.addAction(self.actionLoad_Project)
         self.menuFile.addAction(self.actionSave_Project)
@@ -1360,7 +1362,8 @@ class Ui_MainWindow(object):
         self.menuMapping.addAction(self.actionAddShapefile)
         self.menuSite.addAction(self.action_fsm_add_site)
         self.menuJob.addAction(self.action_new_job)
-        self.menuJob.addAction(self.action_new_job_bacth_import)
+        self.menuJob.addAction(self.action_new_job_batch_import)
+        self.menuJob.addAction(self.action_new_batch_import_template)
         self.menuMonitor.addAction(self.action_fsm_add_monitor)
         self.menuImport.addAction(self.action_fsm_import_data_raw)
         self.menuImport.addAction(self.action_fsm_import_data_fdv)
@@ -1584,7 +1587,8 @@ class Ui_MainWindow(object):
         self.action_fsm_import_data_raw.setText(_translate("MainWindow", "Raw Data"))
         self.action_fsm_process_raw_data.setText(_translate("MainWindow", "Process Raw Data"))
         self.action_fsm_export_data_processed.setText(_translate("MainWindow", "Processed Data"))
-        self.action_new_job_bacth_import.setText(_translate("MainWindow", "Batch Import"))
+        self.action_new_job_batch_import.setText(_translate("MainWindow", "New (from Batch Import)"))
+        self.action_new_batch_import_template.setText(_translate("MainWindow", "Create Template Batch Import File"))
 from flowbot_helper import PlotWidget
 from flowbot_schematic import SchematicGraphicsView
 from qgis.gui import QgsMapCanvas

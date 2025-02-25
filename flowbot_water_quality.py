@@ -202,6 +202,7 @@ class fwqMonitors:
     def write_to_database(self, conn: sqlite3.Connection) -> bool:
         result = False
         try:
+            conn.execute(f'''DROP TABLE IF EXISTS {Tables.WQ_MONITOR}''')
             conn.execute(f'''CREATE TABLE IF NOT EXISTS {Tables.WQ_MONITOR} (
                             monitor_id TEXT PRIMARY KEY,
                             csv_filespec TEXT,
