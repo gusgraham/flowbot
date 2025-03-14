@@ -54,21 +54,21 @@ from PyQt5.QtWidgets import (QProgressBar, QMessageBox, QDialog, QInputDialog, Q
                              QToolBar, QAction, QActionGroup, QListWidget, QPushButton, QScrollArea)
 from PyQt5.QtGui import (
     QStandardItemModel, QStandardItem, QCursor, QBrush, QColor)
-from PyQt5.QtCore import (Qt, QModelIndex, QPointF, QUrl, QDateTime)
+from PyQt5.QtCore import (Qt, QModelIndex, QPointF, QUrl, QDateTime, QObject)
 
 from qgis.core import (QgsCoordinateReferenceSystem, QgsLayerTreeModel,
-                       QgsProject, QgsRasterLayer, QgsVectorLayer, QgsLayerTreeNode, QgsMapLayer)
+                       QgsProject, QgsRasterLayer, QgsVectorLayer, QgsLayerTreeNode, QgsMapLayer, QgsLayerTreeGroup, QgsLayerTree)
 from qgis.gui import (QgsLayerTreeMapCanvasBridge,
-                      QgsLayerTreeView, QgsMapToolPan, QgsMapToolZoom)
+                      QgsLayerTreeView, QgsMapToolPan, QgsMapToolZoom, QgsMapMouseEvent, QgsMapToolEmitPoint)
 
 from flowbot_helper import (resource_path, PlotWidget,
                             serialize_list, deserialize_list, strVersion, bytes_to_text)
 from flowbot_graphing import (GraphFDV, graph_fsm_classification, graph_fsm_cumulative_interim_summary, graph_fsm_dwf_plot, graph_fsm_fdv_plot, graph_fsm_fm_install_summary, graph_fsm_monitor_data_summary, graph_fsm_raingauge_plot, graph_fsm_rg_install_summary, graph_fsm_scatter_plot, graph_fsm_storm_event_summary,
-                              graphScatter, graphCumulativeDepth, graphRainfallAnalysis, graphICMTrace, createVerificationDetailPlot, createVerificationDetailUDGTablePlot, createEventSuitabilityEventSummaryTablePlot,  createEventSuitabilityRaingaugeDetailsTablePlot, createEventSuitabilityFMClassPiePlot, graphWQGraph, graphFSMInstall, graphDWF)
+                              graphScatter, graphCumulativeDepth, graphRainfallAnalysis, graphICMTrace, createVerificationDetailPlot, createVerificationDetailUDGTablePlot, createEventSuitabilityEventSummaryTablePlot,  createEventSuitabilityRaingaugeDetailsTablePlot, createEventSuitabilityFMClassPiePlot, graphWQGraph, graphFSMInstall, graphDWF, dashboardFSM)
 from flowbot_verification import icmTraces
 from flowbot_data_classification import dataClassification
-from flowbot_monitors import (flowMonitors, plottedFlowMonitors, rainGauges, mappedFlowMonitor, mappedFlowMonitors, summedFlowMonitor,
-                              dummyFlowMonitor, classifiedFlowMonitors, plottedRainGauges)
+from flowbot_monitors import (flowMonitors, plottedFlowMonitors, rainGauges, summedFlowMonitor,
+                              dummyFlowMonitor, classifiedFlowMonitors, plottedRainGauges, mappedFlowMonitors, mappedRainGauges)
 from flowbot_survey_events import surveyEvent, surveyEvents, plottedSurveyEvents
 # from flowbot_mapping import flowbotWebMap
 from flowbot_schematic import (fmGraphicsItem, rgGraphicsItem, csoGraphicsItem, wwpsGraphicsItem, juncGraphicsItem, outfallGraphicsItem,
@@ -110,27 +110,33 @@ logger = get_logger('flowbot_logger')
 class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
     thisQgsProjectGPKGFileSpec = ''
-    thisQgsProject = None
-    thisQgsLayerTreeModel = None
-    thisQgsLayerTreeView = None
-    thisQgsLayerTree = None
-    thisQgsLayerTreeMapCanvasBridge = None
+    thisQgsProject: QgsProject = None
+    thisQgsLayerTreeModel: QgsLayerTreeModel = None
+    # thisQgsLayerTreeView = None
+    thisQgsLayerTree: QgsLayerTree = None
+    thisQgsLayerTreeMapCanvasBridge: QgsLayerTreeMapCanvasBridge = None
 
     statusbarCrsButton = None
     statusbarCoordinates = None
 
-    worldStreetMapLayer = None
-    worldImageryLayer = None
+    worldStreetMapLayer: QgsRasterLayer = None
+    worldImageryLayer: QgsRasterLayer = None
+    grp_basemaps: QgsLayerTreeGroup = None
+    grp_monitors: QgsLayerTreeGroup = None
+    grp_outputs: QgsLayerTreeGroup = None
+    # vl_flow_monitors: QgsVectorLayer = None
+    # vl_rain_gauges: QgsVectorLayer = None
 
     currentMapTool = None
 
-    def __init__(self, parent=None, app=None):
+    def __init__(self, parent=None, app=None, qgs_app = None):
         """Constructor."""
         super(FlowbotMainWindowGis, self).__init__(parent)
 
         self.setupUi(self)
 
         self._thisApp = app
+        self._thisQgsApp = qgs_app
         self.myIcon: QtGui.QIcon = QtGui.QIcon()
         self.myIcon.addPixmap(QtGui.QPixmap(resource_path(
             "resources\\Flowbot.ico")), QtGui.QIcon.Normal, QtGui.QIcon.Off)
@@ -144,11 +150,13 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.aTraceGraph: Optional[graphICMTrace] = None
         self.aWQGraph: Optional[graphWQGraph] = None
         self.aFSMInstallGraph: Optional[graphFSMInstall] = None
+        self.aFSMDashboard: Optional[dashboardFSM] = None
         self.a_dwf_graph: Optional[graphDWF] = None
 
         self.openFlowMonitors: Optional[flowMonitors] = None
         self.openRainGauges: Optional[rainGauges] = None
         self.mappedFlowMonitors: Optional[mappedFlowMonitors] = None
+        self.mappedRainGauges: Optional[mappedRainGauges] = None
         self.identifiedSurveyEvents: Optional[surveyEvents] = None
         self.summedFMs: Optional[Dict[str, summedFlowMonitor]] = None
         self.dummyFMs: Optional[Dict[str, dummyFlowMonitor]] = None
@@ -163,7 +171,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.mainPageIsSetup = False
         self.tabMapIsSetup = False
-        
+
         self.db_manager: Optional[DatabaseManager] = None
 
         self.setupMainWindow()
@@ -176,7 +184,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.initialiseAllVariables()
 
-        # self.load_project_from_filespec('C:/Temp/Flowbot/Flowbot Test Data/FSM/T1172.fbsqlite')
+        # self.load_project_from_filespec('C:/Temp/Flowbot/Flowbot Test Data/FSM/PhillipshillAllers.fbsqlite')
         # self.load_project_from_filespec('C:/Temp/Flowbot/Flowbot Test Data/RealWorldData/Sutton/test.fbsqlite')
 
     # def update_fsm_project_standard_item_model(self):
@@ -957,7 +965,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                                 QMessageBox.Yes | QMessageBox.No)
             if ret == QMessageBox.No:
                 return
-                        
+
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Please locate the batch import file CSV', self.lastOpenDialogPath, 'Flowbot FSM Batch File (*.csv)')
         if not path:
             return
@@ -980,7 +988,6 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 for row in reader:
                     if row:
                         table_data.append(row)
-                
 
             self.fsmProject = fsmProject()
             self.fsmProject.job_number = key_value_pairs['Survey Number']
@@ -1039,11 +1046,11 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         a_site.address = sLocation
                         a_site.mh_ref = sMHRef
                         self.fsmProject.add_site(a_site)
-                    
+
                     if (sMonitorType in ['FM', 'DM', 'PL'] and a_site.siteType == 'Location') or (sMonitorType in ['RG'] and a_site.siteType == 'Network Asset'):
-                        raise Exception(f"A Monitor of type '{sMonitorType}' can't be installed in a Site of type '{a_site.siteType}'")
-                    
-                    
+                        raise Exception(
+                            f"\nInstall Reference:{sInstallRef}\nA Monitor of type '{sMonitorType}' can't be installed in a Site of type '{a_site.siteType}'"
+                        )
 
                     a_mon = self.fsmProject.get_monitor(sMonID)
                     if a_mon is None:
@@ -1059,10 +1066,9 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                             a_mon.monitor_type = 'Rain Gauge'
                         self.fsmProject.add_monitor(a_mon)
                     else:
-                        raise Exception(f"A Monitor with an Asset ID of '{sMonID}' already exisits")
+                        raise Exception(f"\nInstall Reference:{sInstallRef}\nA Monitor with an Asset ID of '{sMonID}' already exisits")
                         # a_ins_check = self.fsmProject.get_current_install_by_monitor(sMonID)
                         # if a_ins_check is not None:
-
 
                     a_ins = self.fsmProject.get_install(sInstallRef)
                     if a_ins is None:
@@ -1073,13 +1079,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         a_ins.install_type = a_mon.monitor_type
                         a_ins.client_ref = sClientRef
                         a_ins.install_date = datetime.strptime(sInstalledDate, "%d/%m/%Y")
-                        if sShape == "C":
-                            a_ins.fm_pipe_shape = "Circular"
-                        else:
-                            a_ins.fm_pipe_shape = "Rectangular"
-                        a_ins.fm_pipe_height_mm = int(sHeight)
-                        a_ins.fm_pipe_width_mm = int(sWidth)
-                        a_ins.fm_sensor_offset_mm = int(sDepthOffset)
+                        if sMonitorType in ['FM', 'DM']:
+                            if sShape == "C":
+                                a_ins.fm_pipe_shape = "Circular"
+                            else:
+                                a_ins.fm_pipe_shape = "Rectangular"
+                            a_ins.fm_pipe_height_mm = int(sHeight)
+                            a_ins.fm_pipe_width_mm = int(sWidth)
+                            a_ins.fm_sensor_offset_mm = int(sDepthOffset)
                         self.fsmProject.add_install(a_ins)
 
                     a_raw = fsmRawData()
@@ -1094,27 +1101,25 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             logger.error('Exception occurred', exc_info=True)
             msg = QMessageBox(self)
             msg.critical(self, 'Error', f'An error occurred: {e}', QMessageBox.Ok)
-            
 
-# 'Install Reference'
-# 'Site ID'
-# 'Location'
-# 'Monitor Type (FM/DM/PL/RG)'
-# 'Asset ID'
-# 'Client Ref'
-# 'Installed Date (DD/MM/YYYY)'
-# 'Height (mm)'
-# 'Width (mm)'
-# 'Shape (C/R)'
-# 'Depth Offset mm'
-# 'MH Ref'
-# 'Rain Reference'
-# 'Silt Level mm'
+    # 'Install Reference'
+    # 'Site ID'
+    # 'Location'
+    # 'Monitor Type (FM/DM/PL/RG)'
+    # 'Asset ID'
+    # 'Client Ref'
+    # 'Installed Date (DD/MM/YYYY)'
+    # 'Height (mm)'
+    # 'Width (mm)'
+    # 'Shape (C/R)'
+    # 'Depth Offset mm'
+    # 'MH Ref'
+    # 'Rain Reference'
+    # 'Silt Level mm'
 
-#     print(f"Column '{header_name}' is at index {column_index}")
-# else:
-#     print(f"Column '{header_name}' not found in table headers")                
-
+    #     print(f"Column '{header_name}' is at index {column_index}")
+    # else:
+    #     print(f"Column '{header_name}' not found in table headers")
 
     #     return key_value_pairs, table_headers, table_data
 
@@ -1124,16 +1129,13 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     # print("Headers:", headers)
     # print("Data:", data)
 
-        
-        
-
     def create_fsm_job_csv_template(self):
 
         fileSpec, filter = QtWidgets.QFileDialog.getSaveFileName(self, "Save Batch Import Template File...", self.lastOpenDialogPath, 'Flowbot FSM Batch File (*.csv)')
         if len(fileSpec) == 0:
             return
-        
-# Define metadata
+
+        # Define metadata
         metadata = [
             ["Survey Name", "Clevedon"],
             ["Survey Number", "M9999"],
@@ -1179,7 +1181,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
             dlg_create_proj = flowbot_dialog_fsm_create_job(self)
             dlg_create_proj.setWindowTitle('Create Job')
-            # dlg_create_proj.show()
+            dlg_create_proj.dte_fsm_survey_start.setDateTime(QDateTime(datetime.now()))
+            dlg_create_proj.dte_fsm_survey_end.setDateTime(QDateTime(datetime.min))
             ret = dlg_create_proj.exec_()
             if ret == QDialog.Accepted:
 
@@ -1440,6 +1443,10 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                             remCallback.triggered.connect(lambda: self.add_fsm_inspection(a_inst))
                             menu.addAction(remCallback)
 
+                            remCallback = QtWidgets.QAction("Edit Monitor", menu)
+                            remCallback.triggered.connect(lambda: self.edit_fsm_monitor(a_inst.install_monitor_asset_id))
+                            menu.addAction(remCallback)
+
                             remCallback = QtWidgets.QAction("Remove Monitor", menu)
                             remCallback.triggered.connect(lambda: self.uninstall_fsm_monitor(a_inst))
                             menu.addAction(remCallback)
@@ -1485,6 +1492,10 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 menu = QMenu(self)
                 remCallback = QtWidgets.QAction("Edit Interim", menu)
                 remCallback.triggered.connect(lambda: self.edit_fsm_interim(
+                    int(item.text()[len("Interim: "):])))
+                menu.addAction(remCallback)
+                remCallback = QtWidgets.QAction("Delete Interim", menu)
+                remCallback.triggered.connect(lambda: self.delete_fsm_interim(
                     int(item.text()[len("Interim: "):])))
                 menu.addAction(remCallback)
 
@@ -2053,9 +2064,13 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 a_inst.data = self.post_process_raw_depthmonitor_data(a_raw)
             if a_inst.install_type == 'Pump Logger':
                 a_inst.data = self.post_process_raw_pumplogger_data(a_raw)
-            a_inst.data_start = a_inst.data['Date'].min().to_pydatetime()
-            a_inst.data_end = a_inst.data['Date'].max().to_pydatetime()
-            a_inst.data_date_updated = datetime.now()
+            if a_inst.data is not None:
+                a_inst.data_start = a_inst.data['Date'].min().to_pydatetime()
+                a_inst.data_end = a_inst.data['Date'].max().to_pydatetime()
+                time_diff = a_inst.data['Date'].diff()
+                time_diff_minutes = time_diff.dt.total_seconds() / 60
+                a_inst.data_interval = int(time_diff_minutes.dropna().iloc[0])
+                a_inst.data_date_updated = datetime.now()
 
         if show_progress:
             msg = QMessageBox(self)
@@ -2098,6 +2113,9 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def post_process_raw_rainfall_data(self, a_raw: fsmRawData, show_progress: bool = True):
 
+        if a_raw.rg_data is None:
+            return None
+        
         tip_timestamps = a_raw.rg_data['Timestamp'].to_list()
 
         # Create full 2-minute interval range
@@ -2219,17 +2237,16 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         return df.reset_index().rename(columns={'index': 'Date', 'Value': 'IntensityData'})
 
     def post_process_raw_flowmonitor_data(self, a_raw: fsmRawData):
-
         calculator = MonitorDataFlowCalculator(a_raw)
         return calculator.calculate_flow()
 
     def post_process_raw_depthmonitor_data(self, a_raw: fsmRawData):
-
-        calculator = PumpLoggerDataCalculator(a_raw)
-        return calculator.calculate_pumplog()
+        calculator = MonitorDataFlowCalculator(a_raw)
+        return calculator.calculate_flow()
 
     def post_process_raw_pumplogger_data(self, a_raw: fsmRawData):
-        pass
+        calculator = PumpLoggerDataCalculator(a_raw)
+        return calculator.calculate_pumplog()
 
     def fsm_export_data_processed(self):
 
@@ -2241,10 +2258,9 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         for a_inst in self.fsmProject.dict_fsm_installs.values():
 
             if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
-                pass
+                a_inst.writeFDVFileFromProcessedData(file_path)
             elif a_inst.install_type == 'Rain Gauge':
-                self.write_rangauge_to_file(file_path, a_inst)
-
+                a_inst.writeRFileFromProcessedData(file_path)
             else:
                 pass
 
@@ -2252,56 +2268,57 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         msg.setWindowIcon(self.myIcon)
         msg.information(self, 'Export Processed Data', 'Export Complete', QMessageBox.Ok)
 
-    def write_rangauge_to_file(self, file_path: str, rg_inst: fsmInstall):
 
-        file_spec = os.path.join(file_path, f'{self.fsmProject.job_number}_{rg_inst.client_ref}.r')
+    # def write_rangauge_to_file(self, file_path: str, rg_inst: fsmInstall):
 
-        identifier = f'{self.fsmProject.job_number}_{rg_inst.client_ref}'
-        # 'YYMMDDHHMM'
-        start_date = rg_inst.data_start.strftime('%y%m%d%H%M')
-        end_date = rg_inst.data_end.strftime('%y%m%d%H%M')
+    #     file_spec = os.path.join(file_path, f'{self.fsmProject.job_number}_{rg_inst.client_ref}.r')
 
-        header = "\n".join(["**DATA_FORMAT:               1,ASCII",
-                            f"**IDENTIFIER:                1,{identifier}",
-                            "**FIELD:                     1,INTENSITY",
-                            "**UNITS:                     1,MM/HR",
-                            "**FORMAT:                    2,F15.1,[5]",
-                            "**RECORD_LENGTH:             I2,75",
-                            "**CONSTANTS:                 35,LOCATION,0_ANT_RAIN,1_ANT_RAIN,2_ANT_RAIN,",
-                            "*+                           3_ANT_RAIN,4_ANT_RAIN,5_ANT_RAIN,6_ANT_RAIN,",
-                            "*+                           7_ANT_RAIN,8_ANT_RAIN,9_ANT_RAIN,10_ANT_RAIN,",
-                            "*+                           11_ANT_RAIN,12_ANT_RAIN,13_ANT_RAIN,14_ANT_RAIN,",
-                            "*+                           15_ANT_RAIN,16_ANT_RAIN,17_ANT_RAIN,18_ANT_RAIN,",
-                            "*+                           19_ANT_RAIN,20_ANT_RAIN,21_ANT_RAIN,22_ANT_RAIN,",
-                            "*+                           23_ANT_RAIN,24_ANT_RAIN,25_ANT_RAIN,26_ANT_RAIN,",
-                            "*+                           27_ANT_RAIN,28_ANT_RAIN,29_ANT_RAIN,30_ANT_RAIN,",
-                            "*+                           START,END,INTERVAL",
-                            "**C_UNITS:                   35,,MM,MM,MM,MM,MM,MM,MM,MM,MM,MM,",
-                            "*+                           MM,MM,MM,MM,MM,MM,MM,MM,MM,MM,MM,",
-                            "*+                           MM,MM,MM,MM,MM,MM,MM,MM,MM,MM,GMT,GMT,MIN",
-                            "**C_FORMAT:                  8,A20,F7.2/15F5.1/15F5.1/D10,2X,D10,I4",
-                            "*CSTART",
-                            "UNKNOWN                0.00",
-                            " -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0",
-                            " -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0",
-                            f"{start_date}  {end_date}    2",
-                            "*CEND"])
+    #     identifier = f'{self.fsmProject.job_number}_{rg_inst.client_ref}'
+    #     # 'YYMMDDHHMM'
+    #     start_date = rg_inst.data_start.strftime('%y%m%d%H%M')
+    #     end_date = rg_inst.data_end.strftime('%y%m%d%H%M')
 
-        try:
-            # Write the header and data
-            with open(file_spec, 'w') as file:
-                # Write header
-                file.write(header + "\n")
+    #     header = "\n".join(["**DATA_FORMAT:               1,ASCII",
+    #                         f"**IDENTIFIER:                1,{identifier}",
+    #                         "**FIELD:                     1,INTENSITY",
+    #                         "**UNITS:                     1,MM/HR",
+    #                         "**FORMAT:                    2,F15.1,[5]",
+    #                         "**RECORD_LENGTH:             I2,75",
+    #                         "**CONSTANTS:                 35,LOCATION,0_ANT_RAIN,1_ANT_RAIN,2_ANT_RAIN,",
+    #                         "*+                           3_ANT_RAIN,4_ANT_RAIN,5_ANT_RAIN,6_ANT_RAIN,",
+    #                         "*+                           7_ANT_RAIN,8_ANT_RAIN,9_ANT_RAIN,10_ANT_RAIN,",
+    #                         "*+                           11_ANT_RAIN,12_ANT_RAIN,13_ANT_RAIN,14_ANT_RAIN,",
+    #                         "*+                           15_ANT_RAIN,16_ANT_RAIN,17_ANT_RAIN,18_ANT_RAIN,",
+    #                         "*+                           19_ANT_RAIN,20_ANT_RAIN,21_ANT_RAIN,22_ANT_RAIN,",
+    #                         "*+                           23_ANT_RAIN,24_ANT_RAIN,25_ANT_RAIN,26_ANT_RAIN,",
+    #                         "*+                           27_ANT_RAIN,28_ANT_RAIN,29_ANT_RAIN,30_ANT_RAIN,",
+    #                         "*+                           START,END,INTERVAL",
+    #                         "**C_UNITS:                   35,,MM,MM,MM,MM,MM,MM,MM,MM,MM,MM,",
+    #                         "*+                           MM,MM,MM,MM,MM,MM,MM,MM,MM,MM,MM,",
+    #                         "*+                           MM,MM,MM,MM,MM,MM,MM,MM,MM,MM,GMT,GMT,MIN",
+    #                         "**C_FORMAT:                  8,A20,F7.2/15F5.1/15F5.1/D10,2X,D10,I4",
+    #                         "*CSTART",
+    #                         "UNKNOWN                0.00",
+    #                         " -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0",
+    #                         " -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0",
+    #                         f"{start_date}  {end_date}    2",
+    #                         "*CEND"])
 
-                # Write DataFrame data (IntensityValues) in rows of 5 values each
-                values = rg_inst.data['IntensityData'].tolist()
-                for i in range(0, len(values), 5):
-                    row = values[i:i+5]
-                    file.write("".join(f"{value: >15.1f}" for value in row) + "\n")
+    #     try:
+    #         # Write the header and data
+    #         with open(file_spec, 'w') as file:
+    #             # Write header
+    #             file.write(header + "\n")
 
-                file.write("*END")
-        except Exception as e:
-            print(f"An error occurred: {e}")
+    #             # Write DataFrame data (IntensityValues) in rows of 5 values each
+    #             values = rg_inst.data['IntensityData'].tolist()
+    #             for i in range(0, len(values), 5):
+    #                 row = values[i:i+5]
+    #                 file.write("".join(f"{value: >15.1f}" for value in row) + "\n")
+
+    #             file.write("*END")
+    #     except Exception as e:
+    #         print(f"An error occurred: {e}")
 
     def review_fsm_interim_data_imports(self, interim_id):
 
@@ -3030,6 +3047,19 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             msg.critical(
                 self, 'Error', f'An error occurred: {e}', QMessageBox.Ok)
 
+    def delete_fsm_interim(self, interim_id: int):
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Confirm Deletion")
+        msg_box.setText(
+            "Are you sure you want to delete this interim?")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        response = msg_box.exec_()
+
+        if response == QMessageBox.Yes:
+            # Proceed with deletion
+            self.fsmProject.delete_interim(interim_id)
+            self.update_fsm_project_standard_item_model()
+
     def edit_fsm_interim(self, interim_id: int):
 
         try:
@@ -3044,11 +3074,24 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             dlgInterimDates.setWindowTitle('Edit Interim')
             # dlgInterimDates.show()
             ret = dlgInterimDates.exec_()
+            interimChanged = False
             if ret == QDialog.Accepted:
-                self.fsmProject.dict_fsm_interims[interim_id].interim_start_date = dlgInterimDates.dte_interim_start.dateTime(
-                ).toPyDateTime()
-                self.fsmProject.dict_fsm_interims[interim_id].interim_end_date = dlgInterimDates.dte_interim_end.dateTime(
-                ).toPyDateTime()
+                if self.fsmProject.dict_fsm_interims[interim_id].interim_start_date != dlgInterimDates.dte_interim_start.dateTime().toPyDateTime():
+                    self.fsmProject.dict_fsm_interims[interim_id].interim_start_date = dlgInterimDates.dte_interim_start.dateTime().toPyDateTime()
+                    interimChanged = True
+                if self.fsmProject.dict_fsm_interims[interim_id].interim_end_date != dlgInterimDates.dte_interim_end.dateTime().toPyDateTime():
+                    self.fsmProject.dict_fsm_interims[interim_id].interim_end_date = dlgInterimDates.dte_interim_end.dateTime().toPyDateTime()
+                    interimChanged = True
+                if interimChanged:
+                    aInt = self.fsmProject.dict_fsm_interims[interim_id]
+                    aInt.data_import_complete = False
+                    aInt.data_classification_complete = False
+                    aInt.identify_events_complete = False
+                    aInt.fm_data_review_complete = False
+                    aInt.rg_data_review_complete = False
+                    aInt.pl_data_review_complete = False
+                    aInt.report_complete = False
+
                 self.update_fsm_project_standard_item_model()
                 self.enable_fsm_menu()
         except Exception as e:
@@ -3260,7 +3303,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     def add_fsm_monitor(self):
 
         try:
-            dlg_add_monitor = flowbot_dialog_fsm_add_monitor(self)
+            dlg_add_monitor = flowbot_dialog_fsm_add_monitor(editing=False)
             dlg_add_monitor.setWindowTitle('Add Monitor')
             ret = dlg_add_monitor.exec_()
             if ret == QDialog.Accepted:
@@ -3287,36 +3330,33 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     def edit_fsm_monitor(self, monitor_id: str):
 
         try:
-            dlg_edit = flowbot_dialog_fsm_add_monitor()
-
+            dlg_edit = flowbot_dialog_fsm_add_monitor(self.fsmProject.dict_fsm_monitors[monitor_id], True)
             dlg_edit.setWindowTitle('Edit Monitor')
 
-            if not self.fsmProject.monitor_is_installed(monitor_id):
+            # if not self.fsmProject.monitor_is_installed(monitor_id):
 
-                dlg_edit.txt_asset_id.setText(
-                    self.fsmProject.dict_fsm_monitors[monitor_id].monitor_asset_id)
-                dlg_edit.txt_asset_id.setEnabled(False)
+            # dlg_edit.txt_asset_id.setText(
+            #     self.fsmProject.dict_fsm_monitors[monitor_id].monitor_asset_id)
+            # dlg_edit.txt_asset_id.setEnabled(False)
 
-                dlg_edit.cbo_monitor_type.setCurrentText(
-                    self.fsmProject.dict_fsm_monitors[monitor_id].monitor_type)
-                dlg_edit.cbo_monitor_type.setCurrentText(
-                    self.fsmProject.dict_fsm_monitors[monitor_id].monitor_type)
-                dlg_edit.cbo_subtype.setCurrentText(
-                    self.fsmProject.dict_fsm_monitors[monitor_id].monitor_sub_type)
-                dlg_edit.txt_pmac_id.setText(
-                    self.fsmProject.dict_fsm_monitors[monitor_id].pmac_id)
+            # dlg_edit.cbo_monitor_type.setCurrentText(
+            #     self.fsmProject.dict_fsm_monitors[monitor_id].monitor_type)
+            # dlg_edit.cbo_monitor_type.setCurrentText(
+            #     self.fsmProject.dict_fsm_monitors[monitor_id].monitor_type)
+            # dlg_edit.cbo_subtype.setCurrentText(
+            #     self.fsmProject.dict_fsm_monitors[monitor_id].monitor_sub_type)
+            # dlg_edit.txt_pmac_id.setText(
+            #     self.fsmProject.dict_fsm_monitors[monitor_id].pmac_id)
 
-                ret = dlg_edit.exec_()
-                if ret == QDialog.Accepted:
-
-                    self.fsmProject.dict_fsm_monitors[monitor_id].monitor_type = dlg_edit.cbo_monitor_type.currentText(
-                    )
-                    self.fsmProject.dict_fsm_monitors[monitor_id].monitor_sub_type = dlg_edit.cbo_subtype.currentText(
-                    )
-                    self.fsmProject.dict_fsm_monitors[monitor_id].pmac_id = dlg_edit.txt_pmac_id.text(
-                    )
-
-                    self.update_fsm_project_standard_item_model()
+            ret = dlg_edit.exec_()
+            if ret == QDialog.Accepted:
+                self.fsmProject.dict_fsm_monitors[monitor_id].monitor_type = dlg_edit.cbo_monitor_type.currentText()
+                self.fsmProject.dict_fsm_monitors[monitor_id].monitor_sub_type = dlg_edit.cbo_subtype.currentText()
+                self.fsmProject.dict_fsm_monitors[monitor_id].pmac_id = dlg_edit.txt_pmac_id.text()
+                a_inst = self.fsmProject.get_install_by_monitor(monitor_id)
+                if a_inst is not None:
+                    a_inst.install_type = dlg_edit.cbo_monitor_type.currentText()
+                self.update_fsm_project_standard_item_model()
         except Exception as e:
             logger.error('Exception occurred', exc_info=True)
             msg = QMessageBox(self)
@@ -4066,112 +4106,147 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.mainMapCanvas.setDestinationCrs(self.thisQgsProject.crs())
         self.mainMapCanvas.xyCoordinates.connect(self.updateCoordinates)
 
-        # In your setup/initialization code:
-        self.mainMapCanvas.extentsChanged.connect(self.debugExtentsChanged)
-
-        self.mainMapCanvas.viewport().installEventFilter(self)
-        mapToolbar = QToolBar()
-        mapToolbarActionGroup = QActionGroup(self)
-        mapToolbarActionGroup.setExclusive(True)
+        #Set up tools for the toolbar
 
         myIcon = QtGui.QIcon()
-        myIcon.addPixmap(QtGui.QPixmap(
-            ":/icons/resources/toggleImagery.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.actionMapToggleImagery = QAction(
-            myIcon, 'Toggle World Imagery', self, triggered=self.mapToggleWorld_Imagery)
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/toggleImagery.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionMapToggleImagery = QAction(myIcon, 'Toggle World Imagery', self, triggered=self.mapToggleWorld_Imagery)
         self.actionMapToggleImagery.setCheckable(False)
-        mapToolbar.addAction(self.actionMapToggleImagery)
-        mapToolbarActionGroup.addAction(self.actionMapToggleImagery)
 
         myIcon = QtGui.QIcon()
-        myIcon.addPixmap(QtGui.QPixmap(
-            ":/icons/resources/toggleStreetMap.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.actionMapToggleStreetMap = QAction(
-            myIcon, 'Toggle World Street Map', self, triggered=self.mapToggleStreet_Map)
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/toggleStreetMap.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionMapToggleStreetMap = QAction(myIcon, 'Toggle World Street Map', self, triggered=self.mapToggleStreet_Map)
         self.actionMapToggleStreetMap.setCheckable(False)
-        mapToolbar.addAction(self.actionMapToggleStreetMap)
-        mapToolbarActionGroup.addAction(self.actionMapToggleStreetMap)
 
-        mapToolbar.addSeparator()
+        # myIcon = QtGui.QIcon()
+        # myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/navPan.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        # self.actionMapPan = QAction(myIcon, 'Pan Map', self, triggered=self.setPanMapTool)
+        # self.actionMapPan.setCheckable(True)
+
+        # myIcon = QtGui.QIcon()
+        # myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/navZoomIn.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        # self.actionZoomIn = QAction(myIcon, 'Zoom In', self, triggered=self.setZoomInTool)
+        # self.actionZoomIn.setCheckable(True)
+
+        # myIcon = QtGui.QIcon()
+        # myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/navZoomOut.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        # self.actionZoomOut = QAction(myIcon, 'Zoom Out', self, triggered=self.setZoomOutTool)
+        # self.actionZoomOut.setCheckable(True)
 
         myIcon = QtGui.QIcon()
-        myIcon.addPixmap(QtGui.QPixmap(
-            ":/icons/resources/navPan.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.actionMapPan = QAction(myIcon, 'Pan Map', self,
-                                    triggered=self.setPanMapTool)
-        self.actionMapPan.setCheckable(True)
-        mapToolbar.addAction(self.actionMapPan)
-        mapToolbarActionGroup.addAction(self.actionMapPan)
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/navPan.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionPan = QAction(myIcon, 'Pan Map', self)
+        self.actionPan.setCheckable(True)
+        self.actionPan.triggered.connect(self.setPanMapTool)
 
         myIcon = QtGui.QIcon()
-        myIcon.addPixmap(QtGui.QPixmap(
-            ":/icons/resources/navZoomIn.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.actionZoomIn = QAction(myIcon, 'Zoom In', self,
-                                    triggered=self.setZoomInTool)
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/navZoomIn.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionZoomIn = QAction(myIcon, 'Zoom In', self)
         self.actionZoomIn.setCheckable(True)
-        mapToolbar.addAction(self.actionZoomIn)
-        mapToolbarActionGroup.addAction(self.actionZoomIn)
+        self.actionZoomIn.triggered.connect(self.setZoomInTool)
 
         myIcon = QtGui.QIcon()
-        myIcon.addPixmap(QtGui.QPixmap(
-            ":/icons/resources/navZoomOut.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.actionZoomOut = QAction(myIcon, 'Zoom Out', self,
-                                     triggered=self.setZoomOutTool)
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/navZoomOut.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionZoomOut = QAction(myIcon, 'Zoom Out', self)
         self.actionZoomOut.setCheckable(True)
+        self.actionZoomOut.triggered.connect(self.setZoomOutTool)        
+
+        myIcon = QtGui.QIcon()
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/navZoomExtents.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionZoomFull = QAction(myIcon, 'Zoom Full', self, triggered=self.zoomToFullExtent)
+
+        myIcon = QtGui.QIcon()
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/navZoomPrevious.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionZoomPrevious = QAction(myIcon, 'Zoom Previous', self, triggered=self.zoomToPreviousExtent)
+
+        myIcon = QtGui.QIcon()
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/navZoomNext.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionZoomNext = QAction(myIcon, 'Zoom Next', self, triggered=self.zoomToNextExtent)
+
+
+        myIcon = QtGui.QIcon()
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/createIDWTotalDepth.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionShowRainfall = QAction(myIcon, 'Show Rainfall', self, triggered=self.gis_show_rainfall)
+        self.actionShowRainfall.setCheckable(False)
+
+        # myIcon = QtGui.QIcon()
+        # myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/createVirtualRaingauge.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        # self.actionCreateVirtualRG = QAction(myIcon, 'Create Virtual Rain Gauge', self, triggered=self.gis_add_virtual_raingauge)
+        # self.actionCreateVirtualRG.setCheckable(True)
+        myIcon = QtGui.QIcon()
+        myIcon.addPixmap(QtGui.QPixmap(":/icons/resources/createVirtualRaingauge.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        self.actionCreateVirtualRG = QAction(myIcon, 'Create Virtual Rain Gauge', self)
+        self.actionCreateVirtualRG.setCheckable(True)
+        self.actionCreateVirtualRG.triggered.connect(self.setCreateVirtualRGTool)
+
+        mapToolbar = QToolBar()
+        # mapToolbarActionGroup = QActionGroup(self)
+        # mapToolbarActionGroup.setExclusive(True)
+        mapToolbar.addAction(self.actionMapToggleImagery)
+        # mapToolbarActionGroup.addAction(self.actionMapToggleImagery)        
+        mapToolbar.addAction(self.actionMapToggleStreetMap)
+        # mapToolbarActionGroup.addAction(self.actionMapToggleStreetMap)
+        mapToolbar.addSeparator()        
+        mapToolbar.addAction(self.actionPan)
+        # mapToolbarActionGroup.addAction(self.actionPan)
+        mapToolbar.addAction(self.actionZoomIn)
+        # mapToolbarActionGroup.addAction(self.actionZoomIn)        
         mapToolbar.addAction(self.actionZoomOut)
-        mapToolbarActionGroup.addAction(self.actionZoomOut)
-
-        myIcon = QtGui.QIcon()
-        myIcon.addPixmap(QtGui.QPixmap(
-            ":/icons/resources/navZoomExtents.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.actionZoomFull = QAction(
-            myIcon, 'Zoom Full', self, triggered=self.zoomToFullExtent)
+        # mapToolbarActionGroup.addAction(self.actionZoomOut)        
         mapToolbar.addAction(self.actionZoomFull)
-        mapToolbarActionGroup.addAction(self.actionZoomFull)
-
-        myIcon = QtGui.QIcon()
-        myIcon.addPixmap(QtGui.QPixmap(
-            ":/icons/resources/navZoomPrevious.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.actionZoomPrevious = QAction(
-            myIcon, 'Zoom Previous', self, triggered=self.zoomToPreviousExtent)
+        # mapToolbarActionGroup.addAction(self.actionZoomFull)        
         mapToolbar.addAction(self.actionZoomPrevious)
-        mapToolbarActionGroup.addAction(self.actionZoomPrevious)
-
-        myIcon = QtGui.QIcon()
-        myIcon.addPixmap(QtGui.QPixmap(
-            ":/icons/resources/navZoomNext.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.actionZoomNext = QAction(
-            myIcon, 'Zoom Next', self, triggered=self.zoomToNextExtent)
+        # mapToolbarActionGroup.addAction(self.actionZoomPrevious)        
         mapToolbar.addAction(self.actionZoomNext)
-        mapToolbarActionGroup.addAction(self.actionZoomNext)
-
+        # mapToolbarActionGroup.addAction(self.actionZoomNext)
+        mapToolbar.addSeparator()
+        mapToolbar.addAction(self.actionShowRainfall)
+        # mapToolbarActionGroup.addAction(self.actionShowRainfall)        
+        mapToolbar.addAction(self.actionCreateVirtualRG)
+        # mapToolbarActionGroup.addAction(self.actionCreateVirtualRG)
         self.tlbMapToolbar.layout().setMenuBar(mapToolbar)
+
+
+        self.toolPan = QgsMapToolPan(self.mainMapCanvas)
+        self.toolPan.setAction(self.actionPan)
+        self.toolZoomIn = QgsMapToolZoom(self.mainMapCanvas, False)
+        self.toolZoomIn.setAction(self.actionZoomIn)
+        self.toolZoomOut = QgsMapToolZoom(self.mainMapCanvas, True)
+        self.toolZoomOut.setAction(self.actionZoomOut)
+        self.toolCreateVirtualRG = QgsMapToolEmitPoint(self.mainMapCanvas)
+        self.toolCreateVirtualRG.setAction(self.actionCreateVirtualRG)
+        self.toolCreateVirtualRG.canvasClicked.connect(self.createVirtualRG)
+        self.toolUpdateFMCoords = QgsMapToolEmitPoint(self.mainMapCanvas)
+        self.toolUpdateFMCoords.canvasClicked.connect(self.update_fm_coordinates)
+        self.toolUpdateRGCoords = QgsMapToolEmitPoint(self.mainMapCanvas)
+        self.toolUpdateRGCoords.canvasClicked.connect(self.update_rg_coordinates)
 
         # Create Layer widget
         self.thisQgsLayerTree = self.thisQgsProject.layerTreeRoot()
-        self.thisQgsLayerTreeMapCanvasBridge = QgsLayerTreeMapCanvasBridge(
-            self.thisQgsLayerTree, self.mainMapCanvas)
+        self.thisQgsLayerTreeMapCanvasBridge = QgsLayerTreeMapCanvasBridge(self.thisQgsLayerTree, self.mainMapCanvas)
         self.thisQgsLayerTreeModel = QgsLayerTreeModel(self.thisQgsLayerTree)
         self.thisQgsLayerTreeModel.setFlag(QgsLayerTreeModel.AllowNodeReorder)
         self.thisQgsLayerTreeModel.setFlag(QgsLayerTreeModel.AllowNodeRename)
-        self.thisQgsLayerTreeModel.setFlag(
-            QgsLayerTreeModel.AllowNodeChangeVisibility)
+        self.thisQgsLayerTreeModel.setFlag(QgsLayerTreeModel.AllowNodeChangeVisibility)
         self.thisQgsLayerTreeModel.setFlag(QgsLayerTreeModel.ShowLegend)
-        self.thisQgsLayerTreeView = QgsLayerTreeView()
-        self.thisQgsLayerTreeView.setModel(self.thisQgsLayerTreeModel)
-        # Create a scroll area to contain the layer tree view
-        # scroll_area = QScrollArea()
-        # self.scroll_area.setWidgetResizable(True)
-        # self.scroll_area.setMaximumWidth(250)
-        self.scroll_area.setWidget(self.thisQgsLayerTreeView)
 
-        # total_width = self.map_splitter.width()
-        # sizes = [int(total_width * 0.2), int(total_width * 0.8)]
-        # self.map_splitter.setSizes(sizes)
-        # self.tabMapHBoxLayout.insertWidget(0, scroll_area)
-        self.thisQgsLayerTreeView.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.thisQgsLayerTreeView.customContextMenuRequested[QtCore.QPoint].connect(
-            self.openQgsLayerTreeViewContextMenu)
+        self.mainMapLayerTreeView.setModel(self.thisQgsLayerTreeModel)
+        self.mainMapLayerTreeView.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.mainMapLayerTreeView.customContextMenuRequested[QtCore.QPoint].connect(self.openQgsLayerTreeViewContextMenu)        
+
+        self.mainMapCanvas.contextMenuAboutToShow.connect(self.populateMainMapCanvasContextMenu)
+
+        self.mainMapLayerTreeView.viewport().installEventFilter(self)
+        # self.mainMapCanvas.viewport().installEventFilter(self)
+
+        self.grp_monitors = self.thisQgsLayerTree.addGroup('Monitors')
+        self.grp_outputs = self.thisQgsLayerTree.addGroup('Outputs')
+        self.grp_basemaps = self.thisQgsLayerTree.addGroup('Basemaps')
+
+        # uri = f"{geometry_type}?crs={crs}&field=id:integer&field=name:string(255)"
+        # memory_layer = QgsVectorLayer(uri, name, "memory")
+        # self.vl_flow_monitors: QgsVectorLayer = None
+        # self.vl_rain_gauges: QgsVectorLayer = None
 
     def setupMainMenu(self):
 
@@ -4207,6 +4282,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.actionICM_Data_Import.triggered.connect(self.importICMModelData)
         self.actionEdit_Monitor_Model_Data.triggered.connect(
             self.updateFlowMonitorModelData)
+        # self.actionInterpolateData.triggered.connect(self.interpolateFlowMonitorData)
 
         self.actionWQ_add_monitor.triggered.connect(self.add_wq_monitor)
         self.actionWQ_rem_monitor.triggered.connect(
@@ -4368,34 +4444,53 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.rbnWQMeanValues.toggled.connect(self.update_plot)
         self.cboWQFrequency.currentIndexChanged.connect(self.update_plot)
 
+    # def openQgsLayerTreeViewContextMenu(self, position):
+
+    #     # level = self.getTreeViewLevel(self.trwSummedFMs)
+    #     if not self.thisQgsLayerTreeView.index2node(self.thisQgsLayerTreeView.indexAt(position)) is None:
+    #         if self.thisQgsLayerTreeView.index2node(self.thisQgsLayerTreeView.indexAt(position)).nodeType() == QgsLayerTreeNode.NodeType.NodeLayer:
+    #             test = self.thisQgsLayerTreeView.index2node(
+    #                 self.thisQgsLayerTreeView.indexAt(position)).layer()
+    #             if type(test) == QgsVectorLayer:
+    #                 menu = QMenu()
+    #                 myCallback = QtWidgets.QAction("Zoom to Layer", menu)
+    #                 myCallback.triggered.connect(
+    #                     lambda: self.zoomToLayer(test))
+    #                 menu.addAction(myCallback)
+
+    #                 # if test != self.worldImageryLayer and test != self.worldStreetMapLayer:
+    #                 myCallback = QtWidgets.QAction("Remove Layer", menu)
+    #                 myCallback.triggered.connect(
+    #                     lambda: self.removeLayer(test))
+    #                 menu.addAction(myCallback)
+
+    #                 if not len(menu.actions()) == 0:
+    #                     menu.exec_(
+    #                         self.thisQgsLayerTreeView.mapToGlobal(position))
+
     def openQgsLayerTreeViewContextMenu(self, position):
 
         # level = self.getTreeViewLevel(self.trwSummedFMs)
-        if not self.thisQgsLayerTreeView.index2node(self.thisQgsLayerTreeView.indexAt(position)) is None:
-            if self.thisQgsLayerTreeView.index2node(self.thisQgsLayerTreeView.indexAt(position)).nodeType() == QgsLayerTreeNode.NodeType.NodeLayer:
-                test = self.thisQgsLayerTreeView.index2node(
-                    self.thisQgsLayerTreeView.indexAt(position)).layer()
+        if not self.mainMapLayerTreeView.index2node(self.mainMapLayerTreeView.indexAt(position)) is None:
+            if self.mainMapLayerTreeView.index2node(self.mainMapLayerTreeView.indexAt(position)).nodeType() == QgsLayerTreeNode.NodeType.NodeLayer:
+                test = self.mainMapLayerTreeView.index2node(
+                    self.mainMapLayerTreeView.indexAt(position)).layer()
+                menu = QMenu()
+                myCallback = QtWidgets.QAction("Zoom to Layer", menu)
+                myCallback.triggered.connect(lambda: self.zoomToLayer(test))
+                menu.addAction(myCallback)
                 if type(test) == QgsVectorLayer:
-                    menu = QMenu()
-                    myCallback = QtWidgets.QAction("Zoom to Layer", menu)
-                    myCallback.triggered.connect(
-                        lambda: self.zoomToLayer(test))
-                    menu.addAction(myCallback)
-
-                    # if test != self.worldImageryLayer and test != self.worldStreetMapLayer:
                     myCallback = QtWidgets.QAction("Remove Layer", menu)
-                    myCallback.triggered.connect(
-                        lambda: self.removeLayer(test))
+                    myCallback.triggered.connect(lambda: self.removeLayer(test))
                     menu.addAction(myCallback)
 
-                    if not len(menu.actions()) == 0:
-                        menu.exec_(
-                            self.thisQgsLayerTreeView.mapToGlobal(position))
-
-    def debugExtentsChanged(self):
-        """Slot that gets called whenever the map canvas changes its extents."""
-        current_extent = self.mainMapCanvas.extent()
-        print("Map Canvas extents changed to:", current_extent.toString())
+                if not len(menu.actions()) == 0:
+                    menu.exec_(self.mainMapLayerTreeView.mapToGlobal(position))
+                        
+    # def debugExtentsChanged(self):
+    #     """Slot that gets called whenever the map canvas changes its extents."""
+    #     current_extent = self.mainMapCanvas.extent()
+    #     print("Map Canvas extents changed to:", current_extent.toString())
 
     # def setZoomInTool(self):
     #     if self.actionZoomIn.isChecked() is True:
@@ -4407,87 +4502,29 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     #             self.mainMapCanvas.unsetMapTool(self.currentMapTool)
     #             self.currentMapTool = None
 
-    def setZoomInTool(self):
-        if self.actionZoomIn.isChecked():
-            self.currentMapTool = QgsMapToolZoom(self.mainMapCanvas, False)  # False => Zoom In
-            self.currentMapTool.setAction(self.actionZoomIn)
-            self.mainMapCanvas.setMapTool(self.currentMapTool)
-        else:
-            if self.mainMapCanvas.mapTool() == self.currentMapTool:
-                self.mainMapCanvas.unsetMapTool(self.currentMapTool)
-                self.currentMapTool = None
+    def setCreateVirtualRGTool(self):
+        if self.mainMapCanvas.mapTool() == self.toolCreateVirtualRG:
+            self.mainMapCanvas.unsetMapTool(self.toolCreateVirtualRG)
+        else:        
+            self.mainMapCanvas.setMapTool(self.toolCreateVirtualRG)
 
-    # def setZoomOutTool(self):
-    #     if self.actionZoomOut.isChecked() is True:
-    #         self.currentMapTool = QgsMapToolZoom(
-    #             self.mainMapCanvas, True)  # To zoom out
-    #         self.mainMapCanvas.setMapTool(self.currentMapTool)
-    #     else:
-    #         if self.mainMapCanvas.mapTool() == self.currentMapTool:
-    #             self.mainMapCanvas.unsetMapTool(self.currentMapTool)
-    #             self.currentMapTool = None
+    def setZoomInTool(self):
+        if self.mainMapCanvas.mapTool() == self.toolZoomIn:
+            self.mainMapCanvas.unsetMapTool()
+        else:
+            self.mainMapCanvas.setMapTool(self.toolZoomIn)
 
     def setZoomOutTool(self):
-        if self.actionZoomOut.isChecked():
-            self.currentMapTool = QgsMapToolZoom(self.mainMapCanvas, True)   # True => Zoom Out
-            self.currentMapTool.setAction(self.actionZoomOut)
-            self.mainMapCanvas.setMapTool(self.currentMapTool)
+        if self.mainMapCanvas.mapTool() == self.toolZoomOut:
+            self.mainMapCanvas.unsetMapTool(self.toolZoomOut)
         else:
-            if self.mainMapCanvas.mapTool() == self.currentMapTool:
-                self.mainMapCanvas.unsetMapTool(self.currentMapTool)
-                self.currentMapTool = None    
-
-    # def setPanMapTool(self):
-    #     if self.actionMapPan.isChecked() is True:
-    #         self.currentMapTool = QgsMapToolPan(self.mainMapCanvas)  # To pan
-    #         self.mainMapCanvas.setMapTool(self.currentMapTool)
-    #     else:
-    #         if self.mainMapCanvas.mapTool() == self.currentMapTool:
-    #             self.mainMapCanvas.unsetMapTool(self.currentMapTool)
-    #             self.currentMapTool = None
+            self.mainMapCanvas.setMapTool(self.toolZoomOut)
 
     def setPanMapTool(self):
-        if self.actionMapPan.isChecked():
-            self.currentMapTool = QgsMapToolPan(self.mainMapCanvas)
-            self.currentMapTool.setAction(self.actionMapPan)
-            self.mainMapCanvas.setMapTool(self.currentMapTool)
+        if self.mainMapCanvas.mapTool() == self.toolPan:
+            self.mainMapCanvas.unsetMapTool(self.toolPan)
         else:
-            if self.mainMapCanvas.mapTool() == self.currentMapTool:
-                self.mainMapCanvas.unsetMapTool(self.currentMapTool)
-                self.currentMapTool = None
-
-    # def setZoomInTool(self):
-    #     if self.actionZoomIn.isChecked():
-    #         zoomInTool = QgsMapToolZoom(self.mainMapCanvas, False)  # False => Zoom In
-    #         zoomInTool.setAction(self.actionZoomIn)                  # <--- Link to the QAction
-    #         self.currentMapTool = zoomInTool
-    #         self.mainMapCanvas.setMapTool(self.currentMapTool)
-    #     else:
-    #         if self.mainMapCanvas.mapTool() == self.currentMapTool:
-    #             self.mainMapCanvas.unsetMapTool(self.currentMapTool)
-    #             self.currentMapTool = None
-
-    # def setZoomOutTool(self):
-    #     if self.actionZoomOut.isChecked():
-    #         zoomOutTool = QgsMapToolZoom(self.mainMapCanvas, True)   # True => Zoom Out
-    #         zoomOutTool.setAction(self.actionZoomOut)                # <--- Link to the QAction
-    #         self.currentMapTool = zoomOutTool
-    #         self.mainMapCanvas.setMapTool(self.currentMapTool)
-    #     else:
-    #         if self.mainMapCanvas.mapTool() == self.currentMapTool:
-    #             self.mainMapCanvas.unsetMapTool(self.currentMapTool)
-    #             self.currentMapTool = None
-
-    # def setPanMapTool(self):
-    #     if self.actionMapPan.isChecked():
-    #         panTool = QgsMapToolPan(self.mainMapCanvas)
-    #         panTool.setAction(self.actionMapPan)                     # <--- Link to the QAction
-    #         self.currentMapTool = panTool
-    #         self.mainMapCanvas.setMapTool(self.currentMapTool)
-    #     else:
-    #         if self.mainMapCanvas.mapTool() == self.currentMapTool:
-    #             self.mainMapCanvas.unsetMapTool(self.currentMapTool)
-    #             self.currentMapTool = None
+            self.mainMapCanvas.setMapTool(self.toolPan)
 
     def zoomToNextExtent(self):
         self.mainMapCanvas.zoomToNextExtent()
@@ -4502,12 +4539,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     #     self.refresh()
 
     def zoomToFullExtent(self):
-        # 1. Store the old extent (so we can come back to it)
-        self.mainMapCanvas.storeCurrentView()
-        # 2. Zoom to full
         self.mainMapCanvas.zoomToFullExtent()
-        # 3. Store the new extent (so we can go "next" from here if needed)
-        self.mainMapCanvas.storeCurrentView()
         self.refresh()
 
     # def zoomToLayer(self, layer):
@@ -4515,12 +4547,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     #     self.refresh()
 
     def zoomToLayer(self, layer):
-        # 1. Store the old extent
-        self.mainMapCanvas.storeCurrentView()    
-        # 2. Set a new extent
         self.mainMapCanvas.setExtent(layer.extent())
-        # 3. Optionally store the new extent as well
-        self.mainMapCanvas.storeCurrentView()
         self.refresh()
 
     def removeLayer(self, layer):
@@ -4528,85 +4555,85 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.refresh()
 
     def refresh(self):
-        # if not self.thisQgsLayerTreeView.currentLayer() is None:
-        #     self.thisQgsLayerTreeView.refreshLayerSymbology(
-        #         self.thisQgsLayerTreeView.currentLayer().id())
-        # TestLayer:
-        # layer = QgsVectorLayer("C:/Temp/ATO_Impermeable_Areas.shp", "Layer Name", "ogr")
-        # self.thisQgsProject.addMapLayer(layer)
-        # self.thisQgsProject.layerTreeRoot().findLayer(layer.id()).setItemVisibilityChecked(True)
         self.mainMapCanvas.refresh()
 
     def mapToggleWorld_Imagery(self):
         try:
-            logger.debug("Toggling World Imagery Layer")
+            # logger.debug("Toggling World Imagery Layer")
             if self.worldImageryLayer is None:
-                logger.debug(
-                    "World Imagery Layer is None, attempting to create it.")
+                # logger.debug("World Imagery Layer is None, attempting to create it.")
                 myUrl = "url='https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer' layer='0'"
-                self.worldImageryLayer = QgsRasterLayer(
-                    myUrl, "World Imagery", providerType="arcgismapserver")
-                logger.debug(f"Created World Imagery Layer with URL: {myUrl}")
+                self.worldImageryLayer = QgsRasterLayer(myUrl, "World Imagery", providerType="arcgismapserver")
+                # logger.debug(f"Created World Imagery Layer with URL: {myUrl}")
 
                 # Set CRS and log it
-                self.worldImageryLayer.setCrs(
-                    QgsCoordinateReferenceSystem("EPSG:3857"))
-                logger.debug("CRS set to EPSG:3857")
+                self.worldImageryLayer.setCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
+                # logger.debug("CRS set to EPSG:3857")
 
                 if not self.worldImageryLayer.isValid():
-                    logger.error("World Imagery Layer failed to load!")
+                    pass
+                    # logger.error("World Imagery Layer failed to load!")
                 else:
-                    self.thisQgsProject.addMapLayer(self.worldImageryLayer)
-                    logger.debug("World Imagery Layer added to project")
-                    self.thisQgsProject.layerTreeRoot().findLayer(
-                        self.worldImageryLayer.id()).setItemVisibilityChecked(True)
-                    logger.debug("Layer visibility set to True")
+                    layertree_layer = self.grp_basemaps.insertLayer(0, self.worldImageryLayer)
+                    layertree_layer.setItemVisibilityChecked(True)
+                    # self.thisQgsProject.addMapLayer(self.worldImageryLayer)
+                    # layertree_layer  = self.thisQgsProject.layerTreeRoot().findLayer(self.worldImageryLayer.id())
+                    # self.grp_basemaps.insertChildNode(0, layertree_layer)
+                    # layertree_layer.setItemVisibilityChecked(True)
+                    # self.thisQgsLayerTree
+
+                    
+                    # self.thisQgsLayerTree.moveLayer(self.worldImageryLayer, len(self.thisQgsLayerTree.children()))
+                    # logger.debug("Layer visibility set to True")
             else:
-                logger.debug("World Imagery Layer exists, removing it.")
+                # logger.debug("World Imagery Layer exists, removing it.")
                 self.thisQgsProject.removeMapLayer(self.worldImageryLayer)
                 self.worldImageryLayer = None
-                logger.debug("World Imagery Layer removed.")
+                # logger.debug("World Imagery Layer removed.")
 
             self.refresh()
-            logger.debug("Map canvas refreshed.")
+            # logger.debug("Map canvas refreshed.")
         except Exception as e:
-            logger.error('Exception occurred', exc_info=True)
+            pass
+            # logger.error('Exception occurred', exc_info=True)
 
     def mapToggleStreet_Map(self):
         try:
-            logger.debug("Toggling World Street Map Layer")
+            # logger.debug("Toggling World Street Map Layer")
             if self.worldStreetMapLayer is None:
-                logger.debug(
-                    "World Street Map Layer is None, attempting to create it.")
+                # logger.debug("World Street Map Layer is None, attempting to create it.")
                 myUrl = "url='https://server.arcgisonline.com/arcgis/rest/services/World_Street_Map/MapServer' layer='0'"
                 self.worldStreetMapLayer = QgsRasterLayer(
                     myUrl, "World Street Map", providerType="arcgismapserver")
-                logger.debug(
-                    f"Created World Street Map Layer with URL: {myUrl}")
+                # logger.debug(f"Created World Street Map Layer with URL: {myUrl}")
 
                 # Set CRS and log it
-                self.worldStreetMapLayer.setCrs(
-                    QgsCoordinateReferenceSystem("EPSG:3857"))
-                logger.debug("CRS set to EPSG:3857")
+                self.worldStreetMapLayer.setCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
+                # logger.debug("CRS set to EPSG:3857")
 
                 if not self.worldStreetMapLayer.isValid():
-                    logger.error("World Street Map Layer failed to load!")
+                    # logger.error("World Street Map Layer failed to load!")
+                    pass
                 else:
-                    self.thisQgsProject.addMapLayer(self.worldStreetMapLayer)
-                    logger.debug("World Street Map Layer added to project")
-                    self.thisQgsProject.layerTreeRoot().findLayer(
-                        self.worldStreetMapLayer.id()).setItemVisibilityChecked(True)
-                    logger.debug("Layer visibility set to True")
+                    # self.thisQgsProject.addMapLayer(self.worldStreetMapLayer)
+                    # # logger.debug("World Street Map Layer added to project")
+                    # self.thisQgsProject.layerTreeRoot().findLayer(self.worldStreetMapLayer.id()).setItemVisibilityChecked(True)
+                    # self.thisQgsLayerTree.moveLayer(self.worldStreetMapLayer, len(self.thisQgsLayerTree.children()))
+                    # # logger.debug("Layer visibility set to True")
+                    layertree_layer = self.grp_basemaps.insertLayer(0, self.worldStreetMapLayer)
+                    layertree_layer.setItemVisibilityChecked(True)                    
             else:
-                logger.debug("World Street Map Layer exists, removing it.")
+                # logger.debug("World Street Map Layer exists, removing it.")
                 self.thisQgsProject.removeMapLayer(self.worldStreetMapLayer)
                 self.worldStreetMapLayer = None
-                logger.debug("World Street Map Layer removed.")
+                # logger.debug("World Street Map Layer removed.")
 
             self.refresh()
-            logger.debug("Map canvas refreshed.")
+            # logger.debug("Map canvas refreshed.")
         except Exception as e:
-            logger.error('Exception occurred', exc_info=True)
+            # logger.error('Exception occurred', exc_info=True)
+            pass
+
     # def mapToggleWorld_Imagery(self):
     #     try:
     #         if self.worldImageryLayer is None:
@@ -4696,6 +4723,77 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         except Exception as e:
             print(f"An error occurred while loading the shapefile: {str(e)}")
+
+    def createMemoryLayer(self, geometry_type="Point", crs="EPSG:4326", name="Memory Layer"):
+        """
+        Create a new memory layer.
+        
+        Parameters:
+        geometry_type (str): The geometry type for the layer - "Point", "LineString", "Polygon", etc.
+        crs (str): Coordinate reference system (e.g., "EPSG:4326" for WGS84)
+        name (str): The name for the new memory layer
+        
+        Returns:
+        QgsVectorLayer: The created memory layer
+        """
+        try:
+            # Create a memory layer
+            uri = f"{geometry_type}?crs={crs}&field=id:integer&field=name:string(255)"
+            memory_layer = QgsVectorLayer(uri, name, "memory")
+            
+            if not memory_layer.isValid():
+                print("Memory layer creation failed!")
+                return None
+            
+            # Add the layer to the QGIS project
+            QgsProject.instance().addMapLayer(memory_layer)
+            
+            print(f"Memory layer '{name}' created successfully.")
+            return memory_layer
+            
+        except Exception as e:
+            print(f"An error occurred while creating the memory layer: {str(e)}")
+            return None
+
+
+    def addFeatureToMemoryLayer(self, layer, geometry, attributes=None):
+        """
+        Add a feature to a memory layer.
+        
+        Parameters:
+        layer (QgsVectorLayer): The memory layer to add the feature to
+        geometry (QgsGeometry): The geometry for the new feature
+        attributes (list): List of attribute values for the feature
+        
+        Returns:
+        bool: True if the feature was added successfully, False otherwise
+        """
+        try:
+            if not attributes:
+                attributes = [0, ""]  # Default attributes (id, name)
+                
+            # Create a new feature
+            feature = QgsFeature()
+            feature.setGeometry(geometry)
+            feature.setAttributes(attributes)
+            
+            # Start editing the layer
+            layer.startEditing()
+            
+            # Add the feature to the layer
+            success = layer.addFeature(feature)
+            
+            # Commit the changes
+            layer.commitChanges()
+            
+            # Update the layer's extent
+            layer.updateExtents()
+            
+            return success
+            
+        except Exception as e:
+            print(f"An error occurred while adding a feature: {str(e)}")
+            return False
 
     # def importFMLocations(self):
 
@@ -5829,13 +5927,32 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             elif (o == self.trw_PlottedFSMInstalls.viewport()):
                 self.trw_PlottedFSMInstalls_drop_action(e)
                 return True
+            elif (o == self.mainMapCanvas.viewport()):
+                self.mainMapCanvas_drop_action(e)
+                return True
+            elif (o == self.mainMapLayerTreeView.viewport()):
+                self.mainMapTreeView_drop_action(e)
+                return True            
             else:
                 return False
 
-        # if e.type() == QtCore.QEvent.Type.Drag:
-        #     if (o == self.trw_PlottedFSMInstalls.viewport()):
-        #         self.trw_PlottedFSMInstalls_drag_action(e)
-        #         return True
+        if e.type() == QtCore.QEvent.Type.MouseButtonPress:
+            if (o == self.mainMapCanvas.viewport()):
+                if e.button() == Qt.LeftButton:
+                    if self.currentMapTool == 'set_fm_coordinates':
+                        coords = self.mainMapCanvas.getCoordinateTransform().toMapCoordinates(e.pos().x(), e.pos().y())
+                        self.update_fm_coordinates(coords.x(), coords.y())
+                    if self.currentMapTool == 'set_rg_coordinates':
+                        coords = self.mainMapCanvas.getCoordinateTransform().toMapCoordinates(e.pos().x(), e.pos().y())
+                        self.update_rg_coordinates(coords.x(), coords.y())
+                    # if self.currentMapTool == 'add_virtual_raingauge':
+                    #     coords = self.mainMapCanvas.getCoordinateTransform().toMapCoordinates(e.pos().x(), e.pos().y())
+                    #     self.gis_add_virtual_raingauge_on_click(coords.x(), coords.y())
+                elif e.button() == Qt.RightButton:
+                    if self.mainMapCanvas.mapTool().toolName() not in ['Pan'] :
+                        self.populateMainMapCanvasContextMenu(e.globalPos())
+                return True
+                        
         if e.type() == QtCore.QEvent.Type.MouseButtonDblClick:
             if o == self.trw_PlottedICMTraces.viewport():
                 item = self.trw_PlottedICMTraces.itemAt(e.pos())
@@ -5848,6 +5965,112 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             return False
 
+    def populateMainMapCanvasContextMenu(self, menu: QMenu, event: QgsMapMouseEvent):
+        subMenu = menu.addMenu('Flowbot')
+        action = subMenu.addAction('Remove Event')
+        action.triggered.connect(self.remove_event_from_map)
+
+    # def populateMainMapCanvasContextMenu(self, pos):
+    #     if self.mappedRainGauges.current_event is not None:
+    #         menu = QMenu(self.mainMapCanvas)
+    #         aCallback = QAction("Remove Event", menu)
+    #         aCallback.triggered.connect(self.removeMainMapEvent)
+    #         menu.addAction(aCallback)
+    #         menu.exec_(pos)        
+
+    # def mainMapCanvas_context_menu(self, pos):
+        
+    #     if self.mappedRainGauges.current_event is not None:
+    #         menu = QMenu(self.mainMapCanvas)
+    #         aCallback = QAction("Remove Event", menu)
+    #         aCallback.triggered.connect(self.removeMainMapEvent)
+    #         menu.addAction(aCallback)
+    #         menu.exec_(pos)
+
+
+    def mainMapCanvas_drop_action(self, e):
+        if e.source() == self.lst_FlowMonitors:
+
+            source_item = QStandardItemModel()
+            source_item.dropMimeData(
+                e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+
+            offset = 0
+            for i in range(source_item.rowCount()):
+                fm = self.openFlowMonitors.getFlowMonitor(source_item.item(i, 0).text())
+
+                if not self.mappedFlowMonitors.isMapped(fm.monitorName):
+                    self.mappedFlowMonitors.addMappedFlowMonitor(fm)
+                    self.mainMapCanvas.setExtent(self.mappedFlowMonitors.vl_flow_monitors.extent())
+                    self.refresh()
+
+        elif e.source() == self.lst_RainGauges:
+
+            source_item = QStandardItemModel()
+            source_item.dropMimeData(
+                e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+
+            offset = 0
+            for i in range(source_item.rowCount()):
+                rg = self.openRainGauges.getRainGauge(source_item.item(i, 0).text())
+                    
+                if not self.mappedRainGauges.isMapped(rg.gaugeName):
+                    self.mappedRainGauges.addMappedRainGauge(rg)
+                    self.mainMapCanvas.setExtent(self.mappedRainGauges.vl_rain_gauges.extent())
+                    self.refresh()                    
+
+        elif e.source() == self.trwEvents:
+
+            source_item = QStandardItemModel()
+            source_item.dropMimeData(
+                e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+
+            for i in range(source_item.rowCount()):
+                se = self.identifiedSurveyEvents.getSurveyEvent(source_item.item(i, 0).text())
+                break
+
+            if se is not None:
+                self.mappedRainGauges.current_event = se
+                event_label = f"{se.eventName}: {se.eventStart.strftime('%d/%m/%Y %H:%M')} - {se.eventEnd.strftime('%d/%m/%Y %H:%M')}"
+                self.mainMapCanvas.overlayLabel.setText(event_label)
+                self.mainMapCanvas.updateOverlayLabel()
+
+                        # e.pos().x
+                        
+                # if rg._schematicGraphicItem is None:
+                #     rg._schematicGraphicItem = self.schematicGraphicsView.addRaingauge(
+                #         rg.gaugeName, self.schematicGraphicsView.mapToScene(e.pos()), offset)
+                #     offset += 50
+
+    def mainMapTreeView_drop_action(self, e):
+        if e.source() == self.lst_FlowMonitors:
+
+            source_item = QStandardItemModel()
+            source_item.dropMimeData(
+                e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+
+            offset = 0
+            for i in range(source_item.rowCount()):
+                fm = self.openFlowMonitors.getFlowMonitor(source_item.item(i, 0).text())
+                if not self.mappedFlowMonitors.isMapped(fm.monitorName):
+                    self.mappedFlowMonitors.addMappedFlowMonitor(fm)                
+                # if fm._schematicGraphicItem is None:
+                #     fm._schematicGraphicItem = self.schematicGraphicsView.addFlowMonitor(
+                #         fm.monitorName, self.schematicGraphicsView.mapToScene(e.pos()), offset)
+                #     offset += 50
+
+        elif e.source() == self.lst_RainGauges:
+
+            source_item = QStandardItemModel()
+            source_item.dropMimeData(
+                e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+
+            offset = 0
+            for i in range(source_item.rowCount()):
+                rg = self.openRainGauges.getRainGauge(source_item.item(i, 0).text())
+                if not self.mappedRainGauges.isMapped(rg.gaugeName):
+                    self.mappedRainGauges.addMappedRainGauge(rg)
+                
     def schematic_drop_action(self, e):
         if e.source() == self.lst_FlowMonitors:
 
@@ -6211,11 +6434,24 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.aTraceGraph = graphICMTrace(self.plotCanvasMain)
         self.aWQGraph = graphWQGraph(self.plotCanvasMain)
         self.aFSMInstallGraph = graphFSMInstall(self.plotCanvasMain)
+        self.aFSMDashboard = dashboardFSM(self.plotCanvasMain)
         self.a_dwf_graph = graphDWF(self.plotCanvasMain)
 
         self.openFlowMonitors = None
         self.openRainGauges = None
-        self.mappedFlowMonitors = None
+
+        if self.mappedFlowMonitors is not None:
+            self.grp_monitors.removeLayer(self.mappedFlowMonitors.vl_flow_monitors)
+        self.mappedFlowMonitors = mappedFlowMonitors(self._thisQgsApp)
+        layertree_layer = self.grp_monitors.insertLayer(0, self.mappedFlowMonitors.vl_flow_monitors)
+        layertree_layer.setItemVisibilityChecked(True)
+
+        if self.mappedRainGauges is not None:
+            self.grp_monitors.removeLayer(self.mappedRainGauges.vl_rain_gauges)
+        self.mappedRainGauges = mappedRainGauges(self._thisQgsApp)
+        layertree_layer = self.grp_monitors.insertLayer(0, self.mappedRainGauges.vl_rain_gauges)
+        layertree_layer.setItemVisibilityChecked(True)        
+
         self.identifiedSurveyEvents = None
         self.summedFMs = None
         self.dummyFMs = None
@@ -6577,8 +6813,10 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             # conn.execute("PRAGMA foreign_keys=off;")  # Disable foreign key checks if any
             conn.execute(
                 f'''CREATE TABLE IF NOT EXISTS {Tables.FB_VERSION} (current_version TEXT PRIMARY KEY)''')
-            conn.execute(
-                f'''INSERT OR REPLACE INTO {Tables.FB_VERSION} VALUES (?)''', (strVersion,))
+            conn.execute(f'''DELETE FROM {Tables.FB_VERSION}''')
+            conn.execute(f'''INSERT INTO {Tables.FB_VERSION} VALUES (?)''', ('4.2.0 (Beta)',))
+            # conn.execute(
+            #     f'''INSERT OR REPLACE INTO {Tables.FB_VERSION} VALUES (?)''', ('4.2.0 (Beta)',))
 
             conn.execute(f"ALTER TABLE {Tables.FSM_INTERIM} ADD COLUMN pl_data_review_complete INTEGER DEFAULT 0;")
 
@@ -6710,6 +6948,26 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             conn.execute(f'ALTER TABLE {Tables.FSM_INSTALLPICTURES}_new RENAME TO {Tables.FSM_INSTALLPICTURES};')
 
             conn.execute(f"""UPDATE {Tables.FSM_SITE} SET siteType = CASE WHEN siteType = 'Rain Gauge' THEN 'Location' ELSE 'Network Asset' END;""")
+
+            changes_made = True
+
+            db_version = '4.2.0 (Beta)'
+
+        if changes_made:
+            conn.commit()
+
+        if db_version == '4.2.0 (Beta)':
+
+            conn.execute(
+                f'''CREATE TABLE IF NOT EXISTS {Tables.FB_VERSION} (current_version TEXT PRIMARY KEY)''')
+            conn.execute(f'''DELETE FROM {Tables.FB_VERSION}''')
+            conn.execute(f'''INSERT INTO {Tables.FB_VERSION} VALUES (?)''', ('4.2.1 (Beta)',))
+
+            conn.execute(f"ALTER TABLE {Tables.FLOW_MONITOR} ADD COLUMN x REAL DEFAULT 0.0;")
+            conn.execute(f"ALTER TABLE {Tables.FLOW_MONITOR} ADD COLUMN y REAL DEFAULT 0.0;")
+
+            conn.execute(f"ALTER TABLE {Tables.RAIN_GAUGE} ADD COLUMN x REAL DEFAULT 0.0;")
+            conn.execute(f"ALTER TABLE {Tables.RAIN_GAUGE} ADD COLUMN y REAL DEFAULT 0.0;")
 
             changes_made = True
 
@@ -7956,17 +8214,24 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         if self.lst_FlowMonitors.currentItem() is not None:
             rightMenu = QMenu(self.lst_FlowMonitors)
-            rightMenu.addAction(
-                QAction('Remove Monitor(s)', self, triggered=self.remove_FM_file))
-            rightMenu.addAction(
-                QAction('Model Data', self, triggered=self.editModelData))
-            if self.mappedFlowMonitors is not None:
-                if self.mappedFlowMonitors.isMapped(self.lst_FlowMonitors.currentItem().text()):
-                    rightMenu.addSeparator()
-                    rightMenu.addAction(
-                        QAction('Zoom to', self, triggered=self.zoomTo))
-                    rightMenu.addAction(
-                        QAction('Clear Location', self, triggered=self.clearLocation))
+            rightMenu.addAction(QAction('Export to FDV File', self, triggered=self.export_to_fdv_file))
+            rightMenu.addAction(QAction('Copy to Clipboard', self, triggered=self.copy_fm_to_clipboard))
+            rightMenu.addAction(QAction('Remove Monitor(s)', self, triggered=self.remove_FM_file))
+            rightMenu.addAction(QAction('Model Data', self, triggered=self.editModelData))
+            rightMenu.addSeparator()            
+            rightMenu.addAction(QAction('Set Coordinates', self, triggered=self.set_fm_coordinates))
+            rightMenu.addAction(QAction('Add to Map', self, triggered=self.add_fm_to_map))                        
+            selected_items = self.lst_FlowMonitors.selectedItems()
+            for item in selected_items:
+                mon_name = item.text()
+                if self.mappedFlowMonitors.isMapped(mon_name):
+                    rightMenu.addAction(QAction('Zoom to', self, triggered=self.zoom_to_fm))                    
+                    rightMenu.addAction(QAction('Remove from Map', self, triggered=self.remove_fm_from_map))
+                    break
+            # if self.mappedFlowMonitors.isMapped(self.lst_FlowMonitors.currentItem().text()):
+            #     rightMenu.addSeparator()
+            #     rightMenu.addAction(QAction('Zoom to', self, triggered=self.zoom_to_fm))
+            #     rightMenu.addAction(QAction('Remove from Map', self, triggered=self.remove_fm_from_map))
             rightMenu.exec_(QCursor.pos())
 
     # def zoomTo(self):
@@ -7975,16 +8240,130 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     #         self.lst_FlowMonitors.currentItem().text()), 18)
     #     self.updateMapView()
 
-    def clearLocation(self):
+    def zoom_to_fm(self):
         pass
+        # selected_items = self.lst_FlowMonitors.selectedItems()
+
+        # if not selected_items:
+        #     self.currentMapTool = None
+        #     self.mainMapCanvas.setCursor(Qt.ArrowCursor)
+        #     return  # Nothing selected, exit early
+        
+        # for item in selected_items:
+        #     monitor_name = item.text()
+        #     fm = self.openFlowMonitors.getFlowMonitor(monitor_name)
+        #     fm.x = x
+        #     fm.y = y
+        #     self.currentMapTool = None
+        #     self.mainMapCanvas.setCursor(Qt.ArrowCursor)
+        #     if self.mappedFlowMonitors.isMapped(monitor_name):
+        #         self.mappedFlowMonitors._update_monitor_in_layer(monitor_name)
+                
+        #     else:
+        #         self.mappedFlowMonitors.addMappedFlowMonitor(monitor_name)
+
+        #     break
+
+    def zoom_to_rg(self):
+        pass
+
+    def add_event_to_map(self):
+        selected_items = self.trwEvents.selectedItems()
+
+        if not selected_items:
+            return  # Nothing selected, exit early
+        
+        for item in selected_items:
+            se = self.identifiedSurveyEvents.getSurveyEvent(item.text(0))
+            if se is not None:
+                self.mappedRainGauges.current_event = se
+                event_label = f"{se.eventName}: {se.eventStart.strftime('%d/%m/%Y %H:%M')} - {se.eventEnd.strftime('%d/%m/%Y %H:%M')}"
+                self.mainMapCanvas.overlayLabel.setText(event_label)
+                self.mainMapCanvas.updateOverlayLabel()
+            break
+
+    def remove_event_from_map(self):
+        self.mappedRainGauges.current_event = None
+        event_label = "Full Period"
+        self.mainMapCanvas.overlayLabel.setText(event_label)
+        self.mainMapCanvas.updateOverlayLabel()        
+
+    def add_fm_to_map(self):
+        selected_items = self.lst_FlowMonitors.selectedItems()
+
+        if not selected_items:
+            return  # Nothing selected, exit early
+        
+        for item in selected_items:
+            monitor_name = item.text()
+            fm = self.openFlowMonitors.getFlowMonitor(monitor_name)
+            self.mappedFlowMonitors.addMappedFlowMonitor(fm)
+
+        self.mainMapCanvas.setExtent(self.mappedFlowMonitors.vl_flow_monitors.extent())
+        self.refresh()
+
+    def remove_fm_from_map(self):
+        selected_items = self.lst_FlowMonitors.selectedItems()
+
+        if not selected_items:
+            return  # Nothing selected, exit early
+        
+        for item in selected_items:
+            monitor_name = item.text()
+            self.mappedFlowMonitors.removeMappedFlowMonitor(monitor_name)
+            # break
+
+    def add_rg_to_map(self):
+        selected_items = self.lst_RainGauges.selectedItems()
+
+        if not selected_items:
+            return  # Nothing selected, exit early
+        
+        for item in selected_items:
+            gauge_name = item.text()
+            rg = self.openRainGauges.getRainGauge(gauge_name)
+            self.mappedRainGauges.addMappedRainGauge(rg)
+        
+        self.mainMapCanvas.setExtent(self.mappedRainGauges.vl_rain_gauges.extent())
+        self.refresh()
+
+    def remove_rg_from_map(self):
+        selected_items = self.lst_RainGauges.selectedItems()
+
+        if not selected_items:
+            return  # Nothing selected, exit early
+        
+        for item in selected_items:
+            gauge_name = item.text()
+            self.mappedRainGauges.removeMappedRainGauge(gauge_name)
+            # break
 
     def openRainGaugeListContextMenu(self, position):
 
         if not self.lst_RainGauges.currentItem() is None:
             rightMenu = QMenu(self.lst_RainGauges)
+            rightMenu.addAction(QAction('Export to R File', self, triggered=self.export_r_files))
+            rightMenu.addAction(QAction('Copy to Clipboard', self, triggered=self.export_to_rg_clipboard))
+            rightMenu.addAction(QAction('Remove Gauge(s)', self, triggered=self.remove_RG_file))
+            rightMenu.addSeparator()            
             rightMenu.addAction(
-                QAction('Remove Gauge(s)', self, triggered=self.remove_RG_file))
+                QAction('Set Coordinates', self, triggered=self.set_rg_coordinates))
+            rightMenu.addAction(
+                QAction('Add to Map', self, triggered=self.add_rg_to_map))            
+            selected_items = self.lst_RainGauges.selectedItems()
+            for item in selected_items:
+                gauge_name = item.text()
+                if self.mappedRainGauges.isMapped(gauge_name):
+                    rightMenu.addAction(QAction('Zoom to', self, triggered=self.zoom_to_rg))                    
+                    rightMenu.addAction(QAction('Remove from Map', self, triggered=self.remove_rg_from_map))
+                    break
+
+                # if self.mappedRainGauges.isMapped(self.lst_RainGauges.currentItem().text()):
+                #     rightMenu.addSeparator()
+                #     rightMenu.addAction(QAction('Zoom to', self, triggered=self.zoom_to_rg))
+                #     rightMenu.addAction(QAction('Remove from Map', self, triggered=self.remove_rg_from_map))
             rightMenu.exec_(QCursor.pos())
+
 
     def openPlottedInstallsTreeViewContextMenu(self, position):
         level = self.getTreeViewLevel(self.trw_PlottedFSMInstalls)
@@ -8137,6 +8516,10 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
             remCallback = QtWidgets.QAction("Remove", menu)
             remCallback.triggered.connect(self.removeSurveyEvent)
+            menu.addAction(remCallback)
+
+            remCallback = QtWidgets.QAction("Add to Map", menu)
+            remCallback.triggered.connect(self.add_event_to_map)
             menu.addAction(remCallback)
 
         menu.exec_(self.trwEvents.viewport().mapToGlobal(position))
@@ -8668,6 +9051,102 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             self.update_plot()
         self.refreshFlowMonitorListWidget()
 
+    def export_to_rg_clipboard(self):
+        selected_items = self.lst_RainGauges.selectedItems()
+        if not selected_items:
+            return  # Nothing selected, exit early
+        
+        df_list = []  # List to hold individual DataFrames
+
+        for item in selected_items:
+            raingauge_name = item.text()
+            rg = self.openRainGauges.getRainGauge(raingauge_name)
+
+            # Create a DataFrame with unique column names per gauge
+            df = pd.DataFrame({
+                f"{raingauge_name}_Date": rg.dateRange,
+                f"{raingauge_name}_Rainfall": rg.rainfallDataRange
+            })
+
+            df_list.append(df)
+
+        # Concatenate along columns (axis=1) so each gauge keeps its own date and rainfall columns
+        combined_df = pd.concat(df_list, axis=1)
+        # Copy to clipboard (without the index)
+        combined_df.to_clipboard(index=False)
+
+        msg = QMessageBox(self)
+        msg.setWindowIcon(self.myIcon)
+        msg.information(self, 'Rain Gauge Data to Clipboard', 'Done')
+
+    def export_r_files(self):
+        selected_items = self.lst_RainGauges.selectedItems()
+
+        if not selected_items:
+            return  # Nothing selected, exit early
+
+        file_path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Output Directory:", self.lastOpenDialogPath, QtWidgets.QFileDialog.ShowDirsOnly)
+        if len(file_path) == 0:
+            return
+        self.lastOpenDialogPath = file_path
+        
+        for item in selected_items:
+            raingauge_name = item.text()
+            self.openRainGauges.writeRFileFromRainGauge(file_path, raingauge_name)
+
+        msg = QMessageBox(self)
+        msg.setWindowIcon(self.myIcon)
+        msg.information(self, 'Rain Gauge File Export', 'Export Complete')
+
+    def export_to_fdv_file(self):
+        selected_items = self.lst_FlowMonitors.selectedItems()
+
+        if not selected_items:
+            return  # Nothing selected, exit early
+
+        file_path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Output Directory:", self.lastOpenDialogPath, QtWidgets.QFileDialog.ShowDirsOnly)
+        if len(file_path) == 0:
+            return
+        self.lastOpenDialogPath = file_path
+        
+        for item in selected_items:
+            fm_name = item.text()
+            self.openFlowMonitors.writeFDVFileFromFlowMonitor(file_path, fm_name)
+
+        msg = QMessageBox(self)
+        msg.setWindowIcon(self.myIcon)
+        msg.information(self, 'Flow Monitor File Export', 'Export Complete')
+    
+    def copy_fm_to_clipboard(self):
+        selected_items = self.lst_FlowMonitors.selectedItems()
+        if not selected_items:
+            return  # Nothing selected, exit early
+        
+        df_list = []  # List to hold individual DataFrames
+
+        for item in selected_items:
+            fm_name = item.text()
+            fm = self.openFlowMonitors.getFlowMonitor(fm_name)
+
+            # Create a DataFrame with unique column names per gauge
+            df = pd.DataFrame({
+                f"{fm_name}_Date": fm.dateRange,
+                f"{fm_name}_Flow": fm.flowDataRange,
+                f"{fm_name}_Depth": fm.depthDataRange,
+                f"{fm_name}_Velocity": fm.velocityDataRange,
+            })
+
+            df_list.append(df)
+
+        # Concatenate along columns (axis=1) so each gauge keeps its own date and rainfall columns
+        combined_df = pd.concat(df_list, axis=1)
+        # Copy to clipboard (without the index)
+        combined_df.to_clipboard(index=False)
+
+        msg = QMessageBox(self)
+        msg.setWindowIcon(self.myIcon)
+        msg.information(self, 'Flow Monitor Data to Clipboard', 'Done')
+                                        
     def remove_RG_file(self):
         selected_items = self.lst_RainGauges.selectedItems()
 
@@ -9393,8 +9872,11 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             if self.aFSMInstallGraph is not None:
                 self.aFSMInstallGraph.update_plot(
                     self.rbnFSMRawValues.isChecked(), self.chkShowAdjustments.isChecked())
-            self.chkShowAdjustments.setEnabled(
-                self.rbnFSMRawValues.isChecked())
+            else:
+                if self.aFSMDashboard is not None:
+                    if self.fsmProject is not None:
+                        self.aFSMDashboard.update_plot(self.fsmProject)
+            self.chkShowAdjustments.setEnabled(self.rbnFSMRawValues.isChecked())
 
         self.update_plottedTreeView()
         self.dodgyForceUpdate()
@@ -9552,6 +10034,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             self.schematicGraphicsView.deleteItem(fm_sgvItem)
             # fmRemoved = True
 
+        self.mappedFlowMonitors.removeMappedFlowMonitor(fmName)
+
         return fmRemoved
 
     def removeRGFromAllPlots(self, rgName):
@@ -9573,6 +10057,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             rg_sgvItem = self.schematicGraphicsView.getSchematicRainGaugeByName(rgName)
             self.schematicGraphicsView.deleteItem(rg_sgvItem)
             # rgRemoved = True
+
+        self.mappedRainGauges.removeMappedRainGauge(rgName)
 
         return rgRemoved
 
@@ -9873,3 +10359,172 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             self.aWQGraph.plotted_wqs = plottedWQMonitors()
 
         self.update_plot()
+
+    def gis_show_rainfall(self):
+
+        try:
+            if self.mappedRainGauges.rl_total_depth is None:
+                self.mappedRainGauges.update_total_depth_raster_layer(self.mainMapCanvas.extent())
+                self.grp_outputs.insertLayer(0, self.mappedRainGauges.rl_total_depth)
+            else:
+                self.grp_outputs.removeLayer(self.mappedRainGauges.rl_total_depth)
+                # self.thisQgsProject.removeMapLayer(self.mappedRainGauges.rl_total_depth)
+                self.mappedRainGauges.rl_total_depth = None
+            self.refresh()
+        except Exception as e:
+            pass
+
+    # def gis_add_virtual_raingauge(self):
+    #     # self.mainMapCanvas.setCursor(Qt.CrossCursor)
+    #     # self.currentMapTool = 'add_virtual_raingauge'
+
+    #     if self.actionCreateVirtualRG.isChecked():
+    #         self.currentMapTool = RunFunctionAtPointMapTool(self.mainMapCanvas, self.gis_add_virtual_raingauge_on_click)
+    #         self.currentMapTool.setAction(self.actionCreateVirtualRG)
+    #         self.mainMapCanvas.setMapTool(self.currentMapTool)
+    #     else:
+    #         if self.mainMapCanvas.mapTool() == self.currentMapTool:
+    #             self.mainMapCanvas.unsetMapTool(self.currentMapTool)
+    #             self.currentMapTool = None        
+
+    # def gis_add_virtual_raingauge(self, x: float, y: float):
+
+    #     # Prompt the user for a rain gauge name
+    #     gauge_name, ok = QInputDialog.getText(None, "Create Virtual Rain Gauge", "Enter name for virtual rain gauge:")
+
+    #     # If the user presses Cancel, stop the process
+    #     if not ok or not gauge_name.strip():
+    #         QMessageBox.information(None, "Operation Cancelled", "Virtual rain gauge creation was cancelled.")
+    #         return None  # Exit the function        
+
+    #     new_rg = self.mappedRainGauges.create_virtual_raingauge(x, y, gauge_name)
+
+    #     if new_rg is not None:
+    #         self.openRainGauges.dictRainGauges[new_rg.gaugeName] = new_rg
+    #         self.openRainGauges.updateRGsMinMaxValues()
+    #         self.refreshRainGaugeListWidget()
+
+    #         self.mappedRainGauges.addMappedRainGauge(new_rg)
+
+    def createVirtualRG(self, point, button):
+
+        print("In createVirtualRG")
+
+        x = point.x()
+        y = point.y()
+        # Prompt the user for a rain gauge name
+        gauge_name, ok = QInputDialog.getText(None, "Create Virtual Rain Gauge", "Enter name for virtual rain gauge:")
+
+        # If the user presses Cancel, stop the process
+        if not ok or not gauge_name.strip():
+            QMessageBox.information(None, "Operation Cancelled", "Virtual rain gauge creation was cancelled.")
+            return None  # Exit the function        
+
+        new_rg = self.mappedRainGauges.create_virtual_raingauge(x, y, gauge_name)
+
+        if new_rg is not None:
+            self.openRainGauges.dictRainGauges[new_rg.gaugeName] = new_rg
+            self.openRainGauges.updateRGsMinMaxValues()
+            self.refreshRainGaugeListWidget()
+
+            self.mappedRainGauges.addMappedRainGauge(new_rg)
+
+        
+    def set_fm_coordinates(self):
+        self.mainMapCanvas.setMapTool(self.toolUpdateFMCoords)
+
+        # # selected_items = self.lst_FlowMonitors.selectedItems()
+        # self.tabWidgetMainWindow.setCurrentWidget(self.tabMap)
+
+        # self.mainMapCanvas.setCursor(Qt.CrossCursor)
+        # self.currentMapTool = 'set_fm_coordinates'
+
+    def update_fm_coordinates(self, point, button):
+        selected_items = self.lst_FlowMonitors.selectedItems()
+
+        if not selected_items:
+            self.mainMapCanvas.unsetMapTool()
+            return  # Nothing selected, exit early
+        
+        for item in selected_items:
+            monitor_name = item.text()
+            fm = self.openFlowMonitors.getFlowMonitor(monitor_name)
+            fm.x = point.x()
+            fm.y = point.y()
+            if self.mappedFlowMonitors.isMapped(monitor_name):
+                self.mappedFlowMonitors._update_monitor_in_layer(monitor_name)
+            else:
+                self.mappedFlowMonitors.addMappedFlowMonitor(fm)
+            break
+
+    # def update_fm_coordinates(self, x: float, y: float):
+    #     selected_items = self.lst_FlowMonitors.selectedItems()
+
+    #     if not selected_items:
+    #         self.currentMapTool = None
+    #         self.mainMapCanvas.setCursor(Qt.ArrowCursor)
+    #         return  # Nothing selected, exit early
+        
+    #     for item in selected_items:
+    #         monitor_name = item.text()
+    #         fm = self.openFlowMonitors.getFlowMonitor(monitor_name)
+    #         fm.x = x
+    #         fm.y = y
+    #         self.currentMapTool = None
+    #         self.mainMapCanvas.setCursor(Qt.ArrowCursor)
+    #         if self.mappedFlowMonitors.isMapped(monitor_name):
+    #             self.mappedFlowMonitors._update_monitor_in_layer(monitor_name)
+    #         else:
+    #             self.mappedFlowMonitors.addMappedFlowMonitor(fm)
+
+    #         break
+
+    def set_rg_coordinates(self):
+        self.mainMapCanvas.setMapTool(self.toolUpdateRGCoords)
+
+        # self.tabWidgetMainWindow.setCurrentWidget(self.tabMap)
+
+        # self.mainMapCanvas.setCursor(Qt.CrossCursor)
+        # self.currentMapTool = 'set_rg_coordinates'
+
+    def update_rg_coordinates(self, point, button):
+        selected_items = self.lst_RainGauges.selectedItems()
+
+        if not selected_items:
+            self.mainMapCanvas.unsetMapTool()
+            return  # Nothing selected, exit early
+        
+        for item in selected_items:
+            gauge_name = item.text()
+            rg = self.openRainGauges.getRainGauge(gauge_name)
+            rg.x = point.x()
+            rg.y = point.y()
+            if self.mappedRainGauges.isMapped(gauge_name):
+                self.mappedRainGauges._update_gauge_in_layer(gauge_name)
+            else:
+                self.mappedRainGauges.addMappedRainGauge(rg)
+            break
+
+    def interpolateFlowMonitorData(self):
+        pass
+
+    # def update_rg_coordinates(self, x: float, y: float):
+    #     selected_items = self.lst_RainGauges.selectedItems()
+
+    #     if not selected_items:
+    #         self.currentMapTool = None
+    #         self.mainMapCanvas.setCursor(Qt.ArrowCursor)
+    #         return  # Nothing selected, exit early
+        
+    #     for item in selected_items:
+    #         gauge_name = item.text()
+    #         rg = self.openRainGauges.getRainGauge(gauge_name)
+    #         rg.x = x
+    #         rg.y = y
+    #         self.currentMapTool = None
+    #         self.mainMapCanvas.setCursor(Qt.ArrowCursor)
+    #         if self.mappedRainGauges.isMapped(gauge_name):
+    #             self.mappedRainGauges._update_gauge_in_layer(gauge_name)
+    #         else:
+    #             self.mappedRainGauges.addMappedRainGauge(rg)
+    #         break

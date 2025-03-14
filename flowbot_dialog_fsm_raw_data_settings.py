@@ -173,7 +173,7 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
 
         if self.inst.install_type == 'Rain Gauge':
             self.updateRainfallFile()
-            self.updateBatteryFile()
+            # self.updateBatteryFile()
         elif self.inst.install_type in ['Flow Monitor', 'Depth Monitor']:
             self.updateDepthFile()
             self.updateVelocityFile()
@@ -363,9 +363,9 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
             self.txtVelocityFileNameFormat.setVisible(False)
             self.txtVelocityFileName.setVisible(False)
 
-            self.lblBatteryFileFormat.setVisible(True)
-            self.txtBatteryFileNameFormat.setVisible(True)
-            self.txtBatteryFileName.setVisible(True)
+            self.lblBatteryFileFormat.setVisible(False)
+            self.txtBatteryFileNameFormat.setVisible(False)
+            self.txtBatteryFileName.setVisible(False)
 
             self.lblPumpLoggerFileFormat.setVisible(False)
             self.txtPumpLoggerFileNameFormat.setVisible(False)
@@ -384,8 +384,8 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
             self.txtFolderLocation.setText(self.raw.file_path)
             self.txtRainfallFileNameFormat.setText(self.raw.rainfall_file_format)
             self.updateRainfallFile()
-            self.txtBatteryFileNameFormat.setText(self.raw.battery_file_format)
-            self.updateBatteryFile()
+            # self.txtBatteryFileNameFormat.setText(self.raw.battery_file_format)
+            # self.updateBatteryFile()
 
             self.doubleSpinBox_tipping_bucket.setValue(self.raw.rg_tb_depth)
             self.populateTableWidget(self.tableWidget_rainfall_timing, self.raw.rg_timing_corr)
@@ -947,10 +947,8 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
             self.raw.rg_tb_depth = self.doubleSpinBox_tipping_bucket.value()
             self.raw.rg_timing_corr = self.getDataFrameFromDefaultTableWidget(
                 self.tableWidget_rainfall_timing)
-
             self.raw.file_path = self.txtFolderLocation.text()
             self.raw.rainfall_file_format = self.txtRainfallFileNameFormat.text()
-            self.raw.battery_file_format = self.txtBatteryFileNameFormat.text()
         elif self.inst.install_type in ['Flow Monitor', 'Depth Monitor']:
             self.raw.dep_corr = self.getDataFrameFromDepthCorrTableWidget()
             self.raw.vel_corr = self.getDataFrameFromDefaultTableWidget(

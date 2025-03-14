@@ -10,7 +10,8 @@ from pdf2image import convert_from_path
 from PyQt5.QtCore import Qt, pyqtSignal, QBuffer
 from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QSpacerItem, QHBoxLayout, QWidget,
                              QPushButton, QScrollArea, QSizePolicy, QMessageBox, QSlider)
-from PyQt5.QtGui import QPixmap, QImage, QWheelEvent
+from PyQt5.QtGui import QPixmap, QImage, QWheelEvent, QDragEnterEvent, QDropEvent
+from qgis.gui import QgsMapCanvas, QgsLayerTreeView
 # from PyQt5.QtWidgets import QMainWindow, QAction, QFileDialog, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QSpacerItem
 # from PyQt5.QtCore import Qt
 import sys
@@ -41,7 +42,7 @@ except NameError:
 
 strMajorRelease = "4"
 strMinorRelease = "2"
-strUpdate = "0"
+strUpdate = "1"
 strOther = " (Beta)"
 strVersion = f'{strMajorRelease}.{strMinorRelease}.{strUpdate}{strOther}'
 
@@ -784,73 +785,6 @@ def parse_constants(const_lines, c_format, constants_names):
     constants = dict(zip(names_tokens, values))
     return constants
 
-# def parse_constants(const_lines, c_format, constants_names):
-#     """
-#     Given the lines between *CSTART and *CEND, the C_FORMAT string, and the
-#     constant names, this function now supports tokens with embedded repetition
-#     counts (e.g. "15F5.1") and correctly splits tokens on '/' into separate groups.
-#     """
-#     # Split the C_FORMAT string by commas and remove empty tokens.
-#     tokens = [tok.strip() for tok in c_format.split(",") if tok.strip()]
-#     # Remove the first token if it's a count.
-#     if tokens and tokens[0].isdigit():
-#         i_tokens = int(tokens[0])
-#         tokens = tokens[1:]
-
-#     # Use the helper to split tokens by slash into groups.
-#     token_groups = split_format_tokens(tokens)
-
-#     # Remove any empty constant data lines.
-#     const_data_lines = [line.rstrip("\n") for line in const_lines if line.strip()]
-#     if len(const_data_lines) < len(token_groups):
-#         raise ValueError("Not enough constant data lines to match C_FORMAT groups.")
-
-#     values = []
-#     token_count = 0
-#     has_rg_id = False
-#     rg_id = ""
-#     # Process each group using its corresponding constant data line.
-#     for i, token_group in enumerate(token_groups):
-#         line_text = const_data_lines[i]
-#         # Compute expected width for this group.
-#         expected_width = 0
-#         for token in token_group:
-#             token_count += 1
-#             if (
-#                 token_count > i_tokens
-#             ):  # assume that some numpty has stuck the rain gauge ID on the end
-#                 has_rg_id = True
-#                 rg_id = token_group[-1]
-#                 token_group.pop()
-#                 break
-#             token_info = parse_format_token(token)
-#             if token_info[0] == "repeat":
-#                 continue
-#             expected_width += token_info[1] * token_info[-1]
-#         if len(line_text) != expected_width:
-#             raise ValueError(
-#                 f"Error with expected length of constants data line:\n\n'{line_text}'.\n\nCheck the '**C_FORMAT' definition"
-#             )
-#             # line_text = line_text.ljust(expected_width)
-#         group_values = parse_fixed_width(line_text, token_group)
-#         values.extend(group_values)
-
-#     # Process constant names (removing the count if present).
-#     names_tokens = [tok.strip() for tok in constants_names.split(",") if tok.strip()]
-#     if names_tokens and names_tokens[0].isdigit():
-#         names_tokens = names_tokens[1:]
-
-#     if has_rg_id:
-#         names_tokens.append("RAINGAUGE")
-#         values.append(rg_id)
-
-#     if len(names_tokens) != len(values):
-#         raise ValueError(f"Warning: Number of constant names and parsed values do not match.")
-
-#     constants = dict(zip(names_tokens, values))
-#     return constants
-
-
 def parse_header(lines):
     """
     Parses header lines (those starting with "**" and "*+")
@@ -1007,7 +941,461 @@ def parse_date(date_str: str) -> datetime:
         return datetime.strptime(date_str, "%Y%m%d%H%M")
     else:
         raise ValueError("Unsupported date format: " + date_str)
+
+
+def is_nan(value):
+    return value is None or (isinstance(value, float) and np.isnan(value))
+
+def format_value(token_info, value):
+    """
+    Given a token_info tuple (as returned by your parse_format_token)
+    and a value, return a fixed-width string representation.
+    For None values, spaces are returned.
+    """
+    typ = token_info[0]
+    width = token_info[1]
+    if value is None:
+        return " " * width
+    if is_nan(value):
+        value = 0  # write zeros for NAN values at the moment
+        # return " " * width
+    if typ == 'int':
+        return str(int(value)).rjust(width)
+    elif typ == 'float':
+        decimals = token_info[2]  # token_info is ('float', width, decimals, rep)
+        fmt = f"{{:>{width}.{decimals}f}}"
+        return fmt.format(float(value))
+    elif typ == 'string':
+        s = str(value)
+        return s.ljust(width)[:width]
+    elif typ == 'date':
+        # Use width to decide on date format.
+        # If width is 10, use YYMMDDHHMM; if 12, use YYYYMMDDHHMM.
+        if width == 10:
+            return value.strftime("%y%m%d%H%M")
+        elif width == 12:
+            return value.strftime("%Y%m%d%H%M")
+        else:
+            # default fallback
+            return value.strftime("%Y%m%d%H%M")[:width].ljust(width)
+    elif typ == 'skip':
+        return " " * width
+    else:
+        raise ValueError("Unsupported token type: " + typ)
+
+def format_fixed_width(values, format_tokens):
+    """
+    Given a list of values and a list of format tokens (as strings, e.g. "F5.2" or "I5"),
+    produce a fixed-width string.
+    This function honors any repetition count in the token.
+    (It is essentially the reverse of your parse_fixed_width function.)
+    """
+    result = ""
+    value_index = 0
+    for token in format_tokens:
+        token_info = parse_format_token(token)
+        typ = token_info[0]
+        rep = token_info[-1]  # repetition count (last element)
+        if typ == 'repeat':
+            # This token is just a group separator in the constants block.
+            continue
+        for _ in range(rep):
+            if value_index < len(values):
+                val = values[value_index]
+            else:
+                val = None
+            result += format_value(token_info, val)
+            value_index += 1
+    return result
+
+def split_format_tokens(tokens):
+    """
+    Given a list of tokens (for example, those from splitting a C_FORMAT string),
+    further split any token containing one or more slashes into groups.
+    The slash acts as a group (newline) separator.
+    Returns a list of token groups (each group is a list of tokens).
+    (This is the same helper as in your parser.)
+    """
+    groups = []
+    current_group = []
+    for token in tokens:
+        if '/' in token:
+            parts = token.split('/')
+            # Add the first part to the current group.
+            if parts[0]:
+                current_group.append(parts[0])
+            # End the current group.
+            groups.append(current_group)
+            # For any intermediate parts, each becomes its own complete group.
+            for mid in parts[1:-1]:
+                if mid:
+                    groups.append([mid])
+            # The last part becomes the new current group.
+            current_group = []
+            if parts[-1]:
+                current_group.append(parts[-1])
+        else:
+            current_group.append(token)
+    if current_group:
+        groups.append(current_group)
+    return groups
+
+# --- Writer functions for the rain gauge file ---
+
+def write_header(header):
+    """
+    Given a header dictionary (keys/values), return a list of header lines.
+    Each line starts with '**'. The header key (with a colon appended) is formatted
+    as a fixed-width field of 29 characters, followed immediately by the value.
+    """
+    lines = []
+    for key, value in header.items():
+        # Append a colon to the key and left-justify to 27 characters (29 with **).
+        key_field = (key + ":").ljust(27)
+        lines.append(f"**{key_field}{value}")
+    return lines
+
+def format_header_lines(key, items, max_length=80):
+    """
+    Given a header key (e.g. "CONSTANTS") and a list of string items,
+    build one or more header lines. The first token is the count of items.
+    Tokens are separated by ", " and if a line exceeds max_length,
+    it is broken with continuation lines starting with "*+ ".
+    Returns a list of header lines.
+    """
+    # Prepend the count to the tokens.
+    tokens = [str(len(items))] + items
+    lines = []
+    prefix = f"**{key}:".ljust(29)
+    cont_prefix = "*+".ljust(29)
+    current_line = prefix
+    token_count = 0
+    for token in tokens:
+        token_count += 1
+        # Determine the candidate string if we add the token.
+        if token_count == len(tokens):
+            candidate = current_line + token
+        else:
+            candidate = current_line + token + ","
+        if len(candidate) > max_length:
+            lines.append(current_line)
+            if token_count == len(tokens):
+                current_line = cont_prefix + token
+            else:
+                current_line = cont_prefix + token + ","
+        else:
+            current_line = candidate
+    if current_line:
+        lines.append(current_line)
+    return lines
+
+# def wrap_direct_header(key, text, max_length=80):
+#     """
+#     Given a header key and a text string (already in comma–separated format),
+#     wrap the line so that no line exceeds max_length. Continuation lines begin with "*+ ".
+#     Returns a list of header lines.
+#     """
+#     prefix = f"**{key}: "
+#     cont_prefix = "*+ "
+#     tokens = [t.strip() for t in text.split(",") if t.strip()]
+#     # Do not prepend a count here; assume text already includes it.
+#     current_line = prefix
+#     lines = []
+#     for token in tokens:
+#         if current_line == prefix:
+#             candidate = current_line + token
+#         else:
+#             candidate = current_line + ", " + token
+#         if len(candidate) > max_length:
+#             lines.append(current_line)
+#             current_line = cont_prefix + token
+#         else:
+#             current_line = candidate
+#     if current_line:
+#         lines.append(current_line)
+#     return lines
+
+def write_constants(constants, constants_format):
+    """
+    Given a list of Constant namedtuples and a constants_format string (e.g.,
+    "8,A20,F7.2/15F5.1/15F5.1/D10,2X,D10,I4"), produce both the header lines and
+    the constants data lines for the constants block.
     
+    The header lines produced are:
+      - **CONSTANTS: ...  (using the constant names, with the count)
+      - **C_UNITS: ...     (using the constant units, with the count)
+      - **C_FORMAT: ...    (using the provided constants_format string, wrapped as needed)
+    
+    The data lines are produced by using the provided constants_format string to
+    group and format the constant values in order.
+    """
+    # Build header lines for CONSTANTS and C_UNITS from the constants list.
+    names = [const.name for const in constants]
+    units = [const.units for const in constants]
+    header_constants = format_header_lines("CONSTANTS", names)
+    header_c_units = format_header_lines("C_UNITS", units)
+    # For C_FORMAT, use the provided string directly.
+    header_c_format = "**C_FORMAT:".ljust(29) + constants_format
+    
+    header_lines = header_constants + header_c_units + [header_c_format]
+
+    # Produce the constants data lines using the provided constants_format.
+    # Tokenize the constants_format string.
+    tokens = [tok.strip() for tok in constants_format.split(",") if tok.strip()]
+    # If the first token is a count, remove it.
+    if tokens and tokens[0].isdigit():
+        tokens = tokens[1:]
+    # Split tokens into groups based on "/" (group separator).
+    groups = split_format_tokens(tokens)
+
+    data_lines = []
+    const_index = 0
+    for group in groups:
+        line = ""
+        for token in group:
+            token_info = parse_format_token(token)
+            rep = token_info[-1]  # Get the repetition count from the token tuple.
+            for _ in range(rep):
+                if const_index >= len(constants):
+                    raise ValueError("Mismatch: constants_format tokens exceed provided constants.")
+                if token_info[0] == 'skip':
+                    formatted_value = format_value(token_info, ' ')
+                    line += formatted_value
+                else:
+                    formatted_value = format_value(token_info, constants[const_index].value)
+                    line += formatted_value
+                    const_index += 1
+        data_lines.append(line)
+
+    return header_lines, data_lines
+
+# def write_constants(rg, c_format_str, constants_names_str):
+#     """
+#     Build the constants block from the rainGauge object.
+#     In this example we assume the constants are:
+#       START  = first date in rg.dateRange
+#       END    = last date in rg.dateRange
+#       INTERVAL = rg.rgTimestep
+#     The c_format_str and constants_names_str are assumed to be in the same style
+#     as in your file (e.g. "3, D12, D12, I5" and "3, START, END, INTERVAL").
+#     Returns a list of one or more constant data lines.
+#     """
+#     # Prepare the constant values in the order defined by the names.
+#     # (Here we assume only START, END, INTERVAL.)
+#     constants_values = [
+#         rg.dateRange[0],   # START (a datetime)
+#         rg.dateRange[-1],  # END (a datetime)
+#         rg.rgTimestep      # INTERVAL (an integer)
+#     ]
+#     # Tokenize the C_FORMAT string.
+#     tokens = [tok.strip() for tok in c_format_str.split(",") if tok.strip()]
+#     if tokens and tokens[0].isdigit():
+#         tokens = tokens[1:]
+#     token_groups = split_format_tokens(tokens)
+#     # Similarly, split the constants names (ignoring an initial count if present).
+#     names_tokens = [tok.strip() for tok in constants_names_str.split(",") if tok.strip()]
+#     if names_tokens and names_tokens[0].isdigit():
+#         names_tokens = names_tokens[1:]
+#     # Now, assign constant values in order to the tokens.
+#     const_lines = []
+#     idx = 0
+#     for group in token_groups:
+#         group_tokens = group  # list of tokens for this line
+#         group_values = constants_values[idx: idx + len(group_tokens)]
+#         idx += len(group_tokens)
+#         line = format_fixed_width(group_values, group_tokens)
+#         const_lines.append(line)
+#     return const_lines
+
+
+def write_rg_payload(rg, record_format_str, record_length):
+    """
+    Write the payload (data) section from the rainGauge object.
+    In our example we assume that the payload consists of a series of
+    intensity values stored in rg.rainfallDataRange and that field_names is "INTENSITY".
+    The record_format_str (e.g. "1,F5.2,[1]") tells us how to format each unit.
+    We assume here one unit per record (repeat count = 1).
+    Returns a list of payload lines.
+    """
+    # Parse the record format: remove the count token and the trailing repeat token.
+    tokens = [tok.strip() for tok in record_format_str.split(',') if tok.strip()]
+    # Remove the count token (first token).
+    tokens.pop(0)
+    # The last token is the repeat marker like "[1]".
+    repeat_token = tokens.pop(-1)
+    repeat_count = int(repeat_token.strip('[]'))
+    unit_format_tokens = tokens  # for one unit
+    # Determine the unit width from the tokens.
+    unit_width = 0
+    for token in unit_format_tokens:
+        token_info = parse_format_token(token)
+        if token_info[0] != 'repeat':
+            unit_width += token_info[1] * token_info[-1]
+    # Group the intensity values into records of repeat_count units per line.
+    values = rg.rainfallDataRange
+    payload_lines = []
+    for i in range(0, len(values), repeat_count):
+        group = values[i:i+repeat_count]
+        if len(group) < repeat_count:
+            group.extend([None] * (repeat_count - len(group)))
+        # Format each unit (here we assume each unit has one field: INTENSITY).
+        unit_strs = []
+        for value in group:
+            if value is not None:            
+                unit_str = format_fixed_width([value], unit_format_tokens)
+                # Ensure unit_str is exactly unit_width characters.
+                unit_str = unit_str.ljust(unit_width)[:unit_width]
+                unit_strs.append(unit_str)
+        line = "".join(unit_strs)
+        # The record line should be exactly record_length characters.
+        line = line.ljust(record_length)[:record_length]
+        payload_lines.append(line)
+    return payload_lines
+
+def write_fsm_rg_payload(a_inst, record_format_str, record_length):
+    """
+    Write the payload (data) section from the rainGauge object.
+    In our example we assume that the payload consists of a series of
+    intensity values stored in rg.rainfallDataRange and that field_names is "INTENSITY".
+    The record_format_str (e.g. "1,F5.2,[1]") tells us how to format each unit.
+    We assume here one unit per record (repeat count = 1).
+    Returns a list of payload lines.
+    """
+    # Parse the record format: remove the count token and the trailing repeat token.
+    tokens = [tok.strip() for tok in record_format_str.split(',') if tok.strip()]
+    # Remove the count token (first token).
+    tokens.pop(0)
+    # The last token is the repeat marker like "[1]".
+    repeat_token = tokens.pop(-1)
+    repeat_count = int(repeat_token.strip('[]'))
+    unit_format_tokens = tokens  # for one unit
+    # Determine the unit width from the tokens.
+    unit_width = 0
+    for token in unit_format_tokens:
+        token_info = parse_format_token(token)
+        if token_info[0] != 'repeat':
+            unit_width += token_info[1] * token_info[-1]
+    # Group the intensity values into records of repeat_count units per line.
+    values = a_inst.data['IntensityData'].tolist()
+    payload_lines = []
+    for i in range(0, len(values), repeat_count):
+        group = values[i:i+repeat_count]
+        if len(group) < repeat_count:
+            group.extend([None] * (repeat_count - len(group)))
+        # Format each unit (here we assume each unit has one field: INTENSITY).
+        unit_strs = []
+        for value in group:
+            if value is not None:            
+                unit_str = format_fixed_width([value], unit_format_tokens)
+                # Ensure unit_str is exactly unit_width characters.
+                unit_str = unit_str.ljust(unit_width)[:unit_width]
+                unit_strs.append(unit_str)
+        line = "".join(unit_strs)
+        # The record line should be exactly record_length characters.
+        line = line.ljust(record_length)[:record_length]
+        payload_lines.append(line)
+    return payload_lines
+
+def write_fm_payload(fm, record_format_str, record_length):
+    """
+    Write the payload (data) section from the rainGauge object.
+    In our example we assume that the payload consists of a series of
+    intensity values stored in rg.rainfallDataRange and that field_names is "INTENSITY".
+    The record_format_str (e.g. "1,F5.2,[1]") tells us how to format each unit.
+    We assume here one unit per record (repeat count = 1).
+    Returns a list of payload lines.
+    """
+    # Parse the record format: remove the count token and the trailing repeat token.
+    tokens = [tok.strip() for tok in record_format_str.split(',') if tok.strip()]
+    # Remove the count token (first token).
+    tokens.pop(0)
+    # The last token is the repeat marker like "[1]".
+    repeat_token = tokens.pop(-1)
+    repeat_count = int(repeat_token.strip('[]'))
+    unit_format_tokens = tokens  # for one unit
+    # Determine the unit width from the tokens.
+    unit_width = 0
+    for token in unit_format_tokens:
+        token_info = parse_format_token(token)
+        if token_info[0] != 'repeat':
+            unit_width += token_info[1] * token_info[-1]
+    # Group the intensity values into records of repeat_count units per line.
+    flow_values = fm.flowDataRange
+    depth_values = fm.depthDataRange
+    velocity_values = fm.velocityDataRange
+    payload_lines = []
+    for i in range(0, len(flow_values), repeat_count):
+        flows = flow_values[i:i+repeat_count]
+        depths = depth_values[i:i+repeat_count]
+        velocities = velocity_values[i:i+repeat_count]
+        group = [list(values) for values in zip(flows, depths, velocities)]
+        if len(group) < repeat_count:
+            group.extend([None] * (repeat_count - len(group)))
+        # Format each unit (here we assume each unit has one field: INTENSITY).
+        unit_strs = []
+        for value in group:
+            if value is not None:
+                unit_str = format_fixed_width(value, unit_format_tokens)
+                # Ensure unit_str is exactly unit_width characters.
+                unit_str = unit_str.ljust(unit_width)[:unit_width]
+                unit_strs.append(unit_str)
+        line = "".join(unit_strs)
+        # The record line should be exactly record_length characters.
+        line = line.ljust(record_length)[:record_length]
+        payload_lines.append(line)
+    return payload_lines
+
+def write_fsm_fm_payload(a_inst, record_format_str, record_length):
+    """
+    Write the payload (data) section from the rainGauge object.
+    In our example we assume that the payload consists of a series of
+    intensity values stored in rg.rainfallDataRange and that field_names is "INTENSITY".
+    The record_format_str (e.g. "1,F5.2,[1]") tells us how to format each unit.
+    We assume here one unit per record (repeat count = 1).
+    Returns a list of payload lines.
+    """
+    # Parse the record format: remove the count token and the trailing repeat token.
+    tokens = [tok.strip() for tok in record_format_str.split(',') if tok.strip()]
+    # Remove the count token (first token).
+    tokens.pop(0)
+    # The last token is the repeat marker like "[1]".
+    repeat_token = tokens.pop(-1)
+    repeat_count = int(repeat_token.strip('[]'))
+    unit_format_tokens = tokens  # for one unit
+    # Determine the unit width from the tokens.
+    unit_width = 0
+    for token in unit_format_tokens:
+        token_info = parse_format_token(token)
+        if token_info[0] != 'repeat':
+            unit_width += token_info[1] * token_info[-1]
+    # Group the intensity values into records of repeat_count units per line.
+    flow_values = a_inst.data['FlowData']
+    depth_values = a_inst.data['DepthData']
+    velocity_values = a_inst.data['VelocityData']
+    payload_lines = []
+    for i in range(0, len(flow_values), repeat_count):
+        # if i >= 5084:
+        #     print('NAN')
+        flows = flow_values[i:i+repeat_count]
+        depths = depth_values[i:i+repeat_count]
+        velocities = velocity_values[i:i+repeat_count]
+        group = [list(values) for values in zip(flows, depths, velocities)]
+        if len(group) < repeat_count:
+            group.extend([None] * (repeat_count - len(group)))
+        # Format each unit (here we assume each unit has one field: INTENSITY).
+        unit_strs = []
+        for value in group:
+            if value is not None:
+                unit_str = format_fixed_width(value, unit_format_tokens)
+                # Ensure unit_str is exactly unit_width characters.
+                unit_str = unit_str.ljust(unit_width)[:unit_width]
+                unit_strs.append(unit_str)
+        line = "".join(unit_strs)
+        # The record line should be exactly record_length characters.
+        line = line.ljust(record_length)[:record_length]
+        payload_lines.append(line)
+    return payload_lines
+
     # def resizeEvent(self, event):
     #     new_size = event.size()
     #     self.update_figure_size(new_size.width(), new_size.height())
@@ -1384,7 +1772,114 @@ def bytes_to_text(data, encoding='utf-8'):
         decoded_text = data.decode('ansi').rstrip('\x00')
         return decoded_text
 
+class customQgsMapCanvas(QgsMapCanvas):
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)  # Enable drop events
+        self.overlayLabel = QLabel("Full Period", self)
+        self.overlayLabel.setStyleSheet("background-color: rgba(0, 0, 0, 127); color: white; padding: 5px;")
+        self.overlayLabel.setFixedSize(250, 30)  # Set a fixed size
+        self.updateOverlayLabel()
+
+    def updateOverlayLabel(self):
+        """ Position the overlay label in the bottom-left corner """
+        margin = 20  # Padding from the edge
+        self.overlayLabel.move(int(margin / 2), self.height() - self.overlayLabel.height() - margin)
+
+    def resizeEvent(self, event):
+        """ Update label position when the view is resized """
+        super().resizeEvent(event)
+        self.updateOverlayLabel()        
+
+    def dragEnterEvent(self, e):
+        e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        e.acceptProposedAction()
+
+    def dragMoveEvent(self, e):
+        e.acceptProposedAction()
+
+class customQgsLayerTreeView(QgsLayerTreeView):
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)  # Enable drop events
+
+    def dragEnterEvent(self, e):
+        e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        e.acceptProposedAction()
+
+    def dragMoveEvent(self, e):
+        e.acceptProposedAction()
+
+
+# class RunFunctionAtPointMapTool(QgsMapTool):
+#     def __init__(self, canvas, a_function):
+#         """
+#         Initializes the tool with the map canvas and a function to create virtual rain gauges.
+#         :param canvas: The QGIS map canvas.
+#         :param rain_gauge_function: A function that creates a virtual rain gauge at a given QgsPointXY.
+#         """
+#         super().__init__(canvas)
+#         self.canvas = canvas
+#         self.a_function = a_function  # Function to handle rain gauge creation
+
+#     def canvasPressEvent(self, event):
+#         """
+#         Handles the mouse click event, captures the point location, and triggers the rain gauge creation.
+#         """
+#         clicked_point = self.toMapCoordinates(event.pos())  # Convert click position to map coordinates
+#         print(f"Clicked at: {clicked_point.x()}, {clicked_point.y()}")  # Debug print
+#         self.a_function(clicked_point)  # Call the function to create the virtual rain gauge
+
+#     def deactivate(self):
+#         """
+#         Deactivates the tool.
+#         """
+#         QgsMapTool.deactivate(self)
+#         self.deactivated.emit()
+
+    # def dragEnterEvent(self, event: QDragEnterEvent):
+    #     """Handles when a dragged item enters the canvas."""
+    #     if event.mimeData().hasFormat("application/x-qabstractitemmodeldatalist"):
+    #         event.acceptProposedAction()
+    #     else:
+    #         event.ignore()
+
+    # def dropEvent(self, event: QDropEvent):
+    #     """Handles when an item is dropped onto the canvas."""
+    #     if event.mimeData().hasFormat("application/x-qabstractitemmodeldatalist"):
+    #         event.acceptProposedAction()
+    #         # Extract dropped data
+    #         self.handleDroppedItem(event)
+    #     else:
+    #         event.ignore()
+
+    # def handleDroppedItem(self, event: QDropEvent):
+    #     """Extract and process the dropped data."""
+    #     mime_data = event.mimeData()
+    #     if mime_data.hasFormat("application/x-qabstractitemmodeldatalist"):
+    #         # Example: Extract item text from QListWidget drop
+    #         model_data = mime_data.data("application/x-qabstractitemmodeldatalist")
+    #         item_text = self.decode_qmodel_data(model_data)
+    #         print(f"Dropped item: {item_text}")
+
+    #         # You can process this item (e.g., add a layer, move the map, etc.)
+
+    # def decode_qmodel_data(self, byte_data):
+    #     """Helper function to decode dropped QListWidget items."""
+    #     from PyQt5.QtCore import QByteArray, QDataStream
+    #     data_stream = QDataStream(QByteArray(byte_data))
+    #     data_stream.readInt32()  # Row
+    #     data_stream.readInt32()  # Column
+    #     data_stream.readInt32()  # Type
+    #     text = data_stream.readQString()  # Extract text
+    #     return text
+        
 # class Handler(QObject):
 #     signal_popup_clicked = Signal(str)
 

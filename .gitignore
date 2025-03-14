@@ -6,3 +6,5 @@ ui_elements/OLD__pycache__
 application.log
 resources/poppler
 flowbot_qgis_bundle_env.tar.gz
+build
+dist

@@ -1,5 +1,7 @@
 <RCC>
   <qresource prefix="icons">
+    <file>resources/createIDWTotalDepth.png</file>
+    <file>resources/createVirtualRaingauge.png</file>
     <file>resources/navPan.png</file>
     <file>resources/navZoomExtents.png</file>
     <file>resources/navZoomIn.png</file>

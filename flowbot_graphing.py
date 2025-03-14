@@ -6015,6 +6015,405 @@ class graph_fsm_monitor_data_summary:
         self.fig_width = self.a_plot_widget.figure.get_figwidth()
         self.fig_height = self.a_plot_widget.figure.get_figheight()
 
+
+    def update_plot_old(self):
+
+        self.a_plot_widget.figure.clear()
+        this_interim = self.a_project.dict_fsm_interims[self.interim_id]
+        all_dates = pd.date_range(start=self.a_project.survey_start_date,end=this_interim.interim_end_date,freq="D")
+        
+        all_dates_df = pd.DataFrame({"Date": all_dates})
+        # Define the order of days in a week
+        days_of_week = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+        renamed_columns = {"Monday": "M","Tuesday": "T","Wednesday": "W","Thursday": "T","Friday": "F","Saturday": "S","Sunday": "S"}
+        
+        # Find the starting day of the survey
+        start_day = pd.Timestamp(self.a_project.survey_start_date).day_name()
+        
+        # Create a new order starting from the start_day
+        start_index = days_of_week.index(start_day)
+        ordered_days = days_of_week[start_index:] + days_of_week[:start_index]
+        
+        # plot_count = 1 
+        # for a_inst in self.fsmProject.dict_fsm_installs.values():
+        df_class_data = self.a_inst.get_combined_classification_by_date(self.a_project.survey_start_date, this_interim.interim_end_date)
+        merged_df = pd.merge(all_dates_df, df_class_data, on="Date", how="left")
+        merged_df["Week"] = ((merged_df["Date"] - self.a_project.survey_start_date).dt.days // 7) + 1
+        merged_df["Day"] = merged_df["Date"].dt.day_name()
+        merged_df["Week_Start_Date"] = merged_df["Week"].apply(lambda x: self.a_project.survey_start_date + pd.DateOffset(weeks=x - 1))
+        
+        # Create pivot table
+        dfDataTable = merged_df.pivot_table(index="Week", columns="Day", values="Classification", aggfunc="first")
+        # Reorder columns to match days of the week
+        dfDataTable = dfDataTable[ordered_days]
+        week_start_dates = merged_df.groupby("Week")["Week_Start_Date"].first()
+        dfDataTable.insert(0, "Date", week_start_dates)
+        dfDataTable = dfDataTable.fillna("")
+        dfDataTable["Comments"] = ""
+
+        dfDataTable.rename(columns=renamed_columns, inplace=True)
+
+        loc_list = []
+        if self.a_inst.install_type == "Flow Monitor":
+            loc_list.append(
+                [
+                    "Location",
+                    self.a_project.dict_fsm_sites[self.a_inst.install_site_id].address,
+                ]
+            )
+            loc_list.append(
+                [
+                    "Pipe",
+                    f"{self.a_inst.fm_pipe_shape} {self.a_inst.fm_pipe_width_mm} diameter",
+                ]
+            )
+            loc_list.append(
+                [
+                    "Monitor Type",
+                    self.a_project.dict_fsm_monitors[
+                        self.a_inst.install_monitor_asset_id
+                    ].monitor_sub_type,
+                ]
+            )
+            loc_list.append(
+                ["Installed", self.a_inst.install_date.strftime("%d/%m/%Y")]
+            )
+            if self.a_inst.remove_date > self.a_inst.install_date:
+                loc_list.append(
+                    ["Removed", self.a_inst.remove_date.strftime("%d/%m/%Y")]
+                )
+            else:
+                loc_list.append(["Removed", ""])
+            loc_list.append(
+                [
+                    "Comment",
+                    self.a_project.get_interim_monitor_comment(
+                        self.interim_id,
+                        self.a_inst.install_id,
+                        self.a_inst.install_type,
+                    ),
+                ]
+            )
+            # fm_loc_data.append(loc_list)
+            # fm_int_data.append(pivot_df.copy())
+            dfLocationTable = pd.DataFrame(loc_list, columns=["Col1", "Col2"])
+
+        if self.a_inst.install_type == "Depth Monitor":
+            loc_list.append(
+                [
+                    "Location",
+                    self.a_project.dict_fsm_sites[self.a_inst.install_site_id].address,
+                ]
+            )
+            loc_list.append(["Pipe", ""])
+            loc_list.append(
+                [
+                    "Monitor Type",
+                    self.a_project.dict_fsm_monitors[
+                        self.a_inst.install_monitor_asset_id
+                    ].monitor_sub_type,
+                ]
+            )
+            loc_list.append(
+                ["Installed", self.a_inst.install_date.strftime("%d/%m/%Y")]
+            )
+            if self.a_inst.remove_date > self.a_inst.install_date:
+                loc_list.append(
+                    ["Removed", self.a_inst.remove_date.strftime("%d/%m/%Y")]
+                )
+            else:
+                loc_list.append(["Removed", ""])
+            loc_list.append(
+                [
+                    "Comment",
+                    self.a_project.get_interim_monitor_comment(
+                        self.interim_id,
+                        self.a_inst.install_id,
+                        self.a_inst.install_type,
+                    ),
+                ]
+            )
+            # dm_int_data.append(pivot_df.copy())
+            # dm_loc_data.append(loc_list)
+            dfLocationTable = pd.DataFrame(loc_list, columns=["Col1", "Col2"])
+
+        if self.a_inst.install_type == "Rain Gauge":
+            loc_list.append(
+                [
+                    "Location",
+                    self.a_project.dict_fsm_sites[self.a_inst.install_site_id].address,
+                ]
+            )
+            loc_list.append(["Position", self.a_inst.rg_position])
+            loc_list.append(
+                [
+                    "Monitor Type",
+                    self.a_project.dict_fsm_monitors[
+                        self.a_inst.install_monitor_asset_id
+                    ].monitor_sub_type,
+                ]
+            )
+            loc_list.append(
+                ["Installed", self.a_inst.install_date.strftime("%d/%m/%Y")]
+            )
+            if self.a_inst.remove_date > self.a_inst.install_date:
+                loc_list.append(
+                    ["Removed", self.a_inst.remove_date.strftime("%d/%m/%Y")]
+                )
+            else:
+                loc_list.append(["Removed", ""])
+            loc_list.append(
+                [
+                    "Comment",
+                    self.a_project.get_interim_monitor_comment(
+                        self.interim_id,
+                        self.a_inst.install_id,
+                        self.a_inst.install_type,
+                    ),
+                ]
+            )
+            # rg_loc_data.append(loc_list)
+            # rg_int_data.append(pivot_df.copy())
+            dfLocationTable = pd.DataFrame(loc_list, columns=["Col1", "Col2"])
+
+        # Define column widths
+        col_0_width = 60
+        col_1_width = 100
+        col_2_width = 400
+        col_3_width = 30
+        col_4_width = 30
+        col_5_width = 30
+        col_6_width = 30
+        col_7_width = 30
+        col_8_width = 30
+        col_9_width = 30
+        # dynamic_col_width = 40  # Width for RG ID columns
+        row_height = 20
+        header_row_height = row_height
+
+        data_table_total_width = (
+            col_0_width
+            + col_1_width
+            + col_2_width
+            + col_3_width
+            + col_4_width
+            + col_5_width
+            + col_6_width
+            + col_7_width
+            + col_8_width
+            + col_9_width
+        )
+        data_table_total_height = header_row_height + (
+            row_height * dfDataTable.shape[0]
+        )
+
+        loc_col_0_width = 160
+        loc_col_1_width = data_table_total_width - loc_col_0_width
+
+        loc_table_total_width = loc_col_0_width + loc_col_1_width
+        loc_table_total_height = row_height * dfLocationTable.shape[0]
+
+        padding = 2
+        a_font_size = 10
+
+        dt_x = (data_table_total_width / (self.fig_width / self.fig_height)) - (
+            loc_table_total_height + data_table_total_height
+        )
+        total_height_needed = loc_table_total_height + data_table_total_height + dt_x
+
+        # total_fig_height_needed = self.fig_width * (total_height_needed / data_table_total_width)
+
+        # self.a_plot_widget.figure.set_figheight(total_fig_height_needed)
+
+        hr_loc = loc_table_total_height / total_height_needed
+        hr_dat = (data_table_total_height + dt_x) / total_height_needed
+
+        # location_fig_height = self.fig_width / (loc_table_total_width / loc_table_total_height)
+        # data_fig_height = self.fig_height - location_fig_height
+
+        # # Plotting the table using matplotlib
+        (self.plot_axis_loc, self.plot_axis_data) = self.a_plot_widget.figure.subplots(
+            2, sharex=False, gridspec_kw={"height_ratios": [hr_loc, hr_dat]}
+        )
+
+        self.plot_axis_loc.xaxis.set_visible(False)
+        self.plot_axis_loc.yaxis.set_visible(False)
+        self.plot_axis_loc.set_frame_on(False)
+        self.plot_axis_loc.set_autoscale_on(False)
+
+        loc_column_widths = [loc_col_0_width, loc_col_1_width]
+
+        # Create the data table
+        for row in range(dfLocationTable.shape[0]):
+            my_y = loc_table_total_height - ((row + 1) * row_height)
+            my_x = 0
+            # print(f'X: {my_x}, Y: {my_y}')
+            for col in range(dfLocationTable.shape[1]):
+                if col == 0:
+                    rect = mpl_patches.Rectangle(
+                        (my_x, my_y),
+                        loc_column_widths[col],
+                        row_height,
+                        edgecolor="black",
+                        facecolor="grey",
+                        linewidth=1,
+                    )
+                    self.plot_axis_loc.add_patch(rect)
+                    self.plot_axis_loc.text(
+                        my_x + loc_column_widths[col] / 2,
+                        my_y + row_height / 2,
+                        dfLocationTable.iloc[row, col],
+                        va="center",
+                        ha="center",
+                        fontsize=a_font_size,
+                        fontweight="bold",
+                        color="black",
+                    )
+                else:
+                    rect = mpl_patches.Rectangle(
+                        (my_x, my_y),
+                        loc_column_widths[col],
+                        row_height,
+                        edgecolor="black",
+                        facecolor="white",
+                        linewidth=1,
+                    )
+                    #         rect = mpl_patches.Rectangle((my_x, my_y), loc_column_widths[col], row_height, edgecolor='black', facecolor='white', linewidth=1)
+                    self.plot_axis_loc.add_patch(rect)
+                    self.plot_axis_loc.text(
+                        my_x + loc_column_widths[col] / 2,
+                        my_y + row_height / 2,
+                        dfLocationTable.iloc[row, col],
+                        va="center",
+                        ha="center",
+                        fontsize=a_font_size,
+                        fontweight="normal",
+                        color="black",
+                    )
+                my_x += loc_column_widths[col]
+
+        # Set the limits of the plot to better visualize the rectangle
+        self.plot_axis_loc.set_box_aspect(
+            loc_table_total_height / loc_table_total_width
+        )
+        self.plot_axis_loc.set_xlim(-padding, loc_table_total_width + padding)
+        self.plot_axis_loc.set_ylim(-padding, loc_table_total_height + padding)
+
+        self.plot_axis_data.xaxis.set_visible(False)
+        self.plot_axis_data.yaxis.set_visible(False)
+        self.plot_axis_data.set_frame_on(False)
+        self.plot_axis_data.set_autoscale_on(False)
+
+        data_column_widths = [
+            col_0_width,
+            col_1_width,
+            col_2_width,
+            col_3_width,
+            col_4_width,
+            col_5_width,
+            col_6_width,
+            col_7_width,
+            col_8_width,
+            col_9_width,
+        ]
+        # column_widths = [base_col_width] * static_columns
+
+        # Create the data table header
+        headers = dfDataTable.columns.tolist()
+
+        my_y = data_table_total_height - (header_row_height)
+        my_x = 0
+
+        for idx, header in enumerate(headers):
+            rect = mpl_patches.Rectangle(
+                (my_x, my_y),
+                data_column_widths[idx],
+                header_row_height,
+                edgecolor="black",
+                facecolor="grey",
+                linewidth=1,
+            )
+            self.plot_axis_data.add_patch(rect)
+            self.plot_axis_data.text(
+                my_x + data_column_widths[idx] / 2,
+                my_y + header_row_height / 2,
+                header,
+                va="center",
+                ha="center",
+                fontsize=a_font_size,
+                fontweight="bold",
+                color="black",
+            )
+            my_x += data_column_widths[idx]
+
+        # Create the data table
+        for row in range(dfDataTable.shape[0]):
+            my_y = data_table_total_height - (
+                header_row_height + ((row + 1) * row_height)
+            )
+            my_x = 0
+            for col in range(dfDataTable.shape[1]):
+                rect = mpl_patches.Rectangle(
+                    (my_x, my_y),
+                    data_column_widths[col],
+                    row_height,
+                    edgecolor="black",
+                    facecolor="white",
+                    linewidth=1,
+                )
+                self.plot_axis_data.add_patch(rect)
+                self.plot_axis_data.text(
+                    my_x + data_column_widths[col] / 2,
+                    my_y + row_height / 2,
+                    dfDataTable.iloc[row, col],
+                    va="center",
+                    ha="center",
+                    fontsize=a_font_size,
+                    fontweight="normal",
+                    color="black",
+                )
+                my_x += data_column_widths[col]
+
+        # Set the limits of the plot to better visualize the rectangle
+        self.plot_axis_data.set_box_aspect(
+            data_table_total_height / data_table_total_width
+        )
+        self.plot_axis_data.set_xlim(-padding, data_table_total_width + padding)
+        self.plot_axis_data.set_ylim(-padding, data_table_total_height + padding)
+
+        # Add header and footer
+        self.a_plot_widget.figure.text(
+            0.95,
+            0.95,
+            f"Cumulative Install Summary: {self.a_inst.install_monitor_asset_id}/{self.a_inst.client_ref}",
+            ha="right",
+            fontsize=16,
+        )
+        self.a_plot_widget.figure.text(
+            0.5, 0.02, self.footer_text, ha="center", fontsize=12
+        )
+
+        # Add an image to the header
+        im = Image.open(resource_path(f"resources/{rps_or_tt}_logo_report.png"))
+        aspect_ratio = im.width / im.height
+        desired_height_inch = 0.5
+        desired_width_inch = desired_height_inch * aspect_ratio
+        fig_dpi = self.a_plot_widget.figure.get_dpi()
+        desired_width_px = int(desired_width_inch * fig_dpi)
+        desired_height_px = int(desired_height_inch * fig_dpi)
+        # Resize the image to fit in the header
+        im = im.resize((desired_width_px, desired_height_px))
+        imagebox = OffsetImage(im)
+        ab = AnnotationBbox(
+            imagebox, (0.1, 0.95), frameon=False, xycoords="figure fraction"
+        )
+        self.a_plot_widget.figure.add_artist(ab)
+
+        # # Adjust layout
+        # self.a_plot_widget.figure.subplots_adjust(left=0.15, right=0.85, bottom=0.15, top=0.85)
+        # Display the table
+        plt.show()
+
     def update_plot(self):
         self.a_plot_widget.figure.clear()
 
@@ -6051,9 +6450,6 @@ class graph_fsm_monitor_data_summary:
         start_index = days_of_week.index(start_day)
         ordered_days = days_of_week[start_index:] + days_of_week[:start_index]
 
-        # plot_count = 1
-        # for a_inst in self.fsmProject.dict_fsm_installs.values():
-
         df_class_data = self.a_inst.get_combined_classification_by_date(
             self.a_project.survey_start_date, this_interim.interim_end_date
         )
@@ -6065,40 +6461,87 @@ class graph_fsm_monitor_data_summary:
         merged_df["Week_Start_Date"] = merged_df["Week"].apply(
             lambda x: self.a_project.survey_start_date + pd.DateOffset(weeks=x - 1)
         )
-        # Create pivot table
-        dfDataTable = merged_df.pivot_table(
-            index="Week", columns="Day", values="Classification", aggfunc="first"
-        )
-        # Reorder columns to match days of the week
-        dfDataTable = dfDataTable[ordered_days]
-        week_start_dates = merged_df.groupby("Week")["Week_Start_Date"].first()
-        dfDataTable.insert(0, "Date", week_start_dates)
-        dfDataTable = dfDataTable.fillna("")
-        dfDataTable["Comments"] = ""
-        #
-        # NEED TO UPDATE COMMENTS COLUMN WITH MONITOR DATA COMMENT FOR THAT WEEK/INTERIM################################
-        #
-        dfDataTable.reset_index(inplace=True)
-        dfDataTable["Date"] = dfDataTable["Date"].dt.strftime("%d/%m/%Y")
-        # Move the "Comments" column to the desired position (after "Date")
-        comments_column = dfDataTable.pop("Comments")  # Remove the "Comments" column
-        dfDataTable.insert(2, "Comments", comments_column)  # Insert it at the 3rd position (index 2)
 
-        # dfDataTable = dfDataTable[
-        #     [
-        #         "Week",
-        #         "Date",
-        #         "Comments",
-        #         "Tuesday",
-        #         "Wednesday",
-        #         "Thursday",
-        #         "Friday",
-        #         "Saturday",
-        #         "Sunday",
-        #         "Monday",
-        #     ]
-        # ]
+        # #ORIGINAL METHOD FOR TABLE:
+        # dfDataTable = merged_df.pivot_table(index="Week", columns="Day", values="Classification", aggfunc="first")
+        # # Reorder columns to match days of the week
+        # # dfDataTable = dfDataTable[ordered_days]  # Ignore ordering at the moment
+        # week_start_dates = merged_df.groupby("Week")["Week_Start_Date"].first()
+        # dfDataTable.insert(0, "Date", week_start_dates)
+        # dfDataTable = dfDataTable.fillna("")
+        # dfDataTable["Comments"] = ""
+        # dfDataTable.reset_index(inplace=True)
+        # dfDataTable["Date"] = dfDataTable["Date"].dt.strftime("%d/%m/%Y")
+        # comments_column = dfDataTable.pop("Comments")  # Remove the "Comments" column
+        # dfDataTable.insert(2, "Comments", comments_column)  # Insert it at the 3rd position (index 2)
+        # dfDataTable.rename(columns=renamed_columns, inplace=True)
+
+        #REVISED METHOD FOR TABLE:
+        # Ensure all weeks have all days
+        all_weeks = merged_df["Week"].unique()
+        filled_rows = []
+
+        for week in all_weeks:
+            week_start = self.a_project.survey_start_date + pd.DateOffset(weeks=week - 1)
+            week_days = {day: "" for day in days_of_week}  # Default empty values
+            week_rows = merged_df[merged_df["Week"] == week].set_index("Day")["Classification"].to_dict()
+            week_days.update(week_rows)  # Overwrite with actual data
+
+            # filled_rows.append({"Week": week, "Week_Start_Date": week_start, **week_days})
+            filled_rows.append({"Week": week, "Date": week_start, "Comments": '', **week_days})
+
+        # Convert to DataFrame
+        dfDataTable = pd.DataFrame(filled_rows)
+        # # Reorder columns to match the expected day order
+        # dfDataTable = dfDataTable[["Week", "Week_Start_Date"] + ordered_days]
+        #rename the Week_Start_Date column to Date
+        dfDataTable = dfDataTable[["Week", "Date", "Comments"] + ordered_days]
+
+        # #Get the week start dates and re-index them
+        # week_start_dates = merged_df.groupby("Week")["Week_Start_Date"].first()
+        # week_start_dates = week_start_dates.reset_index(drop=True)
+        
+        # dfDataTable.insert(0, "Date", week_start_dates)
+        # dfDataTable = dfDataTable.fillna("")
+        # dfDataTable["Comments"] = ""
+        # #
+        # # NEED TO UPDATE COMMENTS COLUMN WITH MONITOR DATA COMMENT FOR THAT WEEK/INTERIM################################
+        # #
+        # dfDataTable.reset_index(inplace=True)
+        # dfDataTable["Date"] = dfDataTable["Date"].dt.strftime("%d/%m/%Y")
+        # # Move the "Comments" column to the desired position (after "Date")
+        # comments_column = dfDataTable.pop("Comments")  # Remove the "Comments" column
+        # dfDataTable.insert(2, "Comments", comments_column)  # Insert it at the 3rd position (index 2)
+
         dfDataTable.rename(columns=renamed_columns, inplace=True)
+
+
+        # # Ensure all weeks have all days
+        # all_weeks = merged_df["Week"].unique()
+        # filled_rows = []
+
+        # for week in all_weeks:
+        #     week_start = self.a_project.survey_start_date + pd.DateOffset(weeks=week - 1)
+        #     week_days = {day: "" for day in days_of_week}  # Default empty values
+        #     week_rows = merged_df[merged_df["Week"] == week].set_index("Day")["Classification"].to_dict()
+        #     week_days.update(week_rows)  # Overwrite with actual data
+
+        #     filled_rows.append({"Week": week, "Date": week_start, **week_days})
+
+        # # Convert to DataFrame
+        # dfDataTable = pd.DataFrame(filled_rows)
+        # # Ensure correct ordering of days
+        # dfDataTable = dfDataTable[["Week", "Date"] + ordered_days]
+        # # Rename columns to match short day names
+        # dfDataTable = dfDataTable.rename(columns=renamed_columns)
+        # # Fill missing values explicitly
+        dfDataTable = dfDataTable.fillna("")
+        # # Add comments column
+        # dfDataTable["Comments"] = ""
+
+
+
+
 
         loc_list = []
         if self.a_inst.install_type == "Flow Monitor":
@@ -7620,6 +8063,100 @@ class graph_fsm_scatter_plot:
         # Show plot
         plt.show()
 
+class dashboardFSM:
+
+    main_window_plot_widget: PlotWidget = None
+    isBlank = True
+
+    def __init__(self, mw_pw: PlotWidget = None):
+
+        self.main_window_plot_widget = mw_pw
+        # self.plotted_installs: plottedInstalls = plottedInstalls()
+        self.fsm_project: fsmProject = None
+        getBlankFigure(self.main_window_plot_widget)
+        self.isBlank = True
+        self.update_plot()
+
+    def update_plot(self, fsm_project: fsmProject = None):
+        self.main_window_plot_widget.figure.clear()
+        self.fsm_project = fsm_project
+        self.createDashboard()
+
+    def createDashboard(self):
+
+        self.grid_spec = mpl_gridspec.GridSpec(3, 3, figure=self.main_window_plot_widget.figure)  # 3 rows, 3 columns
+
+        # First row (3 subplots)
+        self.plot_axis_details = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[0, 0])
+        self.plot_axis_status = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[0, 1])
+        self.plot_axis_equipment = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[0, 2])
+
+        # Second row (2 subplots spanning two columns each)
+        self.plot_axis_suitability = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[1, 0:2])  # Span first 2 columns
+        self.plot_axis_acceptability = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[1, 2])    # Last column
+
+        # Third row (1 subplot spanning all columns)
+        self.plot_axis_notes = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[2, :])  # Span all 3 columns
+
+        # Set titles for illustration
+        self.plot_axis_details.set_title("Survey Details")
+        self.plot_axis_status.set_title("Status")
+        self.plot_axis_equipment.set_title("Equipment")
+        self.plot_axis_suitability.set_title("Site Suitability")
+        self.plot_axis_acceptability.set_title("Acceptability Plot")
+        self.plot_axis_notes.set_title("Notes")
+
+        self.plot_acceptability()
+        self.plot_equipment()
+
+        self.main_window_plot_widget.figure.tight_layout()
+        # Adjust layout
+        self.main_window_plot_widget.figure.subplots_adjust(
+            left=0.075, right=0.95, bottom=0.05, top=0.95
+        )
+        # Redraw the figure to ensure all changes are visible
+        self.main_window_plot_widget.figure.canvas.draw()
+
+
+    def plot_acceptability(self):
+
+        # Sample data
+        velocity = np.random.uniform(0, 3, 100)  # Velocity data
+        depth = np.random.uniform(0, 1600, 100)   # Depth data
+
+        self.plot_axis_acceptability.scatter(velocity, depth, color='orange', s=10, label='Data')
+
+        # Label regions
+        self.plot_axis_acceptability.text(0.5, 800, 'Acceptable range of\neffluent depths and\nvelocity for accurate\nmonitoring', ha='center')
+        self.plot_axis_acceptability.text(2.5, 400, 'Velocity too\nfast for\naccurate sensing', ha='center')
+        self.plot_axis_acceptability.text(0.5, 1400, 'Effluent depth too great for\nconventional single point velocity\nmeasurement', ha='center')
+
+        # Annotations for limits
+        self.plot_axis_acceptability.axhline(y=1200, color='grey', linestyle='--')
+        self.plot_axis_acceptability.axvline(x=2.25, color='grey', linestyle='--')
+
+        self.plot_axis_acceptability.set_xlabel('Velocity (m/s)')
+        self.plot_axis_acceptability.set_ylabel('Effluent Depth (mm)')
+        self.plot_axis_acceptability.set_title('Effluent Depth vs. Velocity')
+        self.plot_axis_acceptability.legend()
+        
+    def plot_equipment(self):
+
+        # Sample data for the table
+        data = [['365', '61', '69', '', '', '17'],
+                ['', '', '', '', '', ''],
+                ['', '', '', '', '', '']]
+
+        col_labels = ['Flow', 'Depth', 'Rainfall', 'Pump', 'Samplers', 'Quality']
+        row_labels = ['Installed', 'Relocated', 'Removed']
+
+        # Hide axes
+        self.plot_axis_equipment.xaxis.set_visible(False)
+        self.plot_axis_equipment.yaxis.set_visible(False)
+
+        # Create the table
+        table = self.plot_axis_equipment.table(cellText=data, colLabels=col_labels, rowLabels=row_labels, cellLoc='center', loc='center')
+
 
 class graphFSMInstall:
 
@@ -7664,21 +8201,21 @@ class graphFSMInstall:
         a_linewidth = 1
         if self.plot_raw:
 
-            (plot_axis_battery, plot_axis_intensity) = (
+            (plot_axis_intensity) = (
                 self.main_window_plot_widget.figure.subplots(
-                    nrows=2, sharex=True, gridspec_kw={"height_ratios": [1, 1]}
+                    nrows=1, sharex=True, gridspec_kw={"height_ratios": [1]}
                 )
             )
 
-            if self.plotted_raw is not None and self.plotted_raw.bat_data is not None:
-                plot_axis_battery.plot(
-                    self.plotted_raw.bat_data["Timestamp"],
-                    self.plotted_raw.bat_data["Value"],
-                    color="blue",
-                    linewidth=a_linewidth,
-                )
-            plot_axis_battery.set_ylabel("Voltage (V)")
-            plot_axis_battery.set_title("Battery", loc="left", fontsize=16)
+            # if self.plotted_raw is not None and self.plotted_raw.bat_data is not None:
+            #     plot_axis_battery.plot(
+            #         self.plotted_raw.bat_data["Timestamp"],
+            #         self.plotted_raw.bat_data["Value"],
+            #         color="blue",
+            #         linewidth=a_linewidth,
+            #     )
+            # plot_axis_battery.set_ylabel("Voltage (V)")
+            # plot_axis_battery.set_title("Battery", loc="left", fontsize=16)
 
             if self.plotted_raw is not None and self.plotted_raw.rg_data is not None:
                 plot_axis_intensity.stem(
@@ -7741,6 +8278,88 @@ class graphFSMInstall:
             # Redraw the figure to ensure all changes are visible
             self.main_window_plot_widget.figure.canvas.draw()
 
+    # def createRGPlot(self):
+
+    #     a_linewidth = 1
+    #     if self.plot_raw:
+
+    #         (plot_axis_battery, plot_axis_intensity) = (
+    #             self.main_window_plot_widget.figure.subplots(
+    #                 nrows=2, sharex=True, gridspec_kw={"height_ratios": [1, 1]}
+    #             )
+    #         )
+
+    #         if self.plotted_raw is not None and self.plotted_raw.bat_data is not None:
+    #             plot_axis_battery.plot(
+    #                 self.plotted_raw.bat_data["Timestamp"],
+    #                 self.plotted_raw.bat_data["Value"],
+    #                 color="blue",
+    #                 linewidth=a_linewidth,
+    #             )
+    #         plot_axis_battery.set_ylabel("Voltage (V)")
+    #         plot_axis_battery.set_title("Battery", loc="left", fontsize=16)
+
+    #         if self.plotted_raw is not None and self.plotted_raw.rg_data is not None:
+    #             plot_axis_intensity.stem(
+    #                 self.plotted_raw.rg_data["Timestamp"],
+    #                 [1] * len(self.plotted_raw.rg_data["Timestamp"]),
+    #             )
+    #             # plot_axis_intensity.plot(
+    #             #     self.plotted_raw.rg_data["Timestamp"],
+    #             #     [1] * len(self.plotted_raw.rg_data["Timestamp"]),
+    #             #     color="green",
+    #             #     linewidth=a_linewidth,
+    #             # )
+    #         plot_axis_intensity.set_ylabel("Tips")
+    #         plot_axis_intensity.set_title("Rainfall", loc="left", fontsize=16)
+
+    #         locator = AutoDateLocator(minticks=6, maxticks=15)
+    #         formatter = ConciseDateFormatter(locator)
+    #         plot_axis_intensity.xaxis.set_major_locator(locator)
+    #         plot_axis_intensity.xaxis.set_major_formatter(formatter)
+
+    #         self.main_window_plot_widget.figure.tight_layout()
+    #         # Adjust layout
+    #         self.main_window_plot_widget.figure.subplots_adjust(
+    #             left=0.075, right=0.95, bottom=0.05, top=0.95
+    #         )
+    #         # Redraw the figure to ensure all changes are visible
+    #         self.main_window_plot_widget.figure.canvas.draw()
+
+    #     else:
+
+    #         (plot_axis_intensity) = self.main_window_plot_widget.figure.subplots(
+    #             nrows=1, sharex=True, gridspec_kw={"height_ratios": [1]}
+    #         )
+
+    #         if self.plotted_install.data is not None:
+    #             df_filtered = self.plotted_install.data.copy()
+
+    #             plot_axis_intensity.plot(
+    #                 df_filtered["Date"],
+    #                 df_filtered["IntensityData"],
+    #                 color="darkblue",
+    #                 linewidth=a_linewidth,
+    #             )
+    #         plot_axis_intensity.set_ylabel("Intensity (mm/hr)")
+    #         plot_axis_intensity.set_title("Rainfall", loc="left", fontsize=16)
+
+    #         locator = AutoDateLocator(minticks=6, maxticks=15)
+    #         formatter = ConciseDateFormatter(locator)
+    #         plot_axis_intensity.xaxis.set_major_locator(locator)
+    #         plot_axis_intensity.xaxis.set_major_formatter(formatter)
+
+    #         # self.main_window_plot_widget.figure.subplots_adjust(
+    #         #     left=0.15, right=0.85, bottom=0.15, top=0.85)
+    #         self.main_window_plot_widget.figure.tight_layout()
+
+    #         # Adjust layout
+    #         self.main_window_plot_widget.figure.subplots_adjust(
+    #             left=0.075, right=0.95, bottom=0.05, top=0.95
+    #         )
+    #         # Redraw the figure to ensure all changes are visible
+    #         self.main_window_plot_widget.figure.canvas.draw()
+
     def createFMPlot(self):
 
         a_linewidth = 1
@@ -7801,10 +8420,27 @@ class graphFSMInstall:
                         self.plotted_raw.dep_data is not None
                         and self.plotted_raw.vel_data is not None
                     ):
-                        # Extract data from raw inputs
-                        timestamps = pd.to_datetime(self.plotted_raw.dep_data["Timestamp"])
-                        original_depths = self.plotted_raw.dep_data["Value"].values
-                        original_velocities = self.plotted_raw.vel_data["Value"].values
+                        
+                        # Extract data from raw inputs                        
+                        # Convert timestamps to datetime
+                        depth_timestamps = pd.to_datetime(self.plotted_raw.dep_data["Timestamp"])
+                        velocity_timestamps = pd.to_datetime(self.plotted_raw.vel_data["Timestamp"])
+
+                        # Find overlapping timestamps
+                        common_timestamps = np.intersect1d(depth_timestamps, velocity_timestamps)
+
+                        # Filter data to keep only the overlapping timestamps
+                        depth_mask = depth_timestamps.isin(common_timestamps)
+                        velocity_mask = velocity_timestamps.isin(common_timestamps)
+
+                        # Convert timestamps back to a consistent array
+                        timestamps = pd.to_datetime(common_timestamps)
+                        original_depths = self.plotted_raw.dep_data.loc[depth_mask, "Value"].values
+                        original_velocities = self.plotted_raw.vel_data.loc[velocity_mask, "Value"].values                        
+
+                        # timestamps = pd.to_datetime(self.plotted_raw.dep_data["Timestamp"])
+                        # original_depths = self.plotted_raw.dep_data["Value"].values
+                        # original_velocities = self.plotted_raw.vel_data["Value"].values
 
                         corrected_timestamps = calculator.apply_timing_corrections(
                             timestamps

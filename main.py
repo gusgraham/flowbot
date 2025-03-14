@@ -19,6 +19,7 @@ import traceback
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtCore import (QFile, QByteArray)
 from qgis.core import QgsApplication
+# from qgis.analysis import QgsNativeAlgorithms
 from flowbot_mainwindow_gis import FlowbotMainWindowGis
 from flowbot_helper import rps_or_tt, strVersion, root_path, resource_path
 import logging
@@ -89,21 +90,13 @@ def setup_qgis(qgs_app):
     sys.path.append(bundle_dir + "\\bin")
     sys.path.append(bundle_dir + "\\lib\\site-packages")
 
-    # Log all paths and environment variables for debugging
-    logger.debug("bundle_dir: %s", bundle_dir)
-    logger.debug("qgis_prefix_path: %s", qgis_prefix_path)
-    logger.debug("qgis_plugin_path: %s", qgis_plugin_path)
-    logger.debug("GDAL_DATA: %s", os.environ.get("GDAL_DATA"))
-    logger.debug("GDAL_DRIVER_PATH: %s", os.environ.get("GDAL_DRIVER_PATH"))
-    logger.debug("GEOTIFF_CSV: %s", os.environ.get("GEOTIFF_CSV"))
-    logger.debug("PDAL_DRIVER_PATH: %s", os.environ.get("PDAL_DRIVER_PATH"))
-    logger.debug("QT_PLUGIN_PATH: %s", os.environ.get("QT_PLUGIN_PATH"))
-    logger.debug("sys.path: %s", sys.path)
-
     # Set QGIS application paths
     qgs_app.setPrefixPath(qgis_prefix_path, True)
     qgs_app.setPluginPath(qgis_plugin_path)
     qgs_app.initQgis()
+
+    # # Ensure Processing plugin is available
+    # qgs_app.instance().processingRegistry().addProvider(QgsNativeAlgorithms())
 
 # def setup_qgis(qgs_app):
 #     # """ Set QGIS paths based on whether running as a bundled application or not """
@@ -136,7 +129,7 @@ app.setStyle('Fusion')
 qgs = QgsApplication([], True)
 setup_qgis(qgs)
 
-mainWindow = FlowbotMainWindowGis(None, app)
+mainWindow = FlowbotMainWindowGis(None, app, qgs)
 
 stylesheet_path = os.path.join(os.path.dirname(
     __file__), f'resources/qss/{rps_or_tt}_default.qss')

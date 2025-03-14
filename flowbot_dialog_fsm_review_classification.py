@@ -51,11 +51,14 @@ class flowbot_dialog_fsm_review_classification(QtWidgets.QDialog, Ui_Dialog):
                 a_int_cr.interim_id = interim_id
                 a_int_cr.install_id = a_inst.install_id
                 self.a_project.add_interim_review(a_int_cr)
-            self.interim_reviews.append(a_int_cr)
+            if a_int_cr.dr_data_covered:
+                self.interim_reviews.append(a_int_cr)
+            else:
+                a_int_cr.cr_complete = True
+                a_int_cr.cr_comment = 'No data in interim period'
 
         self.current_interim_review_index = 0
-        self.current_interim_review: fsmInterimReview = self.interim_reviews[
-            self.current_interim_review_index]
+        self.current_interim_review: fsmInterimReview = self.interim_reviews[self.current_interim_review_index]
         self.current_inst = self.a_project.dict_fsm_installs[self.current_interim_review.install_id]
         self.selected_days = set()
         self.last_selected_day = None
@@ -294,7 +297,7 @@ class flowbot_dialog_fsm_review_classification(QtWidgets.QDialog, Ui_Dialog):
     def filter_data(self):
 
         self.df_filtered = self.current_inst.data[(self.current_inst.data['Date'] >= self.start_date)
-                                                  & (self.current_inst.data['Date'] <= self.end_date)]
+                                                    & (self.current_inst.data['Date'] <= self.end_date)]
 
         if self.current_inst.class_data_ml is not None:
             df_class_ml_filtered = self.current_inst.class_data_ml[(self.current_inst.class_data_ml['Date'] >= self.start_date)

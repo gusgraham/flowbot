@@ -57,13 +57,23 @@ class flowbot_dialog_fsm_review_raingauge(QtWidgets.QDialog, Ui_Dialog):
                     a_int_rg.interim_id = interim_id
                     a_int_rg.install_id = a_inst.install_id
                     self.a_project.add_interim_review(a_int_rg)
-                self.interim_reviews.append(a_int_rg)
+                # self.interim_reviews.append(a_int_rg)
+                if a_int_rg.dr_data_covered:
+                    self.interim_reviews.append(a_int_rg)
+                else:
+                    a_int_rg.rg_complete = True
+                    a_int_rg.rg_comment = 'No data in interim period'                
 
         self.df_filtered: pd.DataFrame
 
         self.current_interim_review_index = 0
-        self.current_interim_review: fsmInterimReview = self.interim_reviews[self.current_interim_review_index]
-        self.current_inst = self.a_project.dict_fsm_installs[self.current_interim_review.install_id]
+
+        if len(self.interim_reviews) > 0:
+            self.current_interim_review: fsmInterimReview = self.interim_reviews[self.current_interim_review_index]
+            self.current_inst = self.a_project.dict_fsm_installs[self.current_interim_review.install_id]
+        else:
+            self.current_interim_review: fsmInterimReview = None
+            self.current_inst: fsmInstall = None
 
         self.plot_axis_rg: Optional[axes.Axes] = None
         self.plot_axis_depth: Optional[axes.Axes] = None
@@ -107,15 +117,25 @@ class flowbot_dialog_fsm_review_raingauge(QtWidgets.QDialog, Ui_Dialog):
 
     def update_widgets(self):
 
-        self.chk_rg_review_complete.setChecked(self.current_interim_review.rg_complete)
-        self.txt_review_comments.setText(self.current_interim_review.rg_comment)
+        if self.current_interim_review is not None:
+            self.chk_rg_review_complete.setChecked(self.current_interim_review.rg_complete)
+            self.txt_review_comments.setText(self.current_interim_review.rg_comment)
+        else:
+            self.chk_rg_review_complete.setChecked(True)
+            self.txt_review_comments.setText('No data in the interim')
+
 
     def update_button_states(self):
-        self.btnPrevious.setEnabled(self.current_interim_review_index > 0)
-        self.btnNext.setEnabled(self.current_interim_review_index < len(self.interim_reviews) - 1)
-        # self.btn_dep_update.setEnabled(False)
-        self.rbnAverage.setEnabled(self.chk_dep_compare_all_rgs.isChecked())
-        self.rbnIndividual.setEnabled(self.chk_dep_compare_all_rgs.isChecked())
+        if self.current_interim_review is not None:        
+            self.btnPrevious.setEnabled(self.current_interim_review_index > 0)
+            self.btnNext.setEnabled(self.current_interim_review_index < len(self.interim_reviews) - 1)
+            self.rbnAverage.setEnabled(self.chk_dep_compare_all_rgs.isChecked())
+            self.rbnIndividual.setEnabled(self.chk_dep_compare_all_rgs.isChecked())
+        else:
+            self.btnPrevious.setEnabled(False)
+            self.btnNext.setEnabled(False)
+            self.rbnAverage.setEnabled(False)
+            self.rbnIndividual.setEnabled(False)
 
     def dodgyForceUpdate(self):
             oldSize = self.size()
@@ -137,74 +157,75 @@ class flowbot_dialog_fsm_review_raingauge(QtWidgets.QDialog, Ui_Dialog):
 
     def create_dep_plot(self):
 
-        filename = self.current_inst.client_ref
-        # i_soffit_mm = self.current_inst.fm_pipe_height_mm
+        if self.current_inst is not None:
+            filename = self.current_inst.client_ref
+            # i_soffit_mm = self.current_inst.fm_pipe_height_mm
 
-        self.filter_dep_data()
+            self.filter_dep_data()
 
-        if self.chk_show_cumulative.isChecked():
-            self.plot_axis_cum, self.plot_axis_rg = self.plotCanvasReviewRG.figure.subplots(
-                nrows=2, sharex=True,  gridspec_kw={'height_ratios': [1, 1]})
-        else:
-            self.plot_axis_rg = self.plotCanvasReviewRG.figure.subplots(nrows=1,  gridspec_kw={'height_ratios': [1]})
-
-        if self.chk_dep_compare_full_period.isChecked():
-
-            self.plot_axis_rg.plot(self.df_compare['Date'], self.df_compare['IntensityData'], color='grey')
             if self.chk_show_cumulative.isChecked():
-                self.plot_axis_cum.plot(self.df_compare['Date'], self.df_compare['CumulativeRainfallDepth_mm'], color='grey')
-
-
-        if self.chk_dep_compare_all_rgs.isChecked():
-            if self.rbnAverage.isChecked():
-                self.plot_axis_rg.plot(self.df_compare_all_rgs['Date'], self.df_compare_all_rgs['IntensityData'], color='grey')
+                self.plot_axis_cum, self.plot_axis_rg = self.plotCanvasReviewRG.figure.subplots(
+                    nrows=2, sharex=True,  gridspec_kw={'height_ratios': [1, 1]})
             else:
-                grouped = self.df_compare_all_rgs.groupby(self.df_compare_all_rgs['InstallID'])
+                self.plot_axis_rg = self.plotCanvasReviewRG.figure.subplots(nrows=1,  gridspec_kw={'height_ratios': [1]})
 
-                for id, group in grouped:
-                    self.plot_axis_rg.plot(group['Date'], group['IntensityData'], color='grey')
+            if self.chk_dep_compare_full_period.isChecked():
 
-        self.plot_axis_rg.plot(self.df_filtered['Date'], self.df_filtered['IntensityData'], color='darkblue')
-        self.plot_axis_rg.set_ylabel('Intensity (mm/hr)')
+                self.plot_axis_rg.plot(self.df_compare['Date'], self.df_compare['IntensityData'], color='grey')
+                if self.chk_show_cumulative.isChecked():
+                    self.plot_axis_cum.plot(self.df_compare['Date'], self.df_compare['CumulativeRainfallDepth_mm'], color='grey')
 
-        if self.chk_show_cumulative.isChecked():
+
             if self.chk_dep_compare_all_rgs.isChecked():
                 if self.rbnAverage.isChecked():
-                    self.plot_axis_cum.plot(self.df_compare_all_rgs['Date'],
-                                            self.df_compare_all_rgs['CumulativeRainfallDepth_mm'], color='grey')
+                    self.plot_axis_rg.plot(self.df_compare_all_rgs['Date'], self.df_compare_all_rgs['IntensityData'], color='grey')
                 else:
                     grouped = self.df_compare_all_rgs.groupby(self.df_compare_all_rgs['InstallID'])
 
                     for id, group in grouped:
-                        self.plot_axis_cum.plot(group['Date'],
-                                                group['CumulativeRainfallDepth_mm'], color='grey')
+                        self.plot_axis_rg.plot(group['Date'], group['IntensityData'], color='grey')
 
-            if self.chk_dep_compare_full_period.isChecked():
-                self.plot_axis_cum.plot(self.df_filtered['Date'], self.df_filtered['FP_CumulativeRainfallDepth_mm'], color='darkblue')
+            self.plot_axis_rg.plot(self.df_filtered['Date'], self.df_filtered['IntensityData'], color='darkblue')
+            self.plot_axis_rg.set_ylabel('Intensity (mm/hr)')
+
+            if self.chk_show_cumulative.isChecked():
+                if self.chk_dep_compare_all_rgs.isChecked():
+                    if self.rbnAverage.isChecked():
+                        self.plot_axis_cum.plot(self.df_compare_all_rgs['Date'],
+                                                self.df_compare_all_rgs['CumulativeRainfallDepth_mm'], color='grey')
+                    else:
+                        grouped = self.df_compare_all_rgs.groupby(self.df_compare_all_rgs['InstallID'])
+
+                        for id, group in grouped:
+                            self.plot_axis_cum.plot(group['Date'],
+                                                    group['CumulativeRainfallDepth_mm'], color='grey')
+
+                if self.chk_dep_compare_full_period.isChecked():
+                    self.plot_axis_cum.plot(self.df_filtered['Date'], self.df_filtered['FP_CumulativeRainfallDepth_mm'], color='darkblue')
+                else:
+                    self.plot_axis_cum.plot(self.df_filtered['Date'], self.df_filtered['CumulativeRainfallDepth_mm'], color='darkblue')
+                self.plot_axis_cum.set_ylabel('Cumulative Depth (mm)')
+                self.plot_axis_cum.set_title(f'Rainfall: {filename}', loc='left', fontsize=16)  # Adding filename to title
             else:
-                self.plot_axis_cum.plot(self.df_filtered['Date'], self.df_filtered['CumulativeRainfallDepth_mm'], color='darkblue')
-            self.plot_axis_cum.set_ylabel('Cumulative Depth (mm)')
-            self.plot_axis_cum.set_title(f'Rainfall: {filename}', loc='left', fontsize=16)  # Adding filename to title
-        else:
-            self.plot_axis_rg.set_title(f'Rainfall: {filename}', loc='left', fontsize=16)  # Adding filename to title
+                self.plot_axis_rg.set_title(f'Rainfall: {filename}', loc='left', fontsize=16)  # Adding filename to title
 
-        self.plot_axis_rg.set_xlabel('Date')
-        
-        # Set major and minor locators
-        self.plot_axis_rg.xaxis.set_major_locator(mpl_dates.DayLocator())
-        self.plot_axis_rg.xaxis.set_major_formatter(mpl_dates.DateFormatter("%a %d/%m/%Y"))
-        self.plot_axis_rg.xaxis.set_minor_locator(mpl_dates.HourLocator(byhour=[0, 6, 12, 18]))
+            self.plot_axis_rg.set_xlabel('Date')
+            
+            # Set major and minor locators
+            self.plot_axis_rg.xaxis.set_major_locator(mpl_dates.DayLocator())
+            self.plot_axis_rg.xaxis.set_major_formatter(mpl_dates.DateFormatter("%a %d/%m/%Y"))
+            self.plot_axis_rg.xaxis.set_minor_locator(mpl_dates.HourLocator(byhour=[0, 6, 12, 18]))
 
-        self.plot_axis_rg.xaxis.set_major_formatter(mpl_dates.ConciseDateFormatter(mpl_dates.AutoDateLocator()))
-        
-        self.update_rg_statistics()
+            self.plot_axis_rg.xaxis.set_major_formatter(mpl_dates.ConciseDateFormatter(mpl_dates.AutoDateLocator()))
+            
+            self.update_rg_statistics()
 
-        # Adjust layout
-        self.plotCanvasReviewRG.figure.subplots_adjust(left=0.15, right=0.85, bottom=0.15, top=0.85)
-        self.plotCanvasReviewRG.figure.tight_layout()
+            # Adjust layout
+            self.plotCanvasReviewRG.figure.subplots_adjust(left=0.15, right=0.85, bottom=0.15, top=0.85)
+            self.plotCanvasReviewRG.figure.tight_layout()
 
-        # Show plot
-        self.plotCanvasReviewRG.canvas.show()
+            # Show plot
+            self.plotCanvasReviewRG.canvas.show()
 
     def update_rg_statistics(self):
 
@@ -287,8 +308,9 @@ class flowbot_dialog_fsm_review_raingauge(QtWidgets.QDialog, Ui_Dialog):
 
     def update_interim_review(self):
 
-        self.current_interim_review.rg_complete = self.chk_rg_review_complete.isChecked()
-        self.current_interim_review.rg_comment = self.txt_review_comments.text()
+        if self.current_interim_review is not None:
+            self.current_interim_review.rg_complete = self.chk_rg_review_complete.isChecked()
+            self.current_interim_review.rg_comment = self.txt_review_comments.text()
 
     def filter_dep_data(self):
 

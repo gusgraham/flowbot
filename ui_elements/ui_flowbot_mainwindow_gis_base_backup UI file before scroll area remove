@@ -530,7 +530,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
+                   <width>262</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -729,7 +729,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
+                   <width>262</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -961,7 +961,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
+                   <width>117</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -1189,7 +1189,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
+                   <width>262</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -1406,7 +1406,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>505</width>
+                   <width>268</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -2690,7 +2690,7 @@
            <enum>QTabWidget::South</enum>
           </property>
           <property name="currentIndex">
-           <number>2</number>
+           <number>0</number>
           </property>
           <widget class="QWidget" name="tabGraphs">
            <attribute name="title">
@@ -2796,7 +2796,7 @@
            <attribute name="title">
             <string>Map</string>
            </attribute>
-           <layout class="QHBoxLayout" name="horizontalLayout_11">
+           <layout class="QHBoxLayout" name="tabMapHBoxLayout" stretch="0">
             <property name="spacing">
              <number>5</number>
             </property>
@@ -2814,20 +2814,55 @@
             </property>
             <item>
              <widget class="QSplitter" name="map_splitter">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="acceptDrops">
                <bool>true</bool>
               </property>
               <property name="orientation">
                <enum>Qt::Horizontal</enum>
               </property>
-              <property name="childrenCollapsible">
-               <bool>false</bool>
-              </property>
-              <widget class="customQgsLayerTreeView" name="mainMapLayerTreeView" native="true"/>
+              <widget class="QScrollArea" name="scroll_area">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Minimum" vsizetype="Expanding">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>200</width>
+                 <height>0</height>
+                </size>
+               </property>
+               <property name="acceptDrops">
+                <bool>true</bool>
+               </property>
+               <property name="widgetResizable">
+                <bool>true</bool>
+               </property>
+               <widget class="QWidget" name="scrollAreaWidgetContents">
+                <property name="geometry">
+                 <rect>
+                  <x>0</x>
+                  <y>0</y>
+                  <width>198</width>
+                  <height>762</height>
+                 </rect>
+                </property>
+                <property name="acceptDrops">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </widget>
               <widget class="QWidget" name="layoutWidget">
                <layout class="QVBoxLayout" name="vlo_Map">
                 <item>
-                 <widget class="customQgsMapCanvas" name="mainMapCanvas" native="true">
+                 <widget class="QgsMapCanvas" name="mainMapCanvas" native="true">
                   <property name="sizePolicy">
                    <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
                     <horstretch>0</horstretch>
@@ -2858,7 +2893,7 @@
                     <height>35</height>
                    </size>
                   </property>
-                  <layout class="QHBoxLayout" name="hlo_mapToolbar">
+                  <layout class="QHBoxLayout" name="horizontalLayout_11">
                    <property name="spacing">
                     <number>0</number>
                    </property>
@@ -2963,8 +2998,6 @@
     <addaction name="menuRemove_2"/>
     <addaction name="separator"/>
     <addaction name="menuModel_Data"/>
-    <addaction name="separator"/>
-    <addaction name="actionInterpolateData"/>
     <addaction name="separator"/>
     <addaction name="menuReports"/>
     <addaction name="menuTo_CSV"/>
@@ -3369,11 +3402,6 @@
     <string>Create Template Batch Import File</string>
    </property>
   </action>
-  <action name="actionInterpolateData">
-   <property name="text">
-    <string>Interpolate Data</string>
-   </property>
-  </action>
  </widget>
  <customwidgets>
   <customwidget>
@@ -3388,15 +3416,9 @@
    <container>1</container>
   </customwidget>
   <customwidget>
-   <class>customQgsMapCanvas</class>
+   <class>QgsMapCanvas</class>
    <extends>QWidget</extends>
-   <header>flowbot_helper</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
-   <class>customQgsLayerTreeView</class>
-   <extends>QWidget</extends>
-   <header>flowbot_helper</header>
+   <header>qgis.gui</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

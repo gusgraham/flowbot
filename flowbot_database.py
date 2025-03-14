@@ -4,7 +4,7 @@ from queue import Queue
 
 
 class Tables:
-    FLOW_MONIOTOR = "flow_monitor"
+    FLOW_MONITOR = "flow_monitor"
     RAIN_GAUGE = "rain_gauge"
     SURVEY_EVENT = "survey_event"
     SCHEMATIC_GRAPHICS_VIEW = "schematic_graphics_view"

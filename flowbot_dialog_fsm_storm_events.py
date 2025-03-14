@@ -126,6 +126,7 @@ class flowbot_dialog_fsm_storm_events(QtWidgets.QDialog, Ui_Dialog):
         a_interim = self.a_project.dict_fsm_interims[interim_id]
         if a_interim is not None:
             self.chk_event_review_complete.setChecked(a_interim.identify_events_complete)
+            # self.txt_review_comments.setText(a_interim.)
 
         # result = True
         # for a_int_ser in self.fsmProject.dict_fsm_interim_reviews.values():
@@ -276,7 +277,7 @@ class flowbot_dialog_fsm_storm_events(QtWidgets.QDialog, Ui_Dialog):
                 self.a_project.add_interim_review(a_int_ser)
 
             a_int_ser.ser_complete = self.chk_event_review_complete.isChecked()
-            a_int_ser.ser_comment = self.txt_review_comments.text()
+            # a_int_ser.ser_comment = self.txt_review_comments.text()
 
         self.accept()
 
