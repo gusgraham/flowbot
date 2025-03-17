@@ -21,7 +21,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='Flowbot v4.2.1 Beta',
+    name='Flowbot v4.2.2 Beta',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -41,5 +41,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='Flowbot v4.2.1 Beta',
+    name='Flowbot v4.2.2 Beta',
 )

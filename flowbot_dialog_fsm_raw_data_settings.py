@@ -60,8 +60,12 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
         #
 
     def browse_for_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(
-            self, 'Select Folder', '')
+        
+        initialPath = ''
+        if self.raw is not None:
+            if os.path.exists(self.raw.file_path):
+                initialPath = self.raw.file_path
+        folder_path = QFileDialog.getExistingDirectory(self, 'Select Folder', initialPath)
         if folder_path:
             self.txtFolderLocation.setText(folder_path)
 

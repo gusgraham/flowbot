@@ -42,7 +42,7 @@ except NameError:
 
 strMajorRelease = "4"
 strMinorRelease = "2"
-strUpdate = "1"
+strUpdate = "2"
 strOther = " (Beta)"
 strVersion = f'{strMajorRelease}.{strMinorRelease}.{strUpdate}{strOther}'
 

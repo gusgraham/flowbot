@@ -33,7 +33,7 @@ from matplotlib import pyplot as plt
 import matplotlib.dates as mpl_dates
 import sqlite3
 import struct
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, time
 import math
 from PyPDF2 import PdfWriter, PdfReader
 from reportlab.lib.pagesizes import A4, landscape
@@ -43,6 +43,7 @@ from PIL import Image
 import tempfile
 import numpy as np
 import gc
+from pathlib import Path
 
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -132,7 +133,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     def __init__(self, parent=None, app=None, qgs_app = None):
         """Constructor."""
         super(FlowbotMainWindowGis, self).__init__(parent)
-
+        
+        # logger.debug("Start Main Window Init")
         self.setupUi(self)
 
         self._thisApp = app
@@ -1750,10 +1752,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
                     a_raw.rainfall_file_format, a_inst))
                 if os.path.isfile(file_spec):
-                    a_raw.rg_data, s_units = self.read_dat_file(
-                        file_spec, show_progress)
-                    a_raw.rg_data_start = a_raw.rg_data['Timestamp'].min()
-                    a_raw.rg_data_end = a_raw.rg_data['Timestamp'].max()
+                    if Path(file_spec).suffix.lower() == ".dat":
+                        a_raw.rg_data, s_units = self.read_dat_file(file_spec, show_progress)
+                        a_raw.rg_data_start = a_raw.rg_data['Timestamp'].min()
+                        a_raw.rg_data_end = a_raw.rg_data['Timestamp'].max()                        
+                    elif Path(file_spec).suffix.lower() == ".flo":
+                        a_raw.rg_data, s_units = self.read_flo_file(file_spec, show_progress)
+                        a_raw.rg_data_start = a_raw.rg_data['Timestamp'].min()
+                        a_raw.rg_data_end = a_raw.rg_data['Timestamp'].max()
 
             if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
                 file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
@@ -1910,6 +1916,66 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         return pd.DataFrame({'Timestamp': dt_timestamps, 'Value': i_values}), 'on/off'
 
+    def read_flo_file(self, filespec, show_progress: bool = True):
+        tip_timestamps = []
+
+        with open(filespec, "rb") as file:
+            file.seek(0, 2)  # Move the cursor to the end of the file
+            file_size = file.tell()
+            if show_progress:
+                self.progressBar.setMinimum(0)
+                self.progressBar.setMaximum(file_size)
+                self.progressBar.setValue(0)
+                self.progressBar.show()
+                self.statusBar().showMessage(f'Reading FLO File: {filespec}')
+
+            file.seek(133, 0)  # Move the cursor
+
+            i_year = struct.unpack('<B', file.read(1))[0]
+            full_year = 2000 + i_year
+
+            file.seek(136, 0)  # Move the cursor
+
+            i_day = struct.unpack('<B', file.read(1))[0]
+            i_month = struct.unpack('<B', file.read(1))[0]
+
+            start_date = date(full_year, i_month, i_day)
+            current_date = start_date
+
+            my_pos = 138
+
+            while True:
+                if show_progress:
+                    self.progressBar.setValue(my_pos)
+                    self._thisApp.processEvents()
+
+                i_hour = struct.unpack('<B', file.read(1))[0]
+                my_pos = my_pos + 1
+
+                if i_hour == 254:
+                    current_date = current_date + timedelta(days=1)
+                    if my_pos >= file_size:
+                        break
+                    continue
+
+                i_minute = struct.unpack('<B', file.read(1))[0]
+                my_pos = my_pos + 1
+
+                tip_time = time(i_hour, i_minute)
+
+                tip_datetime = datetime.combine(current_date, tip_time)
+                tip_timestamps.append(tip_datetime)
+
+                if my_pos >= file_size:
+                    break
+
+            if show_progress:
+                self.statusBar().clearMessage()
+                self.progressBar.hide()
+                self._thisApp.processEvents()
+
+            return pd.DataFrame({'Timestamp': tip_timestamps}), ''
+                    
     def read_dat_file(self, filespec, show_progress: bool = True):
         dt_timestamps = []
         i_values = []
