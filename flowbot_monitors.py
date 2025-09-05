@@ -1,9 +1,9 @@
 import os
 # from datetime import datetime
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple, Any
 import time
 import calendar
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from statistics import mean
 import numpy as np
 # import pandas as pd
@@ -26,8 +26,10 @@ from qgis.core import (QgsCoordinateReferenceSystem, QgsVectorLayer, QgsField, Q
 # from qgis import processing
 import tempfile
 from scipy.spatial import cKDTree
+from bisect import bisect_left, bisect_right
 
-
+from flowbot_logging import get_logger
+logger = get_logger('flowbot_logger')
 
 class flowMonitor(object):
 
@@ -64,38 +66,6 @@ class flowMonitor(object):
         self._schematicGraphicItem: Optional[fmGraphicsItem] = None
         self.x: float = 0.0
         self.y: float = 0.0
-
-    # def from_database_row(self, row):
-    #     self.fdvFileSpec = row[0]
-    #     self.monitorName = row[1]
-    #     self.flowUnits = row[2]
-    #     self.depthUnits = row[3]
-    #     self.velocityUnits = row[4]
-    #     self.rainGaugeName = row[5]
-    #     self.fmTimestep = row[6]
-    #     self.dateRange = deserialize_list(row[7])
-    #     self.flowDataRange = deserialize_list(row[8])
-    #     self.depthDataRange = deserialize_list(row[9])
-    #     self.velocityDataRange = deserialize_list(row[10])
-    #     self.minFlow = row[11]
-    #     self.maxFlow = row[12]
-    #     self.totalVolume = row[13]
-    #     self.minDepth = row[14]
-    #     self.maxDepth = row[15]
-    #     self.minVelocity = row[16]
-    #     self.maxVelocity = row[17]
-    #     self.hasModelData = bool(row[18])
-    #     self.modelDataPipeRef = row[19]
-    #     self.modelDataRG = row[20]
-    #     self.modelDataPipeLength = row[21]
-    #     self.modelDataPipeShape = row[22]
-    #     self.modelDataPipeDia = row[23]
-    #     self.modelDataPipeHeight = row[24]
-    #     self.modelDataPipeRoughness = row[25]
-    #     self.modelDataPipeUSInvert = row[26]
-    #     self.modelDataPipeDSInvert = row[27]
-    #     self.modelDataPipeSystemType = row[28]
-    #     # self._schematicGraphicItem = deserialize_item(row[29])
 
     def from_database_row_dict(self, row_dict: Dict):
         self.fdvFileSpec = row_dict.get("fdvFileSpec", self.fdvFileSpec)
@@ -182,12 +152,6 @@ class flowMonitors():
             monitor.from_database_row_dict(row_dict)
             self.dictFlowMonitors[monitor.monitorName] = monitor
 
-        # rows = c.fetchall()
-        # for row in rows:
-        #     monitor = flowMonitor()
-        #     monitor.from_database_row(row)
-        #     self.dictFlowMonitors[monitor.monitorName] = monitor
-
     def write_to_database(self, conn: sqlite3.Connection) -> bool:
         result = False
         try:
@@ -242,6 +206,7 @@ class flowMonitors():
                               monitor.modelDataPipeUSInvert, monitor.modelDataPipeDSInvert, monitor.modelDataPipeSystemType, monitor.x, monitor.y))
             conn.commit()
             result = True
+            logger.debug("flowMonitors.write_to_database Completed")
 
         except sqlite3.Error as e:
             print(f"Database error: {e}")
@@ -258,28 +223,6 @@ class flowMonitors():
             objFM = self.getFlowMonitorFromFDVFile(fileSpec)
             if objFM is not None:
                 self.dictFlowMonitors[objFM.monitorName] = objFM
-
-    # def addFlowMonitor(self, fileSpec: str):
-
-    #     if not self.alreadyOpen(fileSpec):
-
-    #         start_old = time.perf_counter()
-    #         objFM = self.getFlowMonitorFromFDVFile(fileSpec)
-    #         end_old = time.perf_counter()
-
-    #         start_new = time.perf_counter()
-    #         objFM_alt = self.getFlowMonitorFromFDVFile_NEW(fileSpec)
-    #         end_new = time.perf_counter()
-
-    #         time_old = end_old - start_old
-    #         time_new = end_new - start_new
-
-    #         print(f"Old method time: {time_old:.6f} seconds")
-    #         print(f"New method time: {time_new:.6f} seconds")
-    #         print(f"Time difference (new - old): {time_new - time_old:.6f} seconds")
-
-    #     if objFM is not None:
-    #         self.dictFlowMonitors[objFM.monitorName] = objFM
 
     def flowMonitorCount(self) -> int:
 
@@ -571,11 +514,6 @@ class flowMonitors():
 
                 myFM = flowMonitor()
                 myFM.fdvFileSpec = fileSpec
-                # myFM.dateRange = []
-
-                # myFM.flowDataRange = [float(unit["FLOW"]) for unit in all_units]
-                # myFM.depthDataRange = [float(unit["DEPTH"]) for unit in all_units]
-                # myFM.velocityDataRange = [float(unit["VELOCITY"]) for unit in all_units]
 
                 constants = file_data["constants"]
 
@@ -602,13 +540,27 @@ class flowMonitors():
                 myFM.flowDataRange = []
                 myFM.depthDataRange = []
                 myFM.velocityDataRange = []
-                for unit in all_units:
-                    i_record += 1
-                    if i_record <= no_of_records:
-                        myFM.flowDataRange.append(float(unit["FLOW"]))
-                        myFM.depthDataRange.append(float(unit["DEPTH"]))
-                        myFM.velocityDataRange.append(float(unit["VELOCITY"]))
 
+                for unit in all_units:
+                    i_record += 1                    
+                    if i_record <= no_of_records:
+                        flow = unit.get("FLOW")
+                        if flow is not None:
+                            myFM.flowDataRange.append(float(flow))
+                        else:
+                            myFM.flowDataRange.append(0.0)
+
+                        depth = unit.get("DEPTH")
+                        if depth is not None:
+                            myFM.depthDataRange.append(float(depth))
+                        else:
+                            myFM.depthDataRange.append(0.0)
+
+                        velocity = unit.get("VELOCITY")
+                        if velocity is not None:
+                            myFM.velocityDataRange.append(float(velocity))
+                        else:
+                            myFM.velocityDataRange.append(0.0)
                 # (Optional) Check that the number of dates matches the number of data units.
                 if len(myFM.dateRange) != len(myFM.flowDataRange):
                     print("Warning: Mismatch in number of timestamps and data points!")
@@ -637,6 +589,7 @@ class flowMonitors():
                 myFM.maxDepth = (max(myFM.depthDataRange))
                 myFM.minVelocity = (min(myFM.velocityDataRange))
                 myFM.maxVelocity = (max(myFM.velocityDataRange))
+         
                 return myFM
         except Exception as e:  # Capture the exception details
             QMessageBox.critical(
@@ -644,7 +597,7 @@ class flowMonitors():
                 'Error Adding Flow Monitor',
                 f"Error parsing: {os.path.basename(fileSpec)}\n\nException: {str(e)}",
                 QMessageBox.Ok
-            )        
+            )
 
     def writeFDVFileFromFlowMonitor(self, file_path: str, fm_name: str):
 
@@ -1225,137 +1178,301 @@ class rainGauge():
         self.x = row_dict.get("x", self.x)
         self.y = row_dict.get("y", self.y)
 
-    # def from_database_row(self, row):
-    #     self.gaugeName = row[0]
-    #     self.rFileSpec = row[1]
-    #     self.dateRange = deserialize_list(row[2])
-    #     self.rainfallDataRange = deserialize_list(row[3])
-    #     self.rgTimestep = row[4]
-    #     self.minIntensity = row[5]
-    #     self.maxIntensity = row[6]
-    #     self.totalDepth = row[7]
-    #     self.returnPeriod = row[8]
+    # def statsBetweenDates(self, startDate: Optional[datetime], endDate: Optional[datetime]):
+    #     if startDate is None:
+    #         startDate = datetime.strptime('2172-05-12', '%Y-%m-%d')
+    #     if endDate is None:
+    #         endDate = datetime.strptime('1972-05-12', '%Y-%m-%d')
 
-    # def statsBetweenDates(self, startDate: datetime = dt.strptime('2172-05-12', '%Y-%m-%d'),
-        # endDate: datetime = dt.strptime('1972-05-12', '%Y-%m-%d')):
-    def statsBetweenDates(self, startDate: Optional[datetime], endDate: Optional[datetime]):
-        if startDate is None:
-            startDate = datetime.strptime('2172-05-12', '%Y-%m-%d')
-        if endDate is None:
-            endDate = datetime.strptime('1972-05-12', '%Y-%m-%d')
+    #     minIntensity = 0
+    #     maxIntensity = 0
+    #     totalDepth = 0
+    #     returnPeriod = 0
 
-        minIntensity = 0
-        maxIntensity = 0
-        totalDepth = 0
-        returnPeriod = 0
+    #     min_row, max_row = self.getDataRangeFromDates(startDate, endDate)
 
-        min_row, max_row = self.getDataRangeFromDates(startDate, endDate)
+    #     maxIntensity = max(self.rainfallDataRange[min_row:max_row])
+    #     minIntensity = min(self.rainfallDataRange[min_row:max_row])
+    #     totalDepth = round(
+    #         (sum(self.rainfallDataRange[min_row:max_row]))/(60/self.rgTimestep), 1)
 
-        maxIntensity = max(self.rainfallDataRange[min_row:max_row])
-        minIntensity = min(self.rainfallDataRange[min_row:max_row])
-        totalDepth = round(
-            (sum(self.rainfallDataRange[min_row:max_row]))/(60/self.rgTimestep), 1)
+    #     unix_rounded_xmin_python_datetime = calendar.timegm(
+    #         startDate.timetuple())
+    #     unix_rounded_xmax_python_datetime = calendar.timegm(
+    #         endDate.timetuple())
+    #     # unix_diff_days = (((unix_rounded_xmax_python_datetime -
+    #     #                   unix_rounded_xmin_python_datetime)/60)/60)/24
+    #     unix_diff_mins = ((unix_rounded_xmax_python_datetime -
+    #                       unix_rounded_xmin_python_datetime)/60)
+    #     duration_hrs = unix_diff_mins / 60
+    #     returnPeriod = round(
+    #         10/(1.25*duration_hrs*(((0.0394*totalDepth)+0.1)**-3.55)), 2)
 
-        unix_rounded_xmin_python_datetime = calendar.timegm(
-            startDate.timetuple())
-        unix_rounded_xmax_python_datetime = calendar.timegm(
-            endDate.timetuple())
-        # unix_diff_days = (((unix_rounded_xmax_python_datetime -
-        #                   unix_rounded_xmin_python_datetime)/60)/60)/24
-        unix_diff_mins = ((unix_rounded_xmax_python_datetime -
-                          unix_rounded_xmin_python_datetime)/60)
-        duration_hrs = unix_diff_mins / 60
-        returnPeriod = round(
-            10/(1.25*duration_hrs*(((0.0394*totalDepth)+0.1)**-3.55)), 2)
+    #     # returnPeriod = round(
+    #     #     (0.00494*(totalDepth+2.54)**3.55)/unix_diff_mins, 2)
 
-        # returnPeriod = round(
-        #     (0.00494*(totalDepth+2.54)**3.55)/unix_diff_mins, 2)
+    #     return {'minInt': minIntensity, 'maxInt': maxIntensity, 'totDepth': totalDepth, 'retPer': returnPeriod}
 
-        return {'minInt': minIntensity, 'maxInt': maxIntensity, 'totDepth': totalDepth, 'retPer': returnPeriod}
+    # def getDataRangeFromDates(self, startDate: Optional[datetime], endDate: Optional[datetime]):
+    #     if startDate is None:
+    #         startDate = datetime.strptime('2172-05-12', '%Y-%m-%d')
+    #     if endDate is None:
+    #         endDate = datetime.strptime('1972-05-12', '%Y-%m-%d')
 
-    def getDataRangeFromDates(self, startDate: Optional[datetime], endDate: Optional[datetime]):
-        if startDate is None:
-            startDate = datetime.strptime('2172-05-12', '%Y-%m-%d')
-        if endDate is None:
-            endDate = datetime.strptime('1972-05-12', '%Y-%m-%d')
+    #     start_time = calendar.timegm(self.dateRange[0].timetuple())
+    #     end_time = calendar.timegm(self.dateRange[-1].timetuple())
+    #     target_start_time = calendar.timegm(startDate.timetuple())
+    #     target_end_time = calendar.timegm(endDate.timetuple())
 
-        start_time = calendar.timegm(self.dateRange[0].timetuple())
-        end_time = calendar.timegm(self.dateRange[-1].timetuple())
-        target_start_time = calendar.timegm(startDate.timetuple())
-        target_end_time = calendar.timegm(endDate.timetuple())
+    #     if (start_time < target_start_time) and (target_start_time < end_time):
+    #         unix_rounded_xmin_python_datetime = calendar.timegm(
+    #             self.dateRange[0].timetuple())
+    #         unix_rounded_xmax_python_datetime = calendar.timegm(
+    #             startDate.timetuple())
+    #         unix_diff_mins = (
+    #             (unix_rounded_xmax_python_datetime - unix_rounded_xmin_python_datetime)/60)
+    #         min_row = int(unix_diff_mins / self.rgTimestep)
+    #     else:
+    #         min_row = 0
 
-        if (start_time < target_start_time) and (target_start_time < end_time):
-            unix_rounded_xmin_python_datetime = calendar.timegm(
-                self.dateRange[0].timetuple())
-            unix_rounded_xmax_python_datetime = calendar.timegm(
-                startDate.timetuple())
-            unix_diff_mins = (
-                (unix_rounded_xmax_python_datetime - unix_rounded_xmin_python_datetime)/60)
-            min_row = int(unix_diff_mins / self.rgTimestep)
+    #     if (start_time < target_end_time) and (target_end_time < end_time):
+    #         unix_rounded_xmin_python_datetime = calendar.timegm(
+    #             self.dateRange[0].timetuple())
+    #         unix_rounded_xmax_python_datetime = calendar.timegm(
+    #             endDate.timetuple())
+    #         unix_diff_mins = (
+    #             (unix_rounded_xmax_python_datetime - unix_rounded_xmin_python_datetime)/60)
+    #         max_row = int(unix_diff_mins / self.rgTimestep)
+    #     else:
+    #         max_row = len(self.rainfallDataRange)
+
+    #     return (min_row, max_row)
+
+    # def eventStatsBetweenDates(self, startDate: datetime, endDate: datetime):
+    #     """Calculates basic rainfalls stats for the gauge based on the given date range
+
+    #         Parameters
+    #         ----------
+    #         startDate: datetime
+    #             The start date for the date range
+    #         endDate: datetime
+    #             The end date for the date range
+
+    #         Returns
+    #         -------
+    #         Tuple(float, float, float, float)
+    #             Duration: time in minutes for which there were non-zero rainfall intensity values within the specified date range
+    #             Total Depth: total rainfall depth in mm within the specified date range
+    #             Peak Intensity: Maximum rainfall intensity in mm/hr within the specified date range
+    #             Period Greater Than 6mm/hr: time in minutes for which there were rainfall intensity values
+    #             greater than or equal to 6mm/hr within the specified date range
+    #         """
+
+    #     rgName: str = ''
+    #     startTime: str = ''
+    #     duration: float = 0
+    #     totalDepth: float = 0
+    #     peakIntensity: float = 0
+    #     periodGreaterThan6mmhr: float = 0
+
+    #     min_row, max_row = self.getDataRangeFromDates(startDate, endDate)
+
+    #     rgName = self.gaugeName
+    #     index_first_match = None
+    #     for index, item in enumerate(self.rainfallDataRange[min_row:max_row]):
+    #         if item != 0:
+    #             index_first_match = index
+    #             break
+    #     if index_first_match is not None:
+    #         startTime = datetime.strftime(
+    #             self.dateRange[min_row:max_row][index_first_match], "%H:%M")
+    #     duration = self.rgTimestep * \
+    #         sum(i > 0 for i in self.rainfallDataRange[min_row:max_row])
+    #     totalDepth = round(
+    #         (sum(self.rainfallDataRange[min_row:max_row]))/(60/self.rgTimestep), 1)
+    #     peakIntensity = max(self.rainfallDataRange[min_row:max_row])
+    #     periodGreaterThan6mmhr = self.rgTimestep * \
+    #         sum(i > 6 for i in self.rainfallDataRange[min_row:max_row])
+
+    #     return (rgName, startTime, duration, totalDepth, peakIntensity, periodGreaterThan6mmhr)
+
+# from bisect import bisect_left, bisect_right
+# from datetime import datetime
+# from typing import Optional, Tuple, Dict, Any
+
+    def _validate_parallel_series(self) -> None:
+        if not getattr(self, "dateRange", None) or not getattr(self, "rainfallDataRange", None):
+            raise ValueError("dateRange and rainfallDataRange must be populated.")
+        if len(self.dateRange) != len(self.rainfallDataRange):
+            raise ValueError("dateRange and rainfallDataRange must be the same length.")
+        # assume self.dateRange is sorted ascending
+
+    # def getDataRangeFromDates(
+    #     self,
+    #     startDate: Optional[datetime],
+    #     endDate: Optional[datetime],
+    # ) -> Tuple[int, int]:
+    #     """
+    #     Returns (i, j) indices into self.dateRange / self.rainfallDataRange,
+    #     where i is inclusive and j is exclusive. If there is no overlap with the
+    #     data window, returns (-1, -1).
+    #     """
+    #     self._validate_parallel_series()
+
+    #     dr = self.dateRange
+    #     data_start, data_end = dr[0], dr[-1]
+
+    #     # Sensible defaults: clamp to data edges if None supplied
+    #     a = startDate if startDate is not None else data_start
+    #     b = endDate   if endDate   is not None else data_end
+
+    #     # Ensure a <= b
+    #     if b < a:
+    #         a, b = b, a
+
+    #     # No overlap at all
+    #     if b < data_start or a > data_end:
+    #         return (-1, -1)
+
+    #     # Clamp to the data bounds
+    #     a = max(a, data_start)
+    #     b = min(b, data_end)
+
+    #     # Find slice [i:j) covering all points in [a, b]
+    #     i = bisect_left(dr, a)
+    #     j = bisect_right(dr, b)
+
+    #     # Safety: if the clamp collapsed
+    #     if i >= j:
+    #         return (-1, -1)
+
+    #     return (i, j)
+
+    def getDataRangeFromDates(
+        self,
+        startDate: Optional[datetime],
+        endDate: Optional[datetime],
+    ) -> Tuple[int, int]:
+        """
+        Returns (i, j) indices into self.dateRange / self.rainfallDataRange,
+        where i is inclusive and j is exclusive. If there is no overlap with the
+        data window, returns (-1, -1).
+        """
+        self._validate_parallel_series()
+
+        # helper to make sure any datetime is UTC aware
+        def to_utc(dt: datetime) -> datetime:
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+
+        dr = [to_utc(d) for d in self.dateRange]
+        data_start, data_end = dr[0], dr[-1]
+
+        a = to_utc(startDate) if startDate else data_start
+        b = to_utc(endDate)   if endDate   else data_end
+
+        if b < a:
+            a, b = b, a
+
+        if b < data_start or a > data_end:
+            return (-1, -1)
+
+        a = max(a, data_start)
+        b = min(b, data_end)
+
+        i = bisect_left(dr, a)
+        j = bisect_right(dr, b)
+
+        if i >= j:
+            return (-1, -1)
+        return (i, j)
+
+    def statsBetweenDates(
+        self,
+        startDate: Optional[datetime],
+        endDate: Optional[datetime],
+    ) -> Dict[str, Any]:
+        """
+        Returns dict with:
+        minInt, maxInt (mm/hr), totDepth (mm), retPer (float or None)
+        If no overlap with data, returns {'minInt': None, 'maxInt': None, 'totDepth': 0.0, 'retPer': None}
+        """
+        self._validate_parallel_series()
+
+        min_i, max_j = self.getDataRangeFromDates(startDate, endDate)
+        if (min_i, max_j) == (-1, -1):
+            return {'minInt': None, 'maxInt': None, 'totDepth': 0.0, 'retPer': None}
+
+        slice_vals = self.rainfallDataRange[min_i:max_j]
+        if not slice_vals:
+            return {'minInt': None, 'maxInt': None, 'totDepth': 0.0, 'retPer': None}
+
+        # Intensities are mm/hr; depth over the window is sum(intensity)*dt(hours)
+        dt_hours = self.rgTimestep / 60.0
+        totalDepth = round(sum(slice_vals) * dt_hours, 1)
+
+        minIntensity = min(slice_vals)
+        maxIntensity = max(slice_vals)
+
+        # Duration in hours based on the requested (clamped) timestamps, not just count*dt
+        a = self.dateRange[min_i]
+        b = self.dateRange[max_j - 1]
+        duration_hrs = max((b - a).total_seconds() / 3600.0, 0.0)
+
+        # Your empirical return period formula (guard against zero divisions)
+        # RP = 10/(1.25*duration_hrs*(((0.0394*totalDepth)+0.1)**-3.55))
+        if duration_hrs > 0 and totalDepth >= 0:
+            denom = 1.25 * duration_hrs * ((0.0394 * totalDepth + 0.1) ** -3.55)
+            retPer = round(10.0 / denom, 2) if denom != 0 else None
         else:
-            min_row = 0
+            retPer = None
 
-        if (start_time < target_end_time) and (target_end_time < end_time):
-            unix_rounded_xmin_python_datetime = calendar.timegm(
-                self.dateRange[0].timetuple())
-            unix_rounded_xmax_python_datetime = calendar.timegm(
-                endDate.timetuple())
-            unix_diff_mins = (
-                (unix_rounded_xmax_python_datetime - unix_rounded_xmin_python_datetime)/60)
-            max_row = int(unix_diff_mins / self.rgTimestep)
-        else:
-            max_row = len(self.rainfallDataRange)
+        return {'minInt': minIntensity, 'maxInt': maxIntensity, 'totDepth': totalDepth, 'retPer': retPer}
 
-        return (min_row, max_row)
+    def eventStatsBetweenDates(
+        self,
+        startDate: datetime,
+        endDate: datetime
+    ):
+        """
+        Returns:
+        (rgName, startTime_str_HHMM, duration_minutes_nonzero, totalDepth_mm, peakIntensity_mmhr, minutes_ge_6mmhr)
+        If no overlap or all-zero slice, startTime becomes '' and metrics become 0.
+        """
+        self._validate_parallel_series()
 
-    def eventStatsBetweenDates(self, startDate: datetime, endDate: datetime):
-        """Calculates basic rainfalls stats for the gauge based on the given date range
+        min_i, max_j = self.getDataRangeFromDates(startDate, endDate)
+        rgName = getattr(self, "gaugeName", "")
 
-            Parameters
-            ----------
-            startDate: datetime
-                The start date for the date range
-            endDate: datetime
-                The end date for the date range
+        if (min_i, max_j) == (-1, -1):
+            return (rgName, '', 0, 0.0, 0.0, 0)
 
-            Returns
-            -------
-            Tuple(float, float, float, float)
-                Duration: time in minutes for which there were non-zero rainfall intensity values within the specified date range
-                Total Depth: total rainfall depth in mm within the specified date range
-                Peak Intensity: Maximum rainfall intensity in mm/hr within the specified date range
-                Period Greater Than 6mm/hr: time in minutes for which there were rainfall intensity values
-                greater than or equal to 6mm/hr within the specified date range
-            """
+        vals = self.rainfallDataRange[min_i:max_j]
+        times = self.dateRange[min_i:max_j]
 
-        rgName: str = ''
-        startTime: str = ''
-        duration: float = 0
-        totalDepth: float = 0
-        peakIntensity: float = 0
-        periodGreaterThan6mmhr: float = 0
+        if not vals:
+            return (rgName, '', 0, 0.0, 0.0, 0)
 
-        min_row, max_row = self.getDataRangeFromDates(startDate, endDate)
-
-        rgName = self.gaugeName
-        index_first_match = None
-        for index, item in enumerate(self.rainfallDataRange[min_row:max_row]):
-            if item != 0:
-                index_first_match = index
+        # First non-zero start time
+        startTime = ''
+        for v, t in zip(vals, times):
+            if v != 0:
+                startTime = datetime.strftime(t, "%H:%M")
                 break
-        if index_first_match is not None:
-            startTime = datetime.strftime(
-                self.dateRange[min_row:max_row][index_first_match], "%H:%M")
-        duration = self.rgTimestep * \
-            sum(i > 0 for i in self.rainfallDataRange[min_row:max_row])
-        totalDepth = round(
-            (sum(self.rainfallDataRange[min_row:max_row]))/(60/self.rgTimestep), 1)
-        peakIntensity = max(self.rainfallDataRange[min_row:max_row])
-        periodGreaterThan6mmhr = self.rgTimestep * \
-            sum(i > 6 for i in self.rainfallDataRange[min_row:max_row])
 
-        return (rgName, startTime, duration, totalDepth, peakIntensity, periodGreaterThan6mmhr)
+        # Duration with non-zero intensity
+        duration_minutes = int(self.rgTimestep * sum(v > 0 for v in vals))
 
+        # Depth over the window (mm)
+        dt_hours = self.rgTimestep / 60.0
+        totalDepth = round(sum(vals) * dt_hours, 1)
+
+        peakIntensity = max(vals)
+        period_ge_6 = int(self.rgTimestep * sum(v >= 6 for v in vals))
+
+        return (rgName, startTime, duration_minutes, totalDepth, peakIntensity, period_ge_6)
+                
 class rainGauges:
 
     dictRainGauges: Dict[str, rainGauge] = {}
@@ -1414,6 +1531,7 @@ class rainGauges:
                               gauge.maxIntensity, gauge.totalDepth, gauge.returnPeriod, gauge.x, gauge.y))
             conn.commit()
             result = True
+            logger.debug("rainGauges.write_to_database Completed")
 
         except sqlite3.Error as e:
             print(f"Database error: {e}")
@@ -1838,7 +1956,11 @@ class rainGauges:
             for unit in all_units:
                 i_record += 1
                 if i_record <= no_of_records:
-                    myRG.rainfallDataRange.append(float(unit["INTENSITY"]))
+                    intensity = unit.get("INTENSITY")
+                    if intensity is not None:
+                        myRG.rainfallDataRange.append(float(intensity))
+                    else:
+                        myRG.rainfallDataRange.append(0.0)
 
             # Check that the number of dates matches the number of data units.
             if len(myRG.dateRange) != len(myRG.rainfallDataRange):
@@ -2260,16 +2382,6 @@ class mappedFlowMonitors():
         )
         provider = self.vl_flow_monitors.dataProvider()
         
-        # # Add fields corresponding to flowMonitor attributes
-        # provider.addAttributes([
-        #     QgsField("monitor_name", QVariant.String),
-        #     QgsField("flow_units", QVariant.String),
-        #     QgsField("depth_units", QVariant.String),
-        #     QgsField("velocity_units", QVariant.String),
-        #     QgsField("fm_timestep", QVariant.Double),
-        #     QgsField("fdv_file", QVariant.String)
-        # ])
-        
         # Add fields corresponding to flowMonitor attributes
         provider.addAttributes([QgsField("monitor_name", QVariant.String)])
         self.vl_flow_monitors.updateFields()
@@ -2278,9 +2390,32 @@ class mappedFlowMonitors():
         symbol = QgsMarkerSymbol.createSimple({'name': 'square', 'color': 'red', 'outline_color': 'black', 'outline_width': '0.2', 'size': '3'})
         self.vl_flow_monitors.renderer().setSymbol(symbol)
         
+        # Create a label for each point
+        label_settings = QgsPalLayerSettings()
+        label_settings.fieldName = '"monitor_name"'
+        label_settings.isExpression = True
+        label_settings.placement = Qgis.LabelPlacement.AroundPoint
+        label_settings.enabled = True
         
-        # # Add the layer to the QGIS project
-        # QgsProject.instance().addMapLayer(self.vl_flow_monitors)
+        # Set text format
+        text_format = QgsTextFormat()
+        text_format.setFont(QFont("Arial", 10))
+        text_format.setSize(10)
+        text_format.setColor(QColor("black"))
+
+        buffer_settings = QgsTextBufferSettings()
+        buffer_settings.setEnabled(True)
+        buffer_settings.setSize(1)
+        buffer_settings.setColor(QColor("white"))
+
+        text_format.setBuffer(buffer_settings)
+                
+        label_settings.setFormat(text_format)
+
+        # Apply label settings
+        label = QgsVectorLayerSimpleLabeling(label_settings)
+        self.vl_flow_monitors.setLabelsEnabled(True)
+        self.vl_flow_monitors.setLabeling(label)
 
     def addMappedFlowMonitor(self, monitor: flowMonitor):
         """Add a flow monitor to both the dictionary and the vector layer."""
@@ -2606,7 +2741,6 @@ class mappedRainGauges():
         label = QgsVectorLayerSimpleLabeling(label_settings)
         self.vl_rain_gauges.setLabelsEnabled(True)
         self.vl_rain_gauges.setLabeling(label)
-    
 
     def addMappedRainGauge(self, rg: rainGauge):
         """Add a rain gauge to both the dictionary and the vector layer."""
@@ -2825,7 +2959,8 @@ class mappedRainGauges():
         tree = cKDTree(np.c_[x, y])
 
         # Ensure we don't request more neighbors than available
-        max_k = min(6, len(x))  # Limit k to available data points
+        # max_k = min(6, len(x))  # Limit k to available data points
+        max_k = len(x)  # Limit k to available data points        
 
         dist, idx = tree.query(np.c_[xi, yi], k=max_k)
 
@@ -3065,7 +3200,8 @@ class mappedRainGauges():
         tree = cKDTree(np.c_[x_coords, y_coords])
 
         # Find nearest neighbors
-        max_k = min(6, len(x_coords))  # Limit to available data points
+        # max_k = min(6, len(x_coords))  # Limit to available data points
+        max_k = len(x_coords)  # Limit to available data points
         dist, idx = tree.query([[x, y]], k=max_k)
 
         # Prevent division by zero

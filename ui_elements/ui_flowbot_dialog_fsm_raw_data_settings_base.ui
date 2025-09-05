@@ -78,7 +78,7 @@
          <item>
           <widget class="QLineEdit" name="txtRainfallFileNameFormat">
            <property name="text">
-            <string>{inst_id}_02.dat</string>
+            <string>{ast_id}_02.dat</string>
            </property>
           </widget>
          </item>
@@ -102,7 +102,7 @@
          <item>
           <widget class="QLineEdit" name="txtDepthFileNameFormat">
            <property name="text">
-            <string>{inst_id}_06.dat</string>
+            <string>{ast_id}_06.dat</string>
            </property>
           </widget>
          </item>
@@ -126,7 +126,7 @@
          <item>
           <widget class="QLineEdit" name="txtVelocityFileNameFormat">
            <property name="text">
-            <string>{inst_id}_07.dat</string>
+            <string>{ast_id}_07.dat</string>
            </property>
           </widget>
          </item>
@@ -194,7 +194,7 @@
          <item>
           <widget class="QLineEdit" name="txtBatteryFileNameFormat">
            <property name="text">
-            <string>{inst_id}_08.dat</string>
+            <string>{ast_id}_08.dat</string>
            </property>
           </widget>
          </item>
@@ -281,7 +281,7 @@
          <item>
           <widget class="QLineEdit" name="txtPumpLoggerFileNameFormat">
            <property name="text">
-            <string>{inst_id}.csv</string>
+            <string>{ast_id}.csv</string>
            </property>
           </widget>
          </item>

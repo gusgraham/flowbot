@@ -16,8 +16,17 @@ Fergus Graham
 import sys
 import os
 import traceback
+
+# Disable DPI scaling (must be before QApplication is created or Qt is imported)
+os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+os.environ["QT_SCALE_FACTOR"] = "1"
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+
 from PyQt5.QtWidgets import QApplication, QMessageBox
-from PyQt5.QtCore import (QFile, QByteArray)
+from PyQt5.QtCore import (QFile, QByteArray, Qt)
+
+QApplication.setAttribute(Qt.AA_DisableHighDpiScaling, True)
+
 from qgis.core import QgsApplication
 # from qgis.analysis import QgsNativeAlgorithms
 from flowbot_mainwindow_gis import FlowbotMainWindowGis

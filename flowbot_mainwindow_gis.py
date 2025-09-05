@@ -3,12 +3,13 @@ import os
 from io import BytesIO
 import re
 # from re import A
-import sys
+# import sys
 import shutil
 import time
 # from datetime import datetime
-from typing import Optional, Dict, List
-import fiona
+from typing import Optional, Dict
+# , List
+# import fiona
 from flowbot_dialog_fsm_add_inspection import flowbot_dialog_fsm_add_inspection
 from flowbot_dialog_fsm_add_monitor import flowbot_dialog_fsm_add_monitor
 from flowbot_dialog_fsm_create_interim_report import flowbot_dialog_fsm_create_interim_report
@@ -23,9 +24,10 @@ from flowbot_dialog_fsm_review_raingauge import flowbot_dialog_fsm_review_rainga
 from flowbot_dialog_fsm_review_pumplogger import flowbot_dialog_fsm_review_pumplogger
 from flowbot_dialog_fsm_uninstall import flowbot_dialog_fsm_uninstall
 from flowbot_dialog_fsm_view_photographs import flowbot_dialog_fsm_view_photographs
+from flowbot_dialog_fsm_merge_raw_data import flowbot_dialog_fsm_merge_raw_data
 from flowbot_water_quality import fwqMonitor, fwqMonitors, plottedWQMonitors, MappingDialog
-import geopandas as gpd
-from pyproj import CRS, Transformer
+# import geopandas as gpd
+# from pyproj import CRS, Transformer
 import pandas as pd
 import copy
 import csv
@@ -33,7 +35,8 @@ from matplotlib import pyplot as plt
 import matplotlib.dates as mpl_dates
 import sqlite3
 import struct
-from datetime import datetime, timedelta, date, time
+from datetime import datetime, timedelta, date
+# , time
 import math
 from PyPDF2 import PdfWriter, PdfReader
 from reportlab.lib.pagesizes import A4, landscape
@@ -47,35 +50,51 @@ from pathlib import Path
 
 from matplotlib.backends.backend_pdf import PdfPages
 
-from matplotlib.dates import DateFormatter
-from matplotlib.ticker import MaxNLocator, FuncFormatter
+# from matplotlib.dates import DateFormatter
+# from matplotlib.ticker import MaxNLocator, FuncFormatter
 
 from PyQt5 import (QtCore, QtWidgets, QtGui)
 from PyQt5.QtWidgets import (QProgressBar, QMessageBox, QDialog, QInputDialog, QMenu, QGraphicsView,
-                             QToolBar, QAction, QActionGroup, QListWidget, QPushButton, QScrollArea)
+                             QToolBar, QAction, QActionGroup, QListWidget, QPushButton)
+# , QScrollArea)
 from PyQt5.QtGui import (
     QStandardItemModel, QStandardItem, QCursor, QBrush, QColor)
-from PyQt5.QtCore import (Qt, QModelIndex, QPointF, QUrl, QDateTime, QObject)
+from PyQt5.QtCore import (Qt, QModelIndex, QPointF, QDateTime)
 
 from qgis.core import (QgsCoordinateReferenceSystem, QgsLayerTreeModel,
-                       QgsProject, QgsRasterLayer, QgsVectorLayer, QgsLayerTreeNode, QgsMapLayer, QgsLayerTreeGroup, QgsLayerTree)
-from qgis.gui import (QgsLayerTreeMapCanvasBridge,
-                      QgsLayerTreeView, QgsMapToolPan, QgsMapToolZoom, QgsMapMouseEvent, QgsMapToolEmitPoint)
-
+                       QgsProject, QgsRasterLayer, QgsVectorLayer, QgsLayerTreeNode,
+                       QgsLayerTreeGroup, QgsLayerTree)
+from qgis.gui import (QgsLayerTreeMapCanvasBridge, QgsMapToolPan, QgsMapToolZoom, QgsMapMouseEvent,
+                      QgsMapToolEmitPoint)
+# QgsLayerTreeView, 
 from flowbot_helper import (resource_path, PlotWidget,
                             serialize_list, deserialize_list, strVersion, bytes_to_text)
-from flowbot_graphing import (GraphFDV, graph_fsm_classification, graph_fsm_cumulative_interim_summary, graph_fsm_dwf_plot, graph_fsm_fdv_plot, graph_fsm_fm_install_summary, graph_fsm_monitor_data_summary, graph_fsm_raingauge_plot, graph_fsm_rg_install_summary, graph_fsm_scatter_plot, graph_fsm_storm_event_summary,
-                              graphScatter, graphCumulativeDepth, graphRainfallAnalysis, graphICMTrace, createVerificationDetailPlot, createVerificationDetailUDGTablePlot, createEventSuitabilityEventSummaryTablePlot,  createEventSuitabilityRaingaugeDetailsTablePlot, createEventSuitabilityFMClassPiePlot, graphWQGraph, graphFSMInstall, graphDWF, dashboardFSM)
+from flowbot_graphing import (GraphFDV, graph_fsm_classification,
+                              graph_fsm_cumulative_interim_summary,
+                              graph_fsm_dwf_plot, graph_fsm_fdv_plot, graph_fsm_fm_install_summary,
+                              graph_fsm_monitor_data_summary, graph_fsm_raingauge_plot,
+                              graph_fsm_rg_install_summary, graph_fsm_scatter_plot,
+                              graph_fsm_storm_event_summary,
+                              graphScatter, graphCumulativeDepth, graphRainfallAnalysis, graphICMTrace,
+                              createVerificationDetailPlot, createVerificationDetailUDGTablePlot,
+                              createEventSuitabilityEventSummaryTablePlot,
+                              createEventSuitabilityRaingaugeDetailsTablePlot,
+                              createEventSuitabilityFMClassPiePlot, graphWQGraph, graphFSMInstall,
+                              graphDWF, dashboardFSM,
+                              graphMerge)
 from flowbot_verification import icmTraces
 from flowbot_data_classification import dataClassification
-from flowbot_monitors import (flowMonitors, plottedFlowMonitors, rainGauges, summedFlowMonitor,
-                              dummyFlowMonitor, classifiedFlowMonitors, plottedRainGauges, mappedFlowMonitors, mappedRainGauges)
+from flowbot_monitors import (flowMonitors, plottedFlowMonitors, rainGauges, summedFlowMonitor, 
+                              dummyFlowMonitor, classifiedFlowMonitors, plottedRainGauges, 
+                              mappedFlowMonitors, mappedRainGauges, flowMonitor)
 from flowbot_survey_events import surveyEvent, surveyEvents, plottedSurveyEvents
 # from flowbot_mapping import flowbotWebMap
-from flowbot_schematic import (fmGraphicsItem, rgGraphicsItem, csoGraphicsItem, wwpsGraphicsItem, juncGraphicsItem, outfallGraphicsItem,
-                               wwtwGraphicsItem, ConnectionPath, cstWWPS, cstCSO, cstWWTW, cstOUTFALL, cstJUNCTION, cstCONNECTION, cstNONE)
+from flowbot_schematic import (fmGraphicsItem, rgGraphicsItem, csoGraphicsItem, wwpsGraphicsItem, 
+                               juncGraphicsItem, outfallGraphicsItem, wwtwGraphicsItem, ConnectionPath, 
+                               cstWWPS, cstCSO, cstWWTW, cstOUTFALL, cstJUNCTION, cstCONNECTION, cstNONE)
 from flowbot_dialog_reporting_verificationsummary import flowbot_dialog_reporting_verificationsummary
-from flowbot_reporting import tablePDF, verificationDetailPDF, onePagePDF, constructGenericOnePageReport, eventSuitabilityPDF
+from flowbot_reporting import (tablePDF, verificationDetailPDF, onePagePDF, constructGenericOnePageReport, 
+                               eventSuitabilityPDF)
 from flowbot_dialog_reporting_icmtrace import flowbot_dialog_reporting_icmtrace
 from flowbot_dialog_reporting_fdv import flowbot_dialog_reporting_fdv
 from flowbot_dialog_reporting_flowbalance import flowbot_dialog_reporting_flowbalance
@@ -95,7 +114,9 @@ from flowbot_dialog_verification_viewfitmeasure import flowbot_dialog_verificati
 from flowbot_dialog_projection import fsp_flowbot_projectionDialog
 from flowbot_database import DatabaseManager, Tables
 from flowbot_dialog_fsm_add_site import flowbot_dialog_fsm_add_site
-from flowbot_management import fsmDataClassification, fsmInspection, fsmInstall, fsmInterim, fsmInterimReview, fsmMonitor, fsmProject, fsmSite, fsmRawData, MonitorDataFlowCalculator, PumpLoggerDataCalculator
+from flowbot_management import (fsmDataClassification, fsmInspection, fsmInstall, fsmInterim,
+                                fsmInterimReview, fsmMonitor, fsmProject, fsmSite, fsmRawData,
+                                MonitorDataFlowCalculator, PumpLoggerDataCalculator)
 from flowbot_dialog_fsm_set_interim_dates import flowbot_dialog_fsm_set_interim_dates
 from flowbot_dialog_fsm_storm_events import flowbot_dialog_fsm_storm_events
 from flowbot_dialog_fsm_review_classification import flowbot_dialog_fsm_review_classification
@@ -103,34 +124,33 @@ from flowbot_dialog_fsm_raw_data_settings import flowbot_dialog_fsm_raw_data_set
 
 from ui_elements.ui_flowbot_mainwindow_gis_base import Ui_MainWindow
 
-from flowbot_logging import get_logger
-
+from flowbot_logging import get_logger, set_logging_level
 logger = get_logger('flowbot_logger')
 
 
 class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
     thisQgsProjectGPKGFileSpec = ''
-    thisQgsProject: QgsProject = None
-    thisQgsLayerTreeModel: QgsLayerTreeModel = None
+    thisQgsProject: Optional[QgsProject] = None
+    thisQgsLayerTreeModel: Optional[QgsLayerTreeModel] = None
     # thisQgsLayerTreeView = None
-    thisQgsLayerTree: QgsLayerTree = None
-    thisQgsLayerTreeMapCanvasBridge: QgsLayerTreeMapCanvasBridge = None
+    thisQgsLayerTree: Optional[QgsLayerTree] = None
+    thisQgsLayerTreeMapCanvasBridge: Optional[QgsLayerTreeMapCanvasBridge] = None
 
     statusbarCrsButton = None
     statusbarCoordinates = None
 
-    worldStreetMapLayer: QgsRasterLayer = None
-    worldImageryLayer: QgsRasterLayer = None
-    grp_basemaps: QgsLayerTreeGroup = None
-    grp_monitors: QgsLayerTreeGroup = None
-    grp_outputs: QgsLayerTreeGroup = None
+    worldStreetMapLayer: Optional[QgsRasterLayer] = None
+    worldImageryLayer: Optional[QgsRasterLayer] = None
+    grp_basemaps: Optional[QgsLayerTreeGroup] = None
+    grp_monitors: Optional[QgsLayerTreeGroup] = None
+    grp_outputs: Optional[QgsLayerTreeGroup] = None
     # vl_flow_monitors: QgsVectorLayer = None
     # vl_rain_gauges: QgsVectorLayer = None
 
     currentMapTool = None
 
-    def __init__(self, parent=None, app=None, qgs_app = None):
+    def __init__(self, parent=None, app=None, qgs_app=None):
         """Constructor."""
         super(FlowbotMainWindowGis, self).__init__(parent)
         
@@ -154,6 +174,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.aFSMInstallGraph: Optional[graphFSMInstall] = None
         self.aFSMDashboard: Optional[dashboardFSM] = None
         self.a_dwf_graph: Optional[graphDWF] = None
+        self.a_merge_graph: Optional[graphMerge] = None
+        self.active_plot_class: Optional[object] = None
 
         self.openFlowMonitors: Optional[flowMonitors] = None
         self.openRainGauges: Optional[rainGauges] = None
@@ -185,6 +207,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.setupWaterQualityPage()
 
         self.initialiseAllVariables()
+        self.setWindowTitle(f"Flowbot v{strVersion}")
 
         # self.load_project_from_filespec('C:/Temp/Flowbot/Flowbot Test Data/FSM/PhillipshillAllers.fbsqlite')
         # self.load_project_from_filespec('C:/Temp/Flowbot/Flowbot Test Data/RealWorldData/Sutton/test.fbsqlite')
@@ -269,336 +292,6 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.mainToolBox.setCurrentIndex(index)
                 break
 
-    # def update_fsm_project_standard_item_model(self):
-
-    #     expand_states = self.get_treeview_expand_states()
-
-    #     self.fsm_project_model.clear()
-
-    #     # def updateTreeViewModel(self):
-    #     #     for row in range(model.rowCount()):
-    #     #         item = model.item(row)
-    #     #         if shouldBeDraggable(item):  # Your custom condition
-    #     #             item.setFlags(item.flags() | Qt.ItemIsDragEnabled)
-    #     #         else:
-    #     #             item.setFlags(item.flags() & ~Qt.ItemIsDragEnabled)
-
-    #     if self.fsmProject is None:
-    #         proj_item = QStandardItem("Project: None")
-    #         font = proj_item.font()
-    #         font.setBold(True)
-    #         proj_item.setFont(font)
-    #         proj_item.setFlags(proj_item.flags() & ~Qt.ItemIsDragEnabled)
-
-    #     else:
-
-    #         proj_item = QStandardItem(f"Project: {self.fsmProject.job_name}")
-    #         font = proj_item.font()
-    #         font.setBold(True)
-    #         proj_item.setFont(font)
-    #         proj_item.setFlags(proj_item.flags() & ~Qt.ItemIsDragEnabled)
-
-    #         if self.fsmProject.survey_start_date:
-    #             start_date_item = QStandardItem(
-    #                 f"Survey Starts: {self.fsmProject.survey_start_date.strftime('%d/%m/%Y')}")
-    #         else:
-    #             start_date_item = QStandardItem("Survey Starts: Unknown")
-    #         if self.fsmProject.survey_complete:
-    #             end_date_item = QStandardItem(
-    #                 f"Survey Ends: {self.fsmProject.survey_end_date.strftime('%d/%m/%Y')}")
-    #         else:
-    #             end_date_item = QStandardItem("Survey Ends: Not Set")
-
-    #         start_date_item.setFlags(
-    #             start_date_item.flags() & ~Qt.ItemIsDragEnabled)
-    #         end_date_item.setFlags(end_date_item.flags()
-    #                                & ~Qt.ItemIsDragEnabled)
-
-    #         proj_item.appendRow(start_date_item)
-    #         proj_item.appendRow(end_date_item)
-
-    #         sites_group = QStandardItem("Sites")
-    #         font = sites_group.font()
-    #         font.setBold(True)
-    #         sites_group.setFont(font)
-
-    #         monitors_group = QStandardItem("Monitors")
-    #         font = monitors_group.font()
-    #         font.setBold(True)
-    #         monitors_group.setFont(font)
-
-    #         installed_group = QStandardItem("Installed")
-    #         font = installed_group.font()
-    #         font.setBold(True)
-    #         installed_group.setFont(font)
-
-    #         removed_group = QStandardItem("Removed")
-    #         font = removed_group.font()
-    #         font.setBold(True)
-    #         removed_group.setFont(font)
-
-    #         interim_group = QStandardItem("Interims")
-    #         font = interim_group.font()
-    #         font.setBold(True)
-    #         interim_group.setFont(font)
-
-    #         # site_items = {}
-
-    #         for site_id, site in self.fsmProject.dict_fsm_sites.items():
-    #             # if not self.fsmProject.site_has_install(site_id):
-    #             site_item = QStandardItem(f"Site ID: {site_id}")
-    #             # site_items[site_id] = site_item  # Store site item for later reference
-
-    #             # sub_group_name = "FM/DM Sites" if site.siteType in [
-    #             #     "Flow Monitor", "Depth Monitor"] else "RG Sites"
-    #             if site.siteType in ["Flow Monitor", "Depth Monitor"]:
-    #                 sub_group_name = "FM/DM Sites"
-    #             elif site.siteType == "Pump Logger":
-    #                 sub_group_name = "PL Sites"
-    #             else:
-    #                 sub_group_name = "RG Sites"
-    #             sub_group = None
-
-    #             for row_index in range(sites_group.rowCount()):
-    #                 if sites_group.child(row_index).text() == sub_group_name:
-    #                     sub_group = sites_group.child(row_index)
-    #                     break
-    #             else:
-    #                 sub_group = QStandardItem(sub_group_name)
-    #                 sub_group.setFlags(sub_group.flags() & ~Qt.ItemIsDragEnabled)
-    #                 sites_group.appendRow(sub_group)
-
-    #             site_item.setFlags(site_item.flags() & ~Qt.ItemIsDragEnabled)
-    #             sub_group.appendRow(site_item)
-
-    #         for monitor_id, monitor in self.fsmProject.dict_fsm_monitors.items():
-    #             if not self.fsmProject.monitor_is_installed(monitor_id):
-    #                 monitor_item = QStandardItem(f"Monitor ID: {monitor_id}")
-
-    #                 # sub_group_name = "Flow/Depth Monitor" if monitor.monitor_type in [
-    #                 #     "Flow Monitor", "Depth Monitor"] else "Rain Gauge"
-    #                 if monitor.monitor_type in ["Flow Monitor", "Depth Monitor"]:
-    #                     sub_group_name = "Flow/Depth Monitor"
-    #                 elif monitor.monitor_type == "Pump Logger":
-    #                     sub_group_name = "Pump Logger"
-    #                 else:
-    #                     sub_group_name = "Rain Gauge"
-    #                 sub_group = None
-
-    #                 for row_index in range(monitors_group.rowCount()):
-    #                     if monitors_group.child(row_index).text() == sub_group_name:
-    #                         sub_group = monitors_group.child(row_index)
-    #                         break
-    #                 else:
-    #                     sub_group = QStandardItem(sub_group_name)
-    #                     sub_group.setFlags(sub_group.flags() & ~Qt.ItemIsDragEnabled)
-    #                     monitors_group.appendRow(sub_group)
-
-    #                 monitor_item.setFlags(
-    #                     monitor_item.flags() & ~Qt.ItemIsDragEnabled)
-    #                 sub_group.appendRow(monitor_item)
-
-    #                 # monitors_group.appendRow(monitor_item)
-
-    #         for inst_id, a_install in self.fsmProject.dict_fsm_installs.items():
-
-    #             is_uninstalled = self.fsmProject.uninstalled(inst_id)
-
-    #             if not is_uninstalled:
-    #                 group = installed_group
-    #             else:
-    #                 group = removed_group
-
-    #             if not is_uninstalled:
-    #                 site_item = QStandardItem(f"Site ID: {a_install.install_site_id}")
-    #                 monitor_item = QStandardItem(f"Monitor ID: {a_install.install_monitor_asset_id}")
-    #             else:
-    #                 site_item = QStandardItem(f"Site ID: {a_install.install_site_id} (Install ID: {inst_id})")
-    #                 monitor_item = QStandardItem(f"Monitor ID: {a_install.install_monitor_asset_id} (Install ID: {inst_id})")
-
-    #             for a_raw in self.fsmProject.dict_fsm_rawdata.values():
-    #                 if a_raw.install_id == inst_id:
-    #                     rawdata_item = QStandardItem("Raw Data")
-
-    #                     # rawdata_item.appendRow(QStandardItem("Settings"))
-    #                     if a_install.install_type in ["Flow Monitor", "Depth Monitor"]:
-
-    #                         dep_data_item = QStandardItem("Depth")
-    #                         if a_raw.dep_data is not None:
-    #                             dep_data_item.appendRow(QStandardItem(
-    #                                 f"Start: {a_raw.dep_data_start.strftime('%d/%m/%Y %H:%M')}"))
-    #                             dep_data_item.appendRow(QStandardItem(
-    #                                 f"End: {a_raw.dep_data_end.strftime('%d/%m/%Y %H:%M')}"))
-    #                         dep_data_item.setFlags(
-    #                             dep_data_item.flags() & ~Qt.ItemIsDragEnabled)
-    #                         rawdata_item.appendRow(dep_data_item)
-
-    #                     if a_install.install_type == "Flow Monitor":
-    #                         vel_data_item = QStandardItem("Velocity")
-    #                         if a_raw.dep_data is not None:
-    #                             vel_data_item.appendRow(QStandardItem(
-    #                                 f"Start: {a_raw.vel_data_start.strftime('%d/%m/%Y %H:%M')}"))
-    #                             vel_data_item.appendRow(QStandardItem(
-    #                                 f"End: {a_raw.vel_data_end.strftime('%d/%m/%Y %H:%M')}"))
-    #                             vel_data_item.setFlags(
-    #                                 vel_data_item.flags() & ~Qt.ItemIsDragEnabled)
-    #                             rawdata_item.appendRow(vel_data_item)
-
-    #                     if a_install.install_type == "Pump Logger":
-    #                         pl_data_item = QStandardItem("Logger")
-    #                         if a_raw.pl_data is not None:
-    #                             pl_data_item.appendRow(QStandardItem(
-    #                                 f"Start: {a_raw.pl_data_start.strftime('%d/%m/%Y %H:%M')}"))
-    #                             pl_data_item.appendRow(QStandardItem(
-    #                                 f"End: {a_raw.pl_data_end.strftime('%d/%m/%Y %H:%M')}"))
-    #                             pl_data_item.setFlags(
-    #                                 pl_data_item.flags() & ~Qt.ItemIsDragEnabled)
-    #                             rawdata_item.appendRow(pl_data_item)
-
-    #                     if a_install.install_type == "Rain Gauge":
-    #                         rg_data_item = QStandardItem("Raingauge")
-    #                         if a_raw.rg_data is not None:
-    #                             rg_data_item.appendRow(QStandardItem(
-    #                                 f"Start: {a_raw.rg_data_start.strftime('%d/%m/%Y %H:%M')}"))
-    #                             rg_data_item.appendRow(QStandardItem(
-    #                                 f"End: {a_raw.rg_data_end.strftime('%d/%m/%Y %H:%M')}"))
-    #                             rg_data_item.setFlags(
-    #                                 rg_data_item.flags() & ~Qt.ItemIsDragEnabled)
-    #                             rawdata_item.appendRow(rg_data_item)
-
-    #                     bat_data_item = QStandardItem("Voltage")
-    #                     if a_raw.bat_data is not None:
-    #                         bat_data_item.appendRow(QStandardItem(
-    #                             f"Start: {a_raw.bat_data_start.strftime('%d/%m/%Y %H:%M')}"))
-    #                         bat_data_item.appendRow(QStandardItem(
-    #                             f"End: {a_raw.bat_data_end.strftime('%d/%m/%Y %H:%M')}"))
-    #                         bat_data_item.setFlags(
-    #                             bat_data_item.flags() & ~Qt.ItemIsDragEnabled)
-    #                         rawdata_item.appendRow(bat_data_item)
-
-    #                     rawdata_item.setFlags(
-    #                         rawdata_item.flags() & ~Qt.ItemIsDragEnabled)
-    #                     monitor_item.appendRow(rawdata_item)
-
-    #             if a_install.data is not None:
-    #                 data_item = QStandardItem("Processed Data")
-    #                 data_item.appendRow(QStandardItem(
-    #                     f"Start: {a_install.data_start.strftime('%d/%m/%Y %H:%M')}"))
-    #                 data_item.appendRow(QStandardItem(
-    #                     f"End: {a_install.data_end.strftime('%d/%m/%Y %H:%M')}"))
-    #                 data_item.setFlags(data_item.flags() & ~
-    #                                    Qt.ItemIsDragEnabled)
-    #                 monitor_item.appendRow(data_item)
-
-    #             for a_insp in self.fsmProject.dict_fsm_inspections.values():
-    #                 if a_insp.install_id == inst_id:
-    #                     insp_item = QStandardItem(
-    #                         f"Inspection: {a_insp.inspection_date.strftime('%d/%m/%Y')}")
-    #                     insp_item.setFlags(
-    #                         insp_item.flags() & ~Qt.ItemIsDragEnabled)
-    #                     monitor_item.appendRow(insp_item)
-
-    #             site_item.appendRow(monitor_item)
-
-    #             if a_install.install_type in ["Flow Monitor", "Depth Monitor"]:
-    #                 sub_group_name = "FM/DM Sites"
-    #             elif a_install.install_type == "Rain Gauge":
-    #                 sub_group_name = "RG Sites"
-    #             elif a_install.install_type == "Pump Logger":
-    #                 sub_group_name = "PL Sites"
-
-    #             # sub_group_name = "FM/DM Sites" if a_install.install_type in [
-    #             #     "Flow Monitor", "Depth Monitor"] else "RG Sites"
-    #             sub_group = None
-    #             for row_index in range(group.rowCount()):
-    #                 if group.child(row_index).text() == sub_group_name:
-    #                     sub_group = group.child(row_index)
-    #                     break
-    #             else:
-    #                 sub_group = QStandardItem(sub_group_name)
-    #                 sub_group.setFlags(sub_group.flags() & ~Qt.ItemIsDragEnabled)
-    #                 group.appendRow(sub_group)
-
-    #             sub_group.appendRow(site_item)
-
-    #         true_color = QColor(70, 195, 80)  # RGB values for light blue
-    #         false_color = QColor(195, 70, 80)  # RGB values for light blue
-
-    #         for int_id, interim in self.fsmProject.dict_fsm_interims.items():
-    #             interim_item = QStandardItem(f"Interim: {str(int_id)}")
-    #             interim_item.appendRow(QStandardItem(
-    #                 f"Start: {interim.interim_start_date.strftime('%d/%m/%Y')}"))
-    #             interim_item.appendRow(QStandardItem(
-    #                 f"End: {interim.interim_end_date.strftime('%d/%m/%Y')}"))
-
-    #             child_item = QStandardItem(
-    #                 f"Data Import: {interim.data_import_complete}")
-    #             child_item.setBackground(
-    #                 QBrush(true_color if interim.data_import_complete else false_color))
-    #             interim_item.appendRow(child_item)
-
-    #             child_item = QStandardItem(
-    #                 f"Data Classification: {interim.data_classification_complete}")
-    #             child_item.setBackground(
-    #                 QBrush(true_color if interim.data_classification_complete else false_color))
-    #             interim_item.appendRow(child_item)
-
-    #             child_item = QStandardItem(
-    #                 f"Identify Events: {interim.identify_events_complete}")
-    #             child_item.setBackground(
-    #                 QBrush(true_color if interim.identify_events_complete else false_color))
-    #             interim_item.appendRow(child_item)
-
-    #             child_item = QStandardItem(
-    #                 f"FM Data Review: {interim.fm_data_review_complete}")
-    #             child_item.setBackground(
-    #                 QBrush(true_color if interim.fm_data_review_complete else false_color))
-    #             interim_item.appendRow(child_item)
-
-    #             child_item = QStandardItem(
-    #                 f"RG Data Review: {interim.rg_data_review_complete}")
-    #             child_item.setBackground(
-    #                 QBrush(true_color if interim.rg_data_review_complete else false_color))
-    #             interim_item.appendRow(child_item)
-
-    #             child_item = QStandardItem(
-    #                 f"PL Data Review: {interim.pl_data_review_complete}")
-    #             child_item.setBackground(
-    #                 QBrush(true_color if interim.pl_data_review_complete else false_color))
-    #             interim_item.appendRow(child_item)
-
-    #             child_item = QStandardItem(
-    #                 f"Interim Report: {interim.report_complete}")
-    #             child_item.setBackground(
-    #                 QBrush(true_color if interim.report_complete else false_color))
-    #             interim_item.appendRow(child_item)
-
-    #             interim_group.appendRow(interim_item)
-
-    #         sites_group.setFlags(sites_group.flags() & ~Qt.ItemIsDragEnabled)
-    #         monitors_group.setFlags(
-    #             monitors_group.flags() & ~Qt.ItemIsDragEnabled)
-    #         installed_group.setFlags(
-    #             installed_group.flags() & ~Qt.ItemIsDragEnabled)
-    #         removed_group.setFlags(removed_group.flags()
-    #                                & ~Qt.ItemIsDragEnabled)
-    #         interim_group.setFlags(interim_group.flags()
-    #                                & ~Qt.ItemIsDragEnabled)
-
-    #         proj_item.appendRow(sites_group)
-    #         proj_item.appendRow(monitors_group)
-    #         proj_item.appendRow(installed_group)
-    #         proj_item.appendRow(removed_group)
-    #         proj_item.appendRow(interim_group)
-
-    #     self.root_item = QStandardItem("Root Item")
-    #     self.root_item.appendRow(proj_item)
-    #     self.fsm_project_model.appendRow(self.root_item)
-    #     root_index = self.fsm_project_model.indexFromItem(self.root_item)
-    #     self.trv_flow_survey_management.setRootIndex(root_index)
-
-    #     self.set_treeview_expand_states(expand_states)
-
     def update_fsm_project_standard_item_model(self):
 
         expand_states = self.get_treeview_expand_states()
@@ -625,11 +318,11 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                     f"Survey Starts: {self.fsmProject.survey_start_date.strftime('%d/%m/%Y')}")
             else:
                 start_date_item = QStandardItem("Survey Starts: Unknown")
+            end_date_item = QStandardItem("Survey Ends: Not Set")
             if self.fsmProject.survey_complete:
-                end_date_item = QStandardItem(
-                    f"Survey Ends: {self.fsmProject.survey_end_date.strftime('%d/%m/%Y')}")
-            else:
-                end_date_item = QStandardItem("Survey Ends: Not Set")
+                end_date_item = QStandardItem((f"Survey Ends: {self.fsmProject.survey_end_date.strftime('%d/%m/%Y')}"
+                                               if self.fsmProject.survey_end_date is not None
+                                               else "Survey Ends: Not Set"))
 
             start_date_item.setFlags(
                 start_date_item.flags() & ~Qt.ItemIsDragEnabled)
@@ -722,13 +415,6 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                     group = installed_group
                 else:
                     group = removed_group
-
-                # if not is_uninstalled:
-                #     site_item = QStandardItem(f"Site ID: {a_install.install_site_id}")
-                #     monitor_item = QStandardItem(f"Monitor ID: {a_install.install_monitor_asset_id}")
-                # else:
-                #     site_item = QStandardItem(f"Site ID: {a_install.install_site_id} (Install ID: {inst_id})")
-                #     monitor_item = QStandardItem(f"Monitor ID: {a_install.install_monitor_asset_id} (Install ID: {inst_id})")
 
                 sub_group_name = a_install.install_type
 
@@ -916,6 +602,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.trv_flow_survey_management.setRootIndex(root_index)
 
         self.set_treeview_expand_states(expand_states)
+        self.update_plot()
 
     def get_index_for_item(self, item_text, parent_index=QModelIndex()):
         for row in range(self.fsm_project_model.rowCount(parent_index)):
@@ -963,17 +650,22 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             msg = QMessageBox(self)
             msg.setWindowIcon(self.myIcon)
 
-            ret = msg.warning(self, 'Warning', 'A Flow Survey Job already exists\nAre you sure you want to overwrite it?',
-                                QMessageBox.Yes | QMessageBox.No)
+            ret = msg.warning(self, 'Warning',
+                              'A Flow Survey Job already exists\nAre you sure you want to overwrite it?',
+                              QMessageBox.Yes | QMessageBox.No)
             if ret == QMessageBox.No:
                 return
 
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Please locate the batch import file CSV', self.lastOpenDialogPath, 'Flowbot FSM Batch File (*.csv)')
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self,
+                                                        'Please locate the batch import file CSV',
+                                                        self.lastOpenDialogPath,
+                                                        'Flowbot FSM Batch File (*.csv)')
         if not path:
             return
         try:
             key_value_pairs = {}
             table_data = []
+            table_headers = None
             with open(path, mode='r') as file:
                 reader = csv.reader(file)
                 # Read key-value pairs
@@ -996,9 +688,19 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             self.fsmProject.job_name = key_value_pairs['Survey Name']
             self.fsmProject.client = key_value_pairs['Client']
             self.fsmProject.client_job_ref = key_value_pairs['Client Job Ref']
-            self.fsmProject.survey_start_date = datetime.strptime(key_value_pairs['Survey Start (DD/MM/YYYY)'], "%d/%m/%Y")
+            self.fsmProject.survey_start_date = datetime.strptime(key_value_pairs['Survey Start (DD/MM/YYYY)'],
+                                                                  "%d/%m/%Y")
 
+            if table_headers is None:
+                raise Exception("CSV file is missing table headers row.")
+            
             for row in table_data:
+                sSiteID = None
+                sMonitorType = None
+                sLocation = None
+                sMHRef = None
+                sInstallRef = None
+                
                 if row:
                     if 'Site ID' in table_headers:
                         column_index = table_headers.index('Site ID')
@@ -1037,6 +739,12 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         column_index = table_headers.index('Depth Offset mm')
                         sDepthOffset = row[column_index]
 
+                    if (sSiteID is None or
+                        sMonitorType is None or
+                        sLocation is None or
+                        sMHRef is None or
+                        sInstallRef is None):
+                        raise Exception("Value missing from CSV row.")
                     a_site = self.fsmProject.get_site(sSiteID)
                     if a_site is None:
                         a_site = fsmSite()
@@ -1049,10 +757,10 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         a_site.mh_ref = sMHRef
                         self.fsmProject.add_site(a_site)
 
-                    if (sMonitorType in ['FM', 'DM', 'PL'] and a_site.siteType == 'Location') or (sMonitorType in ['RG'] and a_site.siteType == 'Network Asset'):
-                        raise Exception(
-                            f"\nInstall Reference:{sInstallRef}\nA Monitor of type '{sMonitorType}' can't be installed in a Site of type '{a_site.siteType}'"
-                        )
+                    if (sMonitorType in ['FM', 'DM', 'PL'] and
+                        a_site.siteType == 'Location') or (sMonitorType in ['RG'] and 
+                                                           a_site.siteType == 'Network Asset'):
+                        raise Exception(f"\nInstall Reference:{sInstallRef}\nA Monitor of type '{sMonitorType}' can't be installed in a Site of type '{a_site.siteType}'")
 
                     a_mon = self.fsmProject.get_monitor(sMonID)
                     if a_mon is None:
@@ -1091,10 +799,42 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                             a_ins.fm_sensor_offset_mm = int(sDepthOffset)
                         self.fsmProject.add_install(a_ins)
 
+                    # a_raw = fsmRawData()
+                    # a_raw.rawdata_id = self.fsmProject.get_next_rawdata_id()
+                    # a_raw.install_id = a_ins.install_id
+                    # a_raw.file_path = key_value_pairs['Default Data Path']
+                    # if sShape == "C":
+                    #     a_raw.pipe_shape = "CIRC"
+                    # else:
+                    #     a_raw.pipe_shape = "RECT"
+                    # a_raw.pipe_height = a_ins.fm_pipe_height_mm
+                    # a_raw.pipe_width = a_ins.fm_pipe_width_mm
+
                     a_raw = fsmRawData()
                     a_raw.rawdata_id = self.fsmProject.get_next_rawdata_id()
                     a_raw.install_id = a_ins.install_id
                     a_raw.file_path = key_value_pairs['Default Data Path']
+
+                    if a_ins.install_type in ['Flow Monitor', 'Depth Monitor']:
+                        dict_ConvertShape = {'Circular': 'CIRC', 
+                                             'Rectangular': 'RECT', 'Arched': 'ARCH', 
+                                             'Cunette': 'CNET', 
+                                             'Egg': 'EGG', 
+                                             'Egg 2': 'EGG2', 
+                                             'Oval': 'OVAL', 
+                                             'U-Shaped': 'UTOP', 
+                                             'Other': 'USER'}
+                        a_raw.pipe_shape = dict_ConvertShape.get(
+                            a_ins.fm_pipe_shape, 'CIRC')
+                        a_raw.pipe_width = a_ins.fm_pipe_width_mm
+                        a_raw.pipe_height = a_ins.fm_pipe_height_mm
+                        data = []
+                        data.append([a_ins.install_date, 0,
+                                    a_ins.fm_sensor_offset_mm, 'Install'])
+                        a_raw.dep_corr = pd.DataFrame(
+                            data, columns=["DateTime", "DepthCorr", "InvertOffset", "Comment"])
+                        a_raw.silt_levels = pd.DataFrame(columns=["DateTime", "FloatValue", "StringValue"])
+                        
                     self.fsmProject.add_rawdata(a_raw)
 
             self.update_fsm_project_standard_item_model()
@@ -1466,6 +1206,10 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                             remCallback.triggered.connect(lambda: self.import_fsm_raw_data(a_inst))
                             subMenu.addAction(remCallback)
 
+                            remCallback = QtWidgets.QAction("Merge Site Download", menu)
+                            remCallback.triggered.connect(lambda: self.import_fsm_raw_data_site_download(a_inst))
+                            subMenu.addAction(remCallback)
+
                             remCallback = QtWidgets.QAction("Process Raw Data", menu)
                             remCallback.triggered.connect(lambda: self.fsm_process_raw_data(a_inst))
                             subMenu.addAction(remCallback)
@@ -1741,66 +1485,424 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             self.progressBar.hide()
             self._thisApp.processEvents()
 
-    def import_fsm_raw_data(self, a_inst:fsmInstall, show_progress: bool = True):
+    # def import_fsm_raw_data(self, a_inst:fsmInstall, show_progress: bool = True):
 
-        if a_inst:
-            a_raw = self.fsmProject.get_raw_data_by_install(a_inst.install_id)
-            if not a_raw:
-                return
+    #     if a_inst:
+    #         a_raw = self.fsmProject.get_raw_data_by_install(a_inst.install_id)
+    #         if not a_raw:
+    #             return
 
-            if a_inst.install_type == 'Rain Gauge':
-                file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
-                    a_raw.rainfall_file_format, a_inst))
-                if os.path.isfile(file_spec):
-                    if Path(file_spec).suffix.lower() == ".dat":
-                        a_raw.rg_data, s_units = self.read_dat_file(file_spec, show_progress)
-                        a_raw.rg_data_start = a_raw.rg_data['Timestamp'].min()
-                        a_raw.rg_data_end = a_raw.rg_data['Timestamp'].max()                        
-                    elif Path(file_spec).suffix.lower() == ".flo":
-                        a_raw.rg_data, s_units = self.read_flo_file(file_spec, show_progress)
-                        a_raw.rg_data_start = a_raw.rg_data['Timestamp'].min()
-                        a_raw.rg_data_end = a_raw.rg_data['Timestamp'].max()
+    #         if a_inst.install_type == 'Rain Gauge':
+    #             file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
+    #                 a_raw.rainfall_file_format, a_inst))
+    #             if os.path.isfile(file_spec):
+    #                 if Path(file_spec).suffix.lower() == ".dat":
+    #                     a_raw.rg_data, s_units = self.read_dat_file(file_spec, show_progress)
+    #                     a_raw.rg_data_start = a_raw.rg_data['Timestamp'].min()
+    #                     a_raw.rg_data_end = a_raw.rg_data['Timestamp'].max()                        
+    #                 elif Path(file_spec).suffix.lower() == ".flo":
+    #                     a_raw.rg_data, s_units = self.read_flo_file(file_spec, show_progress)
+    #                     a_raw.rg_data_start = a_raw.rg_data['Timestamp'].min()
+    #                     a_raw.rg_data_end = a_raw.rg_data['Timestamp'].max()
 
-            if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
-                file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
-                    a_raw.depth_file_format, a_inst))
-                if os.path.isfile(file_spec):
-                    a_raw.dep_data, s_units = self.read_dat_file(
-                        file_spec, show_progress)
+    #         if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
+    #             file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
+    #                 a_raw.depth_file_format, a_inst))
+    #             if os.path.isfile(file_spec):
+    #                 a_raw.dep_data, s_units = self.read_dat_file(
+    #                     file_spec, show_progress)
+    #                 a_raw.dep_data_start = a_raw.dep_data['Timestamp'].min()
+    #                 a_raw.dep_data_end = a_raw.dep_data['Timestamp'].max()
+
+    #             file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
+    #                 a_raw.velocity_file_format, a_inst))
+    #             if os.path.isfile(file_spec):
+    #                 a_raw.vel_data, s_units = self.read_dat_file(
+    #                     file_spec, show_progress)
+    #                 a_raw.vel_data_start = a_raw.vel_data['Timestamp'].min()
+    #                 a_raw.vel_data_end = a_raw.vel_data['Timestamp'].max()
+
+    #         file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
+    #             a_raw.battery_file_format, a_inst))
+    #         if os.path.isfile(file_spec):
+    #             a_raw.bat_data, s_units = self.read_dat_file(
+    #                 file_spec, show_progress)
+    #             a_raw.bat_data_start = a_raw.bat_data['Timestamp'].min()
+    #             a_raw.bat_data_end = a_raw.bat_data['Timestamp'].max()
+
+    #         if a_inst.install_type == 'Pump Logger':
+    #             file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
+    #                 a_raw.pumplogger_file_format, a_inst))
+    #             if os.path.isfile(file_spec):
+    #                 a_raw.pl_data, s_units = self.read_hobo_csv_file(file_spec, show_progress)
+    #                 a_raw.pl_data_start = a_raw.pl_data['Timestamp'].min()
+    #                 a_raw.pl_data_end = a_raw.pl_data['Timestamp'].max()
+
+    #     if show_progress:
+    #         msg = QMessageBox(self)
+    #         msg.setWindowIcon(self.myIcon)
+    #         msg.information(self, 'Import Raw Data',
+    #                         'Import Complete', QMessageBox.Ok)
+
+    #     self.update_fsm_project_standard_item_model()
+
+    def import_fsm_raw_data(self, a_inst: fsmInstall, show_progress: bool = True):
+        if not a_inst:
+            return
+    
+        a_raw = self.fsmProject.get_raw_data_by_install(a_inst.install_id)
+        if not a_raw:
+            return
+    
+        def append_new_data(existing_df, new_df, timestamp_col='Timestamp'):
+            if existing_df is not None and not existing_df.empty:
+                last_time = existing_df[timestamp_col].max()
+                new_df = new_df[new_df[timestamp_col] > last_time]
+                if not new_df.empty:
+                    return pd.concat([existing_df, new_df], ignore_index=True)
+                else:
+                    return existing_df
+            else:
+                return new_df
+    
+        # Rain Gauge
+        if a_inst.install_type == 'Rain Gauge':
+            file_spec = os.path.join(a_raw.file_path, self.decode_file_format(a_raw.rainfall_file_format, a_inst))
+            if os.path.isfile(file_spec):
+                suffix = Path(file_spec).suffix.lower()
+                rg_data_exists = getattr(a_raw, 'rg_data', None) is not None and not getattr(a_raw, 'rg_data', pd.DataFrame()).empty
+                since = a_raw.rg_data_end if rg_data_exists else None
+                if suffix == ".dat":
+                    new_data, s_units = self.read_dat_file(file_spec, show_progress, since=since)
+                elif suffix == ".flo":
+                    new_data, s_units = self.read_flo_file(file_spec, show_progress, since=since)
+                else:
+                    new_data = None
+                if new_data is not None:
+                    a_raw.rg_data = append_new_data(getattr(a_raw, 'rg_data', None), new_data)
+                    a_raw.rg_data_start = a_raw.rg_data['Timestamp'].min()
+                    a_raw.rg_data_end = a_raw.rg_data['Timestamp'].max()
+    
+        # Flow/Depth Monitor
+        if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
+            file_spec = os.path.join(a_raw.file_path, self.decode_file_format(a_raw.depth_file_format, a_inst))
+            if os.path.isfile(file_spec):
+                dep_data_exists = getattr(a_raw, 'dep_data', None) is not None and not getattr(a_raw, 'dep_data', pd.DataFrame()).empty
+                since = a_raw.dep_data_end if dep_data_exists else None
+                new_data, s_units = self.read_dat_file(file_spec, show_progress, since=since)
+                if new_data is not None:
+                    a_raw.dep_data = append_new_data(getattr(a_raw, 'dep_data', None), new_data)
                     a_raw.dep_data_start = a_raw.dep_data['Timestamp'].min()
                     a_raw.dep_data_end = a_raw.dep_data['Timestamp'].max()
-
-                file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
-                    a_raw.velocity_file_format, a_inst))
-                if os.path.isfile(file_spec):
-                    a_raw.vel_data, s_units = self.read_dat_file(
-                        file_spec, show_progress)
+    
+            file_spec = os.path.join(a_raw.file_path, self.decode_file_format(a_raw.velocity_file_format, a_inst))
+            if os.path.isfile(file_spec):
+                vel_data_exists = getattr(a_raw, 'vel_data', None) is not None and not getattr(a_raw, 'vel_data', pd.DataFrame()).empty
+                since = a_raw.vel_data_end if vel_data_exists else None
+                new_data, s_units = self.read_dat_file(file_spec, show_progress, since=since)
+                if new_data is not None:
+                    a_raw.vel_data = append_new_data(getattr(a_raw, 'vel_data', None), new_data)
                     a_raw.vel_data_start = a_raw.vel_data['Timestamp'].min()
                     a_raw.vel_data_end = a_raw.vel_data['Timestamp'].max()
-
-            file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
-                a_raw.battery_file_format, a_inst))
-            if os.path.isfile(file_spec):
-                a_raw.bat_data, s_units = self.read_dat_file(
-                    file_spec, show_progress)
+    
+        # Battery
+        file_spec = os.path.join(a_raw.file_path, self.decode_file_format(a_raw.battery_file_format, a_inst))
+        if os.path.isfile(file_spec):
+            bat_data_exists = getattr(a_raw, 'bat_data', None) is not None and not getattr(a_raw, 'bat_data', pd.DataFrame()).empty
+            since = a_raw.bat_data_end if bat_data_exists else None
+            new_data, s_units = self.read_dat_file(file_spec, show_progress, since=since)
+            if new_data is not None:
+                a_raw.bat_data = append_new_data(getattr(a_raw, 'bat_data', None), new_data)
                 a_raw.bat_data_start = a_raw.bat_data['Timestamp'].min()
                 a_raw.bat_data_end = a_raw.bat_data['Timestamp'].max()
-
-            if a_inst.install_type == 'Pump Logger':
-                file_spec = os.path.join(a_raw.file_path, self.decode_file_format(
-                    a_raw.pumplogger_file_format, a_inst))
-                if os.path.isfile(file_spec):
-                    a_raw.pl_data, s_units = self.read_hobo_csv_file(file_spec, show_progress)
+    
+        # Pump Logger
+        if a_inst.install_type == 'Pump Logger':
+            file_spec = os.path.join(a_raw.file_path, self.decode_file_format(a_raw.pumplogger_file_format, a_inst))
+            if os.path.isfile(file_spec):
+                pl_data_exists = getattr(a_raw, 'pl_data', None) is not None and not getattr(a_raw, 'pl_data', pd.DataFrame()).empty
+                since = a_raw.pl_data_end if pl_data_exists else None
+                new_data, s_units = self.read_hobo_csv_file(file_spec, show_progress, since=since)
+                if new_data is not None:
+                    a_raw.pl_data = append_new_data(getattr(a_raw, 'pl_data', None), new_data)
                     a_raw.pl_data_start = a_raw.pl_data['Timestamp'].min()
                     a_raw.pl_data_end = a_raw.pl_data['Timestamp'].max()
-
+    
         if show_progress:
             msg = QMessageBox(self)
             msg.setWindowIcon(self.myIcon)
-            msg.information(self, 'Import Raw Data',
-                            'Import Complete', QMessageBox.Ok)
+            msg.information(self, 'Import Raw Data', 'Import Complete', QMessageBox.Ok)
+    
+        self.update_fsm_project_standard_item_model()
+    
+    def import_fsm_raw_data_site_download(self, a_inst: fsmInstall, show_progress: bool = True):
+
+        if not a_inst:
+            return
+    
+        a_raw_existing = self.fsmProject.get_raw_data_by_install(a_inst.install_id)
+        if not a_raw_existing:
+            return
+        
+        file_path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Site Download Directory:", self.lastOpenDialogPath, QtWidgets.QFileDialog.ShowDirsOnly)
+        if len(file_path) == 0:
+            return
+        self.lastOpenDialogPath = file_path     
+
+        a_raw_temp = fsmRawData()
+        a_raw_temp.rawdata_id = self.fsmProject.get_next_rawdata_id()
+        a_raw_temp.install_id = a_inst.install_id
+        a_raw_temp.file_path = file_path
+
+        # if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
+        #     dict_ConvertShape = {'Circular': 'CIRC', 
+        #                          'Rectangular': 'RECT', 'Arched': 'ARCH', 
+        #                          'Cunette': 'CNET', 
+        #                          'Egg': 'EGG', 
+        #                          'Egg 2': 'EGG2', 
+        #                          'Oval': 'OVAL', 
+        #                          'U-Shaped': 'UTOP', 
+        #                          'Other': 'USER'}
+        #     a_raw.pipe_shape = dict_ConvertShape.get(
+        #         a_inst.fm_pipe_shape, 'CIRC')
+        #     a_raw.pipe_width = a_inst.fm_pipe_width_mm
+        #     a_raw.pipe_height = a_inst.fm_pipe_height_mm
+        #     data = []
+        #     data.append([a_inst.install_date, 0, a_inst.fm_sensor_offset_mm, 'Install'])
+        #     a_raw.dep_corr = pd.DataFrame(data, columns=["DateTime", "DepthCorr", "InvertOffset", "Comment"])
+        #     a_raw.silt_levels = pd.DataFrame(columns=["DateTime", "FloatValue", "StringValue"])
+
+        # Rain Gauge
+        if a_inst.install_type == 'Rain Gauge':
+
+            file_spec = os.path.join(file_path, self.decode_file_format(a_raw_existing.rainfall_file_format, a_inst))
+            if os.path.isfile(file_spec):
+                suffix = Path(file_spec).suffix.lower()
+                since = None
+                if suffix == ".dat":
+                    new_data, s_units = self.read_dat_file(file_spec, show_progress, since=since)
+                elif suffix == ".flo":
+                    new_data, s_units = self.read_flo_file(file_spec, show_progress, since=since)
+                else:
+                    new_data = None
+                if new_data is not None:
+                    a_raw_temp.rg_data = new_data
+                    a_raw_temp.rg_data_start = a_raw_temp.rg_data['Timestamp'].min()
+                    a_raw_temp.rg_data_end = a_raw_temp.rg_data['Timestamp'].max()
+    
+        # Flow/Depth Monitor
+        if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
+            file_spec = os.path.join(file_path, self.decode_file_format(a_raw_existing.depth_file_format, a_inst))
+            if os.path.isfile(file_spec):
+                since = None
+                new_data, s_units = self.read_dat_file(file_spec, show_progress, since=since)
+                if new_data is not None:
+                    a_raw_temp.dep_data = new_data
+                    a_raw_temp.dep_data_start = a_raw_temp.dep_data['Timestamp'].min()
+                    a_raw_temp.dep_data_end = a_raw_temp.dep_data['Timestamp'].max()
+    
+            file_spec = os.path.join(file_path, self.decode_file_format(a_raw_existing.velocity_file_format, a_inst))
+            if os.path.isfile(file_spec):
+                since = None
+                new_data, s_units = self.read_dat_file(file_spec, show_progress, since=since)
+                if new_data is not None:
+                    a_raw_temp.vel_data = new_data
+                    a_raw_temp.vel_data_start = a_raw_temp.vel_data['Timestamp'].min()
+                    a_raw_temp.vel_data_end = a_raw_temp.vel_data['Timestamp'].max()
+    
+        # Battery
+        file_spec = os.path.join(file_path, self.decode_file_format(a_raw_existing.battery_file_format, a_inst))
+        if os.path.isfile(file_spec):
+            since = None
+            new_data, s_units = self.read_dat_file(file_spec, show_progress, since=since)
+            if new_data is not None:
+                a_raw_temp.bat_data = new_data
+                a_raw_temp.bat_data_start = a_raw_temp.bat_data['Timestamp'].min()
+                a_raw_temp.bat_data_end = a_raw_temp.bat_data['Timestamp'].max()
+    
+        # Pump Logger
+        if a_inst.install_type == 'Pump Logger':
+            file_spec = os.path.join(file_path, self.decode_file_format(a_raw_existing.pumplogger_file_format, a_inst))
+            if os.path.isfile(file_spec):
+                since = None
+                new_data, s_units = self.read_hobo_csv_file(file_spec, show_progress, since=since)
+                if new_data is not None:
+                    a_raw_temp.pl_data = new_data
+                    a_raw_temp.pl_data_start = a_raw_temp.pl_data['Timestamp'].min()
+                    a_raw_temp.pl_data_end = a_raw_temp.pl_data['Timestamp'].max()
+    
+        dlg = flowbot_dialog_fsm_merge_raw_data(plotted_install=a_inst, plotted_existing_raw=a_raw_existing,
+        plotted_temp_raw=a_raw_temp)
+        if dlg.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        # No selected_range() anymore
+        # sel_start, sel_end = dlg.selected_range()  # <-- delete this line
+
+        def _merge_channel_append_replace(existing_df: Optional[pd.DataFrame],
+                                          new_df: Optional[pd.DataFrame],
+                                          ts_col: str = "Timestamp",
+                                          dedupe_tol: str = "1min") -> Optional[pd.DataFrame]:
+            """
+            Append ALL rows from new_df into existing_df.
+            If timestamps collide, keep the NEW row (new_df wins).
+            Optionally bucket by dedupe_tol to treat near-duplicates as the same sample.
+            """
+            if new_df is None or new_df.empty:
+                return existing_df
+
+            # Ensure datetime-like & naive
+            def _fix(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+                if df is None or df.empty:
+                    return df
+                if not pd.api.types.is_datetime64_any_dtype(df[ts_col]):
+                    df = df.copy()
+                    df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
+                # strip tz
+                try:
+                    df[ts_col] = df[ts_col].dt.tz_localize(None)
+                except Exception:
+                    try:
+                        df[ts_col] = df[ts_col].dt.tz_convert(None)
+                    except Exception:
+                        pass
+                # drop rows where timestamp couldn't be parsed
+                df = df.dropna(subset=[ts_col])
+                return df
+
+            existing_df = _fix(existing_df)
+            new_df = _fix(new_df)
+
+            if existing_df is None or existing_df.empty:
+                out = new_df.sort_values(ts_col).reset_index(drop=True)
+                return out
+
+            # Concatenate with NEW last so it wins on duplicates
+            out = pd.concat([existing_df, new_df], ignore_index=True)
+
+            # De-duplicate
+            if dedupe_tol:
+                # Bucket timestamps by tolerance and keep the last row in each bucket (i.e., from new_df)
+                bucket = pd.to_timedelta(dedupe_tol)
+                # use int64 view (ns) to compute buckets
+                ts_ns = out[ts_col].view("int64")
+                out["_bucket"] = (ts_ns // bucket.value)
+                out = (out.sort_values([ts_col])
+                        .groupby("_bucket", as_index=False)
+                        .tail(1))
+                out = out.drop(columns=["_bucket"])
+            else:
+                # Exact duplicate timestamps only
+                out = out.drop_duplicates(subset=[ts_col], keep="last")
+
+            out = out.sort_values(ts_col).reset_index(drop=True)
+            return out
+
+        # depth
+        a_raw_existing.dep_data = _merge_channel_append_replace(
+            a_raw_existing.dep_data, a_raw_temp.dep_data)
+        if a_raw_existing.dep_data is not None and not a_raw_existing.dep_data.empty:
+            a_raw_existing.dep_data_start = a_raw_existing.dep_data['Timestamp'].min()
+            a_raw_existing.dep_data_end = a_raw_existing.dep_data['Timestamp'].max()
+
+        # velocity
+        a_raw_existing.vel_data = _merge_channel_append_replace(
+            a_raw_existing.vel_data, a_raw_temp.vel_data)
+        if a_raw_existing.vel_data is not None and not a_raw_existing.vel_data.empty:            
+            a_raw_existing.vel_data_start = a_raw_existing.vel_data['Timestamp'].min()
+            a_raw_existing.vel_data_end = a_raw_existing.vel_data['Timestamp'].max()
+
+        # battery
+        a_raw_existing.bat_data = _merge_channel_append_replace(
+            a_raw_existing.bat_data, a_raw_temp.bat_data)
+        if a_raw_existing.bat_data is not None and not a_raw_existing.bat_data.empty:        
+            a_raw_existing.bat_data_start = a_raw_existing.bat_data['Timestamp'].min()
+            a_raw_existing.bat_data_end = a_raw_existing.bat_data['Timestamp'].max()
+
+        # rain (tips)
+        a_raw_existing.rg_data = _merge_channel_append_replace(
+            a_raw_existing.rg_data, a_raw_temp.rg_data,
+            dedupe_tol=None)
+        if a_raw_existing.rg_data is not None and not a_raw_existing.rg_data.empty:
+            a_raw_existing.rg_data_start = a_raw_existing.rg_data['Timestamp'].min()
+            a_raw_existing.rg_data_end = a_raw_existing.rg_data['Timestamp'].max()
+
+        # pump on/off
+        a_raw_existing.pl_data = _merge_channel_append_replace(
+            a_raw_existing.pl_data, a_raw_temp.pl_data)
+        if a_raw_existing.pl_data is not None and not a_raw_existing.pl_data.empty:
+            a_raw_existing.pl_data_start = a_raw_existing.pl_data['Timestamp'].min()
+            a_raw_existing.pl_data_end = a_raw_existing.pl_data['Timestamp'].max()
+
+        # sel_start, sel_end = dlg.selected_range()
+
+        # def _merge_channel_replace_window(existing_df: Optional[pd.DataFrame],
+        #                                   new_df: Optional[pd.DataFrame],
+        #                                   start: pd.Timestamp, end: pd.Timestamp,
+        #                                   ts_col="Timestamp", dedupe_tol="1min") -> Optional[pd.DataFrame]:
+        #     if new_df is None or new_df.empty:
+        #         return existing_df  # nothing to merge
+
+        #     # Ensure datetime-like & naive
+        #     for df in (existing_df, new_df):
+        #         if df is not None and not pd.api.types.is_datetime64_any_dtype(df[ts_col]):
+        #             df[ts_col] = pd.to_datetime(df[ts_col])
+        #         if df is not None:
+        #             df[ts_col] = df[ts_col].dt.tz_localize(None)
+
+        #     new_sel = new_df[(new_df[ts_col] >= start) & (new_df[ts_col] <= end)].copy()
+        #     if existing_df is None or existing_df.empty:
+        #         out = new_sel.sort_values(ts_col)
+        #     else:
+        #         keep = existing_df[(existing_df[ts_col] < start) | (existing_df[ts_col] > end)].copy()
+        #         out  = pd.concat([keep, new_sel], ignore_index=True).sort_values(ts_col)
+
+        #     # Drop exact duplicate timestamps (or near-duplicates by tolerance)
+        #     # Strategy: round to nearest tolerance bucket for de-dupe
+        #     if dedupe_tol:
+        #         bucket = pd.to_timedelta(dedupe_tol)
+        #         out["_bucket"] = (out[ts_col].view('int64') // bucket.value)  # bin by tol
+        #         out = (out.sort_values([ts_col])
+        #                 .groupby("_bucket", as_index=False)
+        #                 .tail(1))  # keep the last (new replaces old)
+        #         out = out.drop(columns=["_bucket"])
+
+        #     out = out.drop_duplicates(subset=[ts_col], keep="last")
+        #     out.reset_index(drop=True, inplace=True)
+        #     return out
+
+        # # depth
+        # a_raw_existing.dep_data = _merge_channel_replace_window(
+        #     a_raw_existing.dep_data, a_raw_temp.dep_data, sel_start, sel_end)
+        #     # _set_bounds(a_raw_existing, "dep_data")
+
+        # # velocity
+        # a_raw_existing.vel_data = _merge_channel_replace_window(
+        #     a_raw_existing.vel_data, a_raw_temp.vel_data, sel_start, sel_end)
+        #     # _set_bounds(a_raw_existing, "vel_data")
+
+        # # battery
+        # a_raw_existing.bat_data = _merge_channel_replace_window(
+        #     a_raw_existing.bat_data, a_raw_temp.bat_data, sel_start, sel_end)
+        #     # _set_bounds(a_raw_existing, "bat_data")
+
+        # # rain (tips)
+        # a_raw_existing.rg_data = _merge_channel_replace_window(
+        #     a_raw_existing.rg_data, a_raw_temp.rg_data, sel_start, sel_end)
+        #     # _set_bounds(a_raw_existing, "rg_data")
+
+        # # pump on/off
+        # a_raw_existing.pl_data = _merge_channel_replace_window(
+        #     a_raw_existing.pl_data, a_raw_temp.pl_data, sel_start, sel_end)
+        #     # _set_bounds(a_raw_existing, "pl_data")
 
         self.update_fsm_project_standard_item_model()
+
+
+
+
+
+
 
     # def import_fsm_raw_data(self, monitor_id, show_progress: bool = True):
     #     a_inst = self.fsmProject.get_install_by_monitor(monitor_id)
@@ -1871,7 +1973,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 '{prj_id}', self.fsmProject.job_number)
         return file_format
 
-    def read_hobo_csv_file(self, filespec, show_progress: bool = True):
+    def read_hobo_csv_file(self, filespec, show_progress: bool = True, since=None):
         dt_timestamps = []
         i_values = []
 
@@ -1914,9 +2016,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.progressBar.hide()
                 self._thisApp.processEvents()
 
-        return pd.DataFrame({'Timestamp': dt_timestamps, 'Value': i_values}), 'on/off'
+        # return pd.DataFrame({'Timestamp': dt_timestamps, 'Value': i_values}), 'on/off'
+            df = pd.DataFrame({'Timestamp': dt_timestamps, 'Value': i_values})
+                
+            if since is not None:
+                df = df[df['Timestamp'] > since]
+            return df, 'on/off'
 
-    def read_flo_file(self, filespec, show_progress: bool = True):
+    def read_flo_file(self, filespec, show_progress: bool = True, since=None):
         tip_timestamps = []
 
         with open(filespec, "rb") as file:
@@ -1974,9 +2081,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.progressBar.hide()
                 self._thisApp.processEvents()
 
-            return pd.DataFrame({'Timestamp': tip_timestamps}), ''
+            # return pd.DataFrame({'Timestamp': tip_timestamps}), ''
+            df = pd.DataFrame({'Timestamp': tip_timestamps})
+            
+            if since is not None:
+                df = df[df['Timestamp'] > since]
+            return df, ''
                     
-    def read_dat_file(self, filespec, show_progress: bool = True):
+    def read_dat_file(self, filespec, show_progress: bool = True, since=None):
         dt_timestamps = []
         i_values = []
 
@@ -2072,14 +2184,22 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
             # Post-processing based on flag type
             if i_flag == 17:
-                # return pd.DataFrame(columns=['Timestamp']), s_units
-                return pd.DataFrame({'Timestamp': tip_timestamps}), s_units
+                # return pd.DataFrame({'Timestamp': tip_timestamps}), s_units
+                df = pd.DataFrame({'Timestamp': tip_timestamps})
+                # if since is not None:
+                #     df = df[df['Timestamp'] > since]
+                # return df, s_units
             else:
                 # Round values for non-tipping bucket data
                 i_values = [round(val, 3) if not np.isnan(
                     val) else val for val in i_values]
                 # Return the DataFrame with rounded values
-                return pd.DataFrame({'Timestamp': dt_timestamps, 'Value': i_values}), s_units
+                # return pd.DataFrame({'Timestamp': dt_timestamps, 'Value': i_values}), s_units
+                df = pd.DataFrame({'Timestamp': dt_timestamps, 'Value': i_values})
+            
+            if since is not None:
+                df = df[df['Timestamp'] > since]
+            return df, s_units
 
     def fsm_bulk_process_raw_data(self):
         i_count = 0
@@ -2143,7 +2263,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             msg.setWindowIcon(self.myIcon)
             msg.information(self, 'Process Raw Data',
                             'Processing Complete', QMessageBox.Ok)
-            self.update_plot()
+            # self.update_plot()
 
         self.update_fsm_project_standard_item_model()
 
@@ -2323,12 +2443,13 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         for a_inst in self.fsmProject.dict_fsm_installs.values():
 
-            if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
-                a_inst.writeFDVFileFromProcessedData(file_path)
-            elif a_inst.install_type == 'Rain Gauge':
-                a_inst.writeRFileFromProcessedData(file_path)
-            else:
-                pass
+            if not a_inst.data is None:
+                if a_inst.install_type in ['Flow Monitor', 'Depth Monitor']:
+                    a_inst.writeFDVFileFromProcessedData(file_path)
+                elif a_inst.install_type == 'Rain Gauge':
+                    a_inst.writeRFileFromProcessedData(file_path)
+                else:
+                    pass
 
         msg = QMessageBox(self)
         msg.setWindowIcon(self.myIcon)
@@ -4246,33 +4367,22 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.actionCreateVirtualRG.triggered.connect(self.setCreateVirtualRGTool)
 
         mapToolbar = QToolBar()
-        # mapToolbarActionGroup = QActionGroup(self)
-        # mapToolbarActionGroup.setExclusive(True)
         mapToolbar.addAction(self.actionMapToggleImagery)
-        # mapToolbarActionGroup.addAction(self.actionMapToggleImagery)        
         mapToolbar.addAction(self.actionMapToggleStreetMap)
-        # mapToolbarActionGroup.addAction(self.actionMapToggleStreetMap)
         mapToolbar.addSeparator()        
         mapToolbar.addAction(self.actionPan)
-        # mapToolbarActionGroup.addAction(self.actionPan)
         mapToolbar.addAction(self.actionZoomIn)
-        # mapToolbarActionGroup.addAction(self.actionZoomIn)        
         mapToolbar.addAction(self.actionZoomOut)
-        # mapToolbarActionGroup.addAction(self.actionZoomOut)        
         mapToolbar.addAction(self.actionZoomFull)
-        # mapToolbarActionGroup.addAction(self.actionZoomFull)        
         mapToolbar.addAction(self.actionZoomPrevious)
-        # mapToolbarActionGroup.addAction(self.actionZoomPrevious)        
         mapToolbar.addAction(self.actionZoomNext)
-        # mapToolbarActionGroup.addAction(self.actionZoomNext)
         mapToolbar.addSeparator()
         mapToolbar.addAction(self.actionShowRainfall)
-        # mapToolbarActionGroup.addAction(self.actionShowRainfall)        
         mapToolbar.addAction(self.actionCreateVirtualRG)
-        # mapToolbarActionGroup.addAction(self.actionCreateVirtualRG)
         self.tlbMapToolbar.layout().setMenuBar(mapToolbar)
 
-
+        # self.toolDefaultPointer = QgsMapToolEmitPoint(self.mainMapCanvas)
+        # self.toolDefaultPointer.canvasClicked.connect(self.update_fm_coordinates)        
         self.toolPan = QgsMapToolPan(self.mainMapCanvas)
         self.toolPan.setAction(self.actionPan)
         self.toolZoomIn = QgsMapToolZoom(self.mainMapCanvas, False)
@@ -4302,6 +4412,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.mainMapCanvas.contextMenuAboutToShow.connect(self.populateMainMapCanvasContextMenu)
 
+        self.mainMapCanvas.setMapTool(self.toolPan)
+
         self.mainMapLayerTreeView.viewport().installEventFilter(self)
         # self.mainMapCanvas.viewport().installEventFilter(self)
 
@@ -4321,6 +4433,15 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.actionSave_Project.triggered.connect(self.saveProject)
         self.actionSave_Project_As.triggered.connect(self.saveProjectAs)
         self.actionHelp.triggered.connect(self.showHelpFile)
+        self.logging_group = QActionGroup(self)
+        self.logging_group.setExclusive(True)
+        self.actionLoggingNone.triggered.connect(lambda: set_logging_level("none"))
+        self.actionLoggingNone.setChecked(True)
+        self.logging_group.addAction(self.actionLoggingNone)
+        self.actionLoggingDebug.triggered.connect(lambda: set_logging_level("debug"))
+        self.logging_group.addAction(self.actionLoggingDebug)
+        self.actionLoggingAll.triggered.connect(lambda: set_logging_level("all"))
+        self.logging_group.addAction(self.actionLoggingAll)
         self.actionInfo.triggered.connect(self.aboutBox)
         self.actionClose.triggered.connect(self.close)
         # self.actionClose.triggered.connect(self.closeApplication)
@@ -4397,8 +4518,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.trv_flow_survey_management.customContextMenuRequested.connect(
             self.openFSMTreeViewContextMenu)
         self.trv_flow_survey_management.viewport().installEventFilter(self)
-        self.update_fsm_project_standard_item_model()
         self.trv_flow_survey_management.setModel(self.fsm_project_model)
+        self.update_fsm_project_standard_item_model()
         self.rbnFSMRawValues.toggled.connect(self.update_plot)
         self.rbnFSMProcessedValues.toggled.connect(self.update_plot)
         self.chkShowAdjustments.stateChanged.connect(self.update_plot)
@@ -4439,6 +4560,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.trw_RainfallAnalysis.viewport().installEventFilter(self)
         self.btnRainfallAnalysisRefresh.clicked.connect(self.update_plot)
 
+        self.trw_DataClassification.setVisible(False)
         self.trw_DataClassification.customContextMenuRequested.connect(
             self.openPlotTreeViewContextMenu)
         self.trw_DataClassification.viewport().installEventFilter(self)
@@ -4448,6 +4570,20 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.trw_DWF_Analysis.customContextMenuRequested.connect(
             self.openPlotTreeViewContextMenu)
         self.trw_DWF_Analysis.viewport().installEventFilter(self)
+        self.chk_DWF_Analysis_SG_Filter.stateChanged.connect(self.update_plot)
+        self.spn_DWF_Analysis_SG_Filter_Window.valueChanged.connect(self.update_plot)
+        self.spn_DWF_Analysis_SG_Filter_PolyOrder.valueChanged.connect(self.update_plot)
+
+        self.trw_Merge_Data.customContextMenuRequested.connect(
+            self.openPlotTreeViewContextMenu)
+        self.trw_Merge_Data.viewport().installEventFilter(self)
+        self.chkFlowIntensity.stateChanged.connect(self.update_plot)
+        self.chkDepth.stateChanged.connect(self.update_plot)
+        self.chkVelocity.stateChanged.connect(self.update_plot)
+        self.btnDataMerge.clicked.connect(self.performMerge)
+        # self.chk_DWF_Analysis_SG_Filter.stateChanged.connect(self.update_plot)
+        # self.spn_DWF_Analysis_SG_Filter_Window.valueChanged.connect(self.update_plot)
+        # self.spn_DWF_Analysis_SG_Filter_PolyOrder.valueChanged.connect(self.update_plot)
 
         # Lists for Open Monitors/Gauges:
         self.lst_FlowMonitors.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -4570,25 +4706,29 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def setCreateVirtualRGTool(self):
         if self.mainMapCanvas.mapTool() == self.toolCreateVirtualRG:
-            self.mainMapCanvas.unsetMapTool(self.toolCreateVirtualRG)
+            # self.mainMapCanvas.unsetMapTool(self.toolCreateVirtualRG)
+            self.mainMapCanvas.setMapTool(self.toolPan)
         else:        
             self.mainMapCanvas.setMapTool(self.toolCreateVirtualRG)
 
     def setZoomInTool(self):
         if self.mainMapCanvas.mapTool() == self.toolZoomIn:
-            self.mainMapCanvas.unsetMapTool()
+            # self.mainMapCanvas.unsetMapTool()
+            self.mainMapCanvas.setMapTool(self.toolPan)
         else:
             self.mainMapCanvas.setMapTool(self.toolZoomIn)
 
     def setZoomOutTool(self):
         if self.mainMapCanvas.mapTool() == self.toolZoomOut:
-            self.mainMapCanvas.unsetMapTool(self.toolZoomOut)
+            # self.mainMapCanvas.unsetMapTool(self.toolZoomOut)
+            self.mainMapCanvas.setMapTool(self.toolPan)
         else:
             self.mainMapCanvas.setMapTool(self.toolZoomOut)
 
     def setPanMapTool(self):
         if self.mainMapCanvas.mapTool() == self.toolPan:
-            self.mainMapCanvas.unsetMapTool(self.toolPan)
+            # self.mainMapCanvas.unsetMapTool(self.toolPan)
+            self.mainMapCanvas.setMapTool(self.toolPan)
         else:
             self.mainMapCanvas.setMapTool(self.toolPan)
 
@@ -5975,7 +6115,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 (o == self.trw_CumDepth.viewport()) or
                 (o == self.trw_RainfallAnalysis.viewport()) or
                 (o == self.trw_DataClassification.viewport()) or
-                (o == self.trw_DWF_Analysis.viewport())):
+                (o == self.trw_DWF_Analysis.viewport()) or
+                (o == self.trw_Merge_Data.viewport())):
                 self.tbxGraphs_drop_action(e)
                 return True
             elif (o == self.trwSummedFMs.viewport()):
@@ -6002,22 +6143,22 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             else:
                 return False
 
-        if e.type() == QtCore.QEvent.Type.MouseButtonPress:
-            if (o == self.mainMapCanvas.viewport()):
-                if e.button() == Qt.LeftButton:
-                    if self.currentMapTool == 'set_fm_coordinates':
-                        coords = self.mainMapCanvas.getCoordinateTransform().toMapCoordinates(e.pos().x(), e.pos().y())
-                        self.update_fm_coordinates(coords.x(), coords.y())
-                    if self.currentMapTool == 'set_rg_coordinates':
-                        coords = self.mainMapCanvas.getCoordinateTransform().toMapCoordinates(e.pos().x(), e.pos().y())
-                        self.update_rg_coordinates(coords.x(), coords.y())
-                    # if self.currentMapTool == 'add_virtual_raingauge':
-                    #     coords = self.mainMapCanvas.getCoordinateTransform().toMapCoordinates(e.pos().x(), e.pos().y())
-                    #     self.gis_add_virtual_raingauge_on_click(coords.x(), coords.y())
-                elif e.button() == Qt.RightButton:
-                    if self.mainMapCanvas.mapTool().toolName() not in ['Pan'] :
-                        self.populateMainMapCanvasContextMenu(e.globalPos())
-                return True
+        # if e.type() == QtCore.QEvent.Type.MouseButtonPress:
+        #     if (o == self.mainMapCanvas.viewport()):
+        #         if e.button() == Qt.LeftButton:
+        #             if self.currentMapTool == 'set_fm_coordinates':
+        #                 coords = self.mainMapCanvas.getCoordinateTransform().toMapCoordinates(e.pos().x(), e.pos().y())
+        #                 self.update_fm_coordinates(coords.x(), coords.y())
+        #             if self.currentMapTool == 'set_rg_coordinates':
+        #                 coords = self.mainMapCanvas.getCoordinateTransform().toMapCoordinates(e.pos().x(), e.pos().y())
+        #                 self.update_rg_coordinates(coords.x(), coords.y())
+        #             # if self.currentMapTool == 'add_virtual_raingauge':
+        #             #     coords = self.mainMapCanvas.getCoordinateTransform().toMapCoordinates(e.pos().x(), e.pos().y())
+        #             #     self.gis_add_virtual_raingauge_on_click(coords.x(), coords.y())
+        #         elif e.button() == Qt.RightButton:
+        #             if self.mainMapCanvas.mapTool().toolName() not in ['Pan'] :
+        #                 self.populateMainMapCanvasContextMenu(e.globalPos())
+        #         return True
                         
         if e.type() == QtCore.QEvent.Type.MouseButtonDblClick:
             if o == self.trw_PlottedICMTraces.viewport():
@@ -6456,6 +6597,108 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 else:
                     print("dropped from IDK?")                            
 
+        if self.tbxGraphs.currentWidget().objectName() == "pageMergeData":
+            if self.a_merge_graph is not None:
+
+                #     if source_item.rowCount() > 0:
+                #         self.aScattergraph.plot_flow_monitor = self.openFlowMonitors.getFlowMonitor(source_item.item(0, 0).text())
+                #         addedToPlot = True
+
+                isFlowMon = True
+                if e.source() == self.lst_FlowMonitors:
+                    source_item = QStandardItemModel()
+                    source_item.dropMimeData(
+                        e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+                    if source_item.rowCount() > 0:
+                        dropped_obj = self.openFlowMonitors.getFlowMonitor(source_item.item(0, 0).text())
+
+                elif e.source() == self.lst_RainGauges:
+                    source_item = QStandardItemModel()
+                    source_item.dropMimeData(
+                        e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+                    if source_item.rowCount() > 0:
+                        dropped_obj = self.openRainGauges.getRainGauge(source_item.item(0, 0).text())
+                        isFlowMon = False
+                else:
+                    dropped_obj = None
+
+                item_dropped_on = self.trw_Merge_Data.itemAt(e.pos())
+                checkbox_map = {
+                    self.chkFlowIntensity: "Flow",
+                    self.chkDepth: "Depth",
+                    self.chkVelocity: "Velocity"
+                }
+                if item_dropped_on is not None:
+                    if item_dropped_on.text(0) == "Target Object":
+                        if isFlowMon:
+                            # Build list of selected columns
+                            value_col = [name for checkbox, name in checkbox_map.items() if checkbox.isChecked()]
+                            self.chkFlowIntensity.setText("Flow")
+                            self.chkDepth.setVisible(True)
+                            self.chkVelocity.setVisible(True)
+                            self.a_merge_graph.set_pairs(dropped_obj, None, value_col)
+                            addedToPlot = True
+                        else:
+                            self.chkFlowIntensity.setText("Intensity")
+                            self.chkDepth.setVisible(False)
+                            self.chkVelocity.setVisible(False)
+                            self.a_merge_graph.set_pairs(dropped_obj, None, ["Intensity"])
+                            addedToPlot = True
+                    elif item_dropped_on.text(0) == "Donor Object":
+                        if self.a_merge_graph.targetObject is not None and type(self.a_merge_graph.targetObject) == type(dropped_obj):
+                            if isFlowMon:
+                                # Build list of selected columns
+                                value_col = [name for checkbox, name in checkbox_map.items() if checkbox.isChecked()]                                
+                                self.a_merge_graph.set_pairs(None, dropped_obj, value_col)
+                                addedToPlot = True
+                            else:
+                                self.a_merge_graph.set_pairs(None, dropped_obj, ["Intensity"])
+                                addedToPlot = True
+                    else:
+                        print("IDK")
+                else:
+                    pass
+                    #target item is none so object has been dropped in the blank area
+                    #if there is no target or donor object set then set the taget object
+                    #otherwise set the donor object
+                    
+
+
+                # if e.source() == self.lst_FlowMonitors:
+
+                #     source_item = QStandardItemModel()
+                #     source_item.dropMimeData(
+                #         e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+
+                #     if source_item.rowCount() > 0:
+                #         self.a_dwf_graph.plot_flow_monitor = self.openFlowMonitors.getFlowMonitor(source_item.item(0, 0).text())
+                #         addedToPlot = True
+
+                # elif e.source() == self.lst_RainGauges:
+
+                #     source_item = QStandardItemModel()
+                #     source_item.dropMimeData(
+                #         e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+
+                #     if source_item.rowCount() > 0:
+                #         if source_item.item(0, 0).text() in self.dummyFMs:
+                #             dFM = self.dummyFMs[source_item.item(0, 0).text()]
+                #             self.a_dwf_graph.plot_flow_monitor = dFM.equivalentFM
+                #             addedToPlot = True
+
+                # elif e.source() == self.trwEvents:
+
+                #     source_item = QStandardItemModel()
+                #     source_item.dropMimeData(
+                #         e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+
+                #     for i in range(source_item.rowCount()):
+                #         if (self.a_dwf_graph.plotted_events.addSurveyEvent(self.identifiedSurveyEvents.getSurveyEvent(
+                #                 source_item.item(i, 0).text()))):
+                #             addedToPlot = True
+                # else:
+                #     print("dropped from IDK?")   
+
         if addedToPlot:
             self.update_plot()
 
@@ -6502,6 +6745,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.aFSMInstallGraph = graphFSMInstall(self.plotCanvasMain)
         self.aFSMDashboard = dashboardFSM(self.plotCanvasMain)
         self.a_dwf_graph = graphDWF(self.plotCanvasMain)
+        self.a_merge_graph = graphMerge(self.plotCanvasMain)
 
         self.openFlowMonitors = None
         self.openRainGauges = None
@@ -6536,7 +6780,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.updateSummedFMTreeView()
         self.updateDummyFMTreeView()
         # self.update_fsm_project_treeview()
-        self.update_plot()
+        # self.update_plot()
         self.schematicGraphicsView.createNewScene()
         self.update_fsm_project_standard_item_model()
         self.enable_fsm_menu()
@@ -7270,56 +7514,34 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     def saveProject(self):
 
         if not self.db_manager.is_connected():
-
             self.saveProjectAs()
-            # fileSpec, filter = QtWidgets.QFileDialog.getSaveFileName(
-            #     self, "Save Flowbot Project...", self.lastOpenDialogPath, 'Flowbot Project Files (*.fbsqlite)')
-            # if len(fileSpec) == 0:
-            #     return
-
-            # # Create a temporary file
-            # temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.fbsqlite')
-            # temp_file.close()  # Close the file so it can be used by the database manager
-
-            # self.db_manager.close_all_connections()
-            # self.db_manager.initialize(temp_file.name, pool_size=5)
-
-            # if self.saveProjectToDatabase():
-            #     # If saving was successful, replace the original file with the temp file
-            #     self.db_manager.close_all_connections()
-            #     os.replace(temp_file.name, fileSpec)
-            #     self.db_manager.initialize(fileSpec, pool_size=5)
-            #     msg = QMessageBox(self)
-            #     msg.setWindowIcon(self.myIcon)
-            #     msg.information(self, 'Save Project', 'Project Saved Successfully', QMessageBox.Ok)
-            # else:
-            #     # If saving failed, delete the temporary file
-            #     self.db_manager.close_all_connections()
-            #     os.remove(temp_file.name)
-            #     msg = QMessageBox(self)
-            #     msg.setWindowIcon(self.myIcon)
-            #     msg.critical(
-            #         self, "Save Project", "Failed to save project", QMessageBox.Ok
-            #     )
         else:
             # If already connected, save directly to the existing database
             # Create a temporary file
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".fbsqlite")
-            temp_file.close()  # Close the file so it can be used by the database manager            
+            temp_file.close()  # Close the file so it can be used by the database manager
             currentFileSpec = self.db_manager.database
             self.db_manager.close_all_connections()
+            logger.debug(f"FlowbotMainWindowGis.saveProject: Closed All Connections")
             self.db_manager.initialize(temp_file.name, pool_size=5)
+            logger.debug(f"FlowbotMainWindowGis.saveProject: DB Manager Initialized")
 
             if self.saveProjectToDatabase():
+                logger.debug(f"FlowbotMainWindowGis.saveProject: Test Save Successfull")
                 self.db_manager.close_all_connections()
+                logger.debug(f"FlowbotMainWindowGis.saveProject: Closed All Connections")
                 os.remove(temp_file.name)
+                logger.debug(f"FlowbotMainWindowGis.saveProject: Temp File Removed")
                 self.db_manager.initialize(currentFileSpec, pool_size=5)
+                logger.debug(f"FlowbotMainWindowGis.saveProject: DB Manager Initialized")
                 self.saveProjectToDatabase()
                 msg = QMessageBox(self)
                 msg.setWindowIcon(self.myIcon)
                 msg.information(self, 'Save Project', 'Project Saved Successfully', QMessageBox.Ok)
             else:
+                logger.debug(f"FlowbotMainWindowGis.saveProject: Test Save Unsuccessfull")
                 self.db_manager.initialize(currentFileSpec, pool_size=5)
+                logger.debug(f"FlowbotMainWindowGis.saveProject: DB Manager Initialized")
                 msg = QMessageBox(self)
                 msg.setWindowIcon(self.myIcon)
                 msg.critical(self, 'Save Project', 'Failed to save project', QMessageBox.Ok)
@@ -7337,21 +7559,32 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.fbsqlite')
         temp_file.close()  # Close the file so it can be used by the database manager
         self.db_manager.close_all_connections()
+        logger.debug(f"FlowbotMainWindowGis.saveProjectAs: Closed All Connections")
         self.db_manager.initialize(temp_file.name, pool_size=5)
+        logger.debug(f"FlowbotMainWindowGis.saveProjectAs: DB Manager Initialized")
 
         if self.saveProjectToDatabase():
             # If saving was successful, replace the original file with the temp file
+            logger.debug(f"FlowbotMainWindowGis.saveProjectAs: Test Save Successfull")
             self.db_manager.close_all_connections()
-            os.replace(temp_file.name, fileSpec)
+            logger.debug(f"FlowbotMainWindowGis.saveProjectAs: Connections Closed")
+            # os.replace(temp_file.name, fileSpec)
+            shutil.move(temp_file.name, fileSpec)
+            logger.debug(f"FlowbotMainWindowGis.saveProjectAs: Temp File Replaced")
             self.db_manager.initialize(fileSpec, pool_size=5)
+            logger.debug(f"FlowbotMainWindowGis.saveProjectAs: File Initialized")
             msg = QMessageBox(self)
             msg.setWindowIcon(self.myIcon)
             msg.information(self, 'Save Project As', 'Project Saved Successfully', QMessageBox.Ok)
         else:
             # If saving failed, delete the temporary file
+            logger.debug(f"FlowbotMainWindowGis.saveProjectAs: Test Save Unsuccessfull")
             self.db_manager.close_all_connections()
+            logger.debug(f"FlowbotMainWindowGis.saveProjectAs: Connections Closed")
             os.remove(temp_file.name)
+            logger.debug(f"FlowbotMainWindowGis.saveProjectAs: Temp File Removed")
             self.db_manager.initialize(fileSpec, pool_size=5)
+            logger.debug(f"FlowbotMainWindowGis.saveProjectAs: File Initialized")
             msg = QMessageBox(self)
             msg.setWindowIcon(self.myIcon)
             msg.critical(
@@ -7411,12 +7644,15 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 result = True
             else:
                 result = True
+            logger.debug("FlowbotMainwindowGis.write_summedFMs_to_database Completed")
 
         except sqlite3.Error as e:
-            print(f"Database error: {e}")
+            logger.error(f"FlowbotMainwindowGis.write_summedFMs_to_database: Database error: {e}")
+            # print(f"Database error: {e}")
             conn.rollback()
         except Exception as e:
-            print(f"Exception in _query: {e}")
+            logger.error(f"FlowbotMainwindowGis.write_summedFMs_to_database: Exception in _query: {e}")
+            # print(f"Exception in _query: {e}")
             conn.rollback()
         finally:
             return result                
@@ -7469,12 +7705,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 result = True
             else:
                 result = True
-
+            logger.debug("FlowbotMainWindowGis.write_schematic_graphics_view_to_database Completed")
         except sqlite3.Error as e:
-            print(f"Database error: {e}")
+            logger.error(f"FlowbotMainWindowGis.write_schematic_graphics_view_to_database: Database error: {e}")
+            # print(f"Database error: {e}")
             conn.rollback()
         except Exception as e:
-            print(f"Exception in _query: {e}")
+            logger.error(f"FlowbotMainWindowGis.write_schematic_graphics_view_to_database: Exception in _query: {e}")
+            # print(f"Exception in _query: {e}")
             conn.rollback()
         finally:
             return result        
@@ -8117,6 +8355,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         if self.aDataClassification is not None:
             self.aDataClassification.classifiedFMs = classifiedFlowMonitors()
         self.a_dwf_graph = graphDWF(self.plotCanvasMain)
+        self.a_merge_graph = graphMerge(self.plotCanvasMain)
         self.openFlowMonitors = None
         self.refreshFlowMonitorListWidget()
         self.summedFMs = None
@@ -8131,6 +8370,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             self.aCumDepthGraph.plotted_rgs = plottedRainGauges()
         if self.aRainfallAnalysis is not None:
             self.aRainfallAnalysis.plotted_rgs = plottedRainGauges()
+        if self.a_merge_graph is not None:
+            pass 
         self.update_plot()
         self.openRainGauges = None
         self.refreshRainGaugeListWidget()
@@ -8218,8 +8459,16 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                     self.a_dwf_graph.plot_flow_monitor = None
                 elif item.parent().text(0) == "Events":
                     self.a_dwf_graph.plotted_events.removeSurveyEvent(
-                        item.text(0))                    
+                        item.text(0))
 
+        elif self.tbxGraphs.currentWidget().objectName() == "pageMergeData":
+            if self.a_merge_graph is not None:
+                item = self.trw_Merge_Data.selectedItems()[0]
+                if item.parent().text(0) == "Target Object":
+                    self.a_merge_graph.targetObject = None
+                elif item.parent().text(0) == "Donor Object":
+                    self.a_merge_graph.donorObject = None
+                    
         self.update_plot()
 
     def removeTreeItems(self):
@@ -8273,6 +8522,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                     self.a_dwf_graph.plot_flow_monitor = None
                 elif item.text(0) == "Events":
                     self.a_dwf_graph.plotted_events = plottedSurveyEvents()
+
+        if self.tbxGraphs.currentWidget().objectName() == "pageMergeData":
+            if self.a_merge_graph is not None:
+                item = self.trw_Merge_Data.currentItem()
+                if item.text(0) == "Target Object":
+                    self.a_merge_graph.targetObject = None
+                elif item.text(0) == "Donor Object":
+                    self.a_merge_graph.donorObject = None
 
         self.update_plot()
 
@@ -8457,6 +8714,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             treeWidget = self.trw_DataClassification
         if self.tbxGraphs.currentWidget().objectName() == "pageDryWeatherFlow":
             treeWidget = self.trw_DWF_Analysis
+        if self.tbxGraphs.currentWidget().objectName() == "pageMergeData":
+            treeWidget = self.trw_Merge_Data
 
         if treeWidget is not None:
             level = self.getTreeViewLevel(treeWidget)
@@ -8508,6 +8767,25 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         remCallback = QtWidgets.QAction("Remove", menu)
                         remCallback.triggered.connect(self.removeTreeItem)
                         menu.addAction(remCallback)
+                elif treeWidget.objectName() == "trw_DWF_Analysis":
+                    if treeWidget.itemFromIndex(treeWidget.selectedIndexes()[0].parent()).text(0) == "Flow Monitor":
+                        remCallback = QtWidgets.QAction("Copy to Clipboard", menu)
+                        remCallback.triggered.connect(self.copyDWFAnalysisToClipboard)
+                        menu.addAction(remCallback)
+                        remCallback = QtWidgets.QAction("Copy Profile to Clipboard", menu)
+                        remCallback.triggered.connect(self.copyDWFProfileToClipboard)
+                        menu.addAction(remCallback)                        
+                        remCallback = QtWidgets.QAction("Remove", menu)
+                        remCallback.triggered.connect(self.removeTreeItem)
+                        menu.addAction(remCallback)                        
+                    else:
+                        remCallback = QtWidgets.QAction("Remove", menu)
+                        remCallback.triggered.connect(self.removeTreeItem)
+                        menu.addAction(remCallback)
+                elif treeWidget.objectName() == "trw_Merge_Data":
+                    remCallback = QtWidgets.QAction("Remove", menu)
+                    remCallback.triggered.connect(self.removeTreeItem)
+                    menu.addAction(remCallback)
                 else:
                     remCallback = QtWidgets.QAction("Remove", menu)
                     remCallback.triggered.connect(self.removeTreeItem)
@@ -8589,6 +8867,23 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             menu.addAction(remCallback)
 
         menu.exec_(self.trwEvents.viewport().mapToGlobal(position))
+
+    def copyDWFAnalysisToClipboard(self):
+
+        if self.a_dwf_graph is not None:
+            self.a_dwf_graph.df_dwf_average.to_clipboard()
+            msg = QMessageBox(self)
+            msg.setWindowIcon(self.myIcon)
+            msg.information(self, 'DWF Analysis copied to clipboard', 'Done')            
+        
+    def copyDWFProfileToClipboard(self):
+
+        if self.a_dwf_graph is not None:
+            df = self.a_dwf_graph.get_profile_from_dwf_average()
+            df.to_clipboard()
+            msg = QMessageBox(self)
+            msg.setWindowIcon(self.myIcon)
+            msg.information(self, 'DWF Profile copied to clipboard', 'Done')      
 
     def openICMTraceListContextMenu(self, position):
 
@@ -9705,7 +10000,44 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                                 item.setExpanded(True)
 
                         else:
-                            root.removeChild(item)                        
+                            root.removeChild(item)
+
+            elif self.tbxGraphs.currentWidget().objectName() == "pageMergeData":
+                if self.a_merge_graph is not None:
+                    root = self.trw_Merge_Data.invisibleRootItem()
+                    child_count = root.childCount()
+
+                    for i in range(child_count):
+                        item = root.child(i)
+
+                        if item.text(0) == 'Target Object':
+                            for i in range(item.childCount()):
+                                item.removeChild(item.child(0))
+
+                            if self.a_merge_graph.targetObject is not None:
+                                it = QtWidgets.QTreeWidgetItem()
+                                to_name = self.a_merge_graph.targetObject.monitorName if type(self.a_merge_graph.targetObject).__name__ == 'flowMonitor' else self.a_merge_graph.targetObject.gaugeName
+                                it.setText(0, to_name)
+                                item.addChild(it)
+
+                            if item.childCount() > 0:
+                                item.setExpanded(True)
+
+                        elif item.text(0) == 'Donor Object':
+                            for i in range(item.childCount()):
+                                item.removeChild(item.child(0))
+
+                            if self.a_merge_graph.donorObject is not None:
+                                it = QtWidgets.QTreeWidgetItem()
+                                do_name = self.a_merge_graph.donorObject.monitorName if type(self.a_merge_graph.donorObject).__name__ == 'flowMonitor' else self.a_merge_graph.donorObject.gaugeName
+                                it.setText(0, do_name)
+                                item.addChild(it)
+
+                            if item.childCount() > 0:
+                                item.setExpanded(True)
+
+                        else:
+                            root.removeChild(item)                            
 
         elif self.mainToolBox.currentWidget().objectName() == 'pageFlowSurveyAnalysis':
             if self.tbxVerification.currentWidget().objectName() == "pageVerificationPlots":
@@ -9880,7 +10212,38 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.resize(oldSize.width() - 1, oldSize.height() - 1)
         self.resize(oldSize)
 
+    def performMerge(self):
+        if self.a_merge_graph is not None:
+            if self.a_merge_graph.targetObject is not None and self.a_merge_graph.donorObject is not None:
+                self.a_merge_graph.commit_merge()
+                
+    def mergeOptionsChanged(self):
+
+        if self.a_merge_graph is not None:
+            if self.a_merge_graph.targetObject is not None and self.a_merge_graph.donorObject is not None:
+                if type(self.a_merge_graph.targetObject) == flowMonitor:
+                    checkbox_map = {
+                        self.chkFlowIntensity: "Flow",
+                        self.chkDepth: "Depth",
+                        self.chkVelocity: "Velocity"
+                    }                
+                    value_col = [name for checkbox, name in checkbox_map.items() if checkbox.isChecked()]
+                else:
+                    value_col = ["Intensity"]
+                self.a_merge_graph.set_pairs(None, None, value_col)
+                self.update_plot()
+
+
     def update_plot(self):
+
+        if self.active_plot_class:
+            try:
+                if hasattr(self.active_plot_class, "on_resize"):
+                    self.plotCanvasMain.resized.disconnect(self.active_plot_class.on_resize)
+            except TypeError:
+                pass  # not connected
+
+        self.active_plot_class = None  # Reset for now
 
         # This is a naff section to disconnect events specific to individual graphs from the shared canvas
         # for conn_id in self.plotCanvasMain.event_connections
@@ -9892,10 +10255,12 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             if self.tbxGraphs.currentWidget().objectName() == "pageFDV":
                 if self.aFDVGraph is not None:
                     self.aFDVGraph.update_plot()
+                    self.active_plot_class = self.aFDVGraph
 
             if self.tbxGraphs.currentWidget().objectName() == "pageScattergraphs":
                 if self.aScattergraph is not None:
                     self.aScattergraph.update_plot()
+                    self.active_plot_class = self.aScattergraph
 
             if self.tbxGraphs.currentWidget().objectName() == "pageRainfallCumDepth":
                 if self.aCumDepthGraph is not None:
@@ -9905,6 +10270,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         self.aCumDepthGraph.plotted_rgs.plotLatestEnd)
                     self.aCumDepthGraph.startDate = self.dteScattergraphStart.dateTime()
                     self.aCumDepthGraph.update_plot()
+                    self.active_plot_class = self.aCumDepthGraph
+
             if self.tbxGraphs.currentWidget().objectName() == "pageRainfallAnalysis":
                 if self.aRainfallAnalysis is not None:
                     self.dteRainfallAnalysisStart.setMinimumDateTime(
@@ -9913,19 +10280,49 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         self.aRainfallAnalysis.plotted_rgs.plotLatestEnd)
                     self.aRainfallAnalysis.startDate = self.dteRainfallAnalysisStart.dateTime()
                     self.aRainfallAnalysis.update_plot()
+                    self.active_plot_class = self.aRainfallAnalysis
 
             if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
                 if self.aDataClassification is not None:
                     self.aDataClassification.updatePlot()
+                    self.active_plot_class = self.aDataClassification
 
             if self.tbxGraphs.currentWidget().objectName() == "pageDryWeatherFlow":
                 if self.a_dwf_graph is not None:
-                    self.a_dwf_graph.update_plot()                    
+                    self.a_dwf_graph.update_plot(self.chk_DWF_Analysis_SG_Filter.isChecked(), self.spn_DWF_Analysis_SG_Filter_Window.value(), self.spn_DWF_Analysis_SG_Filter_PolyOrder.value())
+                    self.active_plot_class = self.a_dwf_graph
+
+                self.lbl_DWF_Analysis_SG_Filter_Window.setEnabled(self.chk_DWF_Analysis_SG_Filter.isChecked())
+                self.spn_DWF_Analysis_SG_Filter_Window.setEnabled(self.chk_DWF_Analysis_SG_Filter.isChecked())
+                self.lbl_DWF_Analysis_SG_Filter_PolyOrder.setEnabled(self.chk_DWF_Analysis_SG_Filter.isChecked())
+                self.spn_DWF_Analysis_SG_Filter_PolyOrder.setEnabled(self.chk_DWF_Analysis_SG_Filter.isChecked())
+
+            if self.tbxGraphs.currentWidget().objectName() == "pageMergeData":
+                if self.a_merge_graph is not None:
+                    self.a_merge_graph.update_plot()
+                    if self.a_merge_graph.targetObject is not None and self.a_merge_graph.donorObject is not None:
+                        self.active_plot_class = self.a_merge_graph
+                        self.chkFlowIntensity.setEnabled(True)
+                        isFlowMon = type(self.a_merge_graph.targetObject).__name__ == 'flowMonitor'
+                        # self.chkFlowIntensity.setEnabled(isFlowMon)
+                        if not isFlowMon:
+                            self.chkFlowIntensity.setChecked(True)
+                        self.chkDepth.setEnabled(isFlowMon)
+                        self.chkVelocity.setEnabled(isFlowMon)
+                        self.btnDataMerge.setEnabled(True)
+                    else:
+                        self.btnDataMerge.setEnabled(False)
+                else:
+                    self.chkFlowIntensity.setEnabled(False)
+                    self.chkDepth.setEnabled(False)
+                    self.chkVelocity.setEnabled(False)
+                    self.btnDataMerge.setEnabled(True)
 
         elif self.mainToolBox.currentWidget().objectName() == 'pageVerificationAnalysis':
             if self.tbxVerification.currentWidget().objectName() == "pageVerificationPlots":
                 if self.aTraceGraph is not None:
                     self.aTraceGraph.update_plot()
+                    self.active_plot_class = self.aTraceGraph
 
                 self.updateICMTraceButtons()
 
@@ -9933,16 +10330,21 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             if self.aWQGraph is not None:
                 self.aWQGraph.update_plot(
                     self.rbnWQRawValues.isChecked(), self.cboWQFrequency.currentText())
+                self.active_plot_class = self.aWQGraph
 
         elif self.mainToolBox.currentWidget().objectName() == 'pageFlowSurveyManagement':
             if self.aFSMInstallGraph is not None:
-                self.aFSMInstallGraph.update_plot(
-                    self.rbnFSMRawValues.isChecked(), self.chkShowAdjustments.isChecked())
-            else:
-                if self.aFSMDashboard is not None:
-                    if self.fsmProject is not None:
-                        self.aFSMDashboard.update_plot(self.fsmProject)
+                self.aFSMInstallGraph.update_plot(self.rbnFSMRawValues.isChecked(), self.chkShowAdjustments.isChecked())
+                if self.aFSMInstallGraph.isBlank:
+                    if self.aFSMDashboard is not None:
+                        if self.fsmProject is not None:
+                            self.aFSMDashboard.update_plot(self.fsmProject)
+                            self.active_plot_class = self.aFSMDashboard
             self.chkShowAdjustments.setEnabled(self.rbnFSMRawValues.isChecked())
+
+        if self.active_plot_class:
+            if hasattr(self.active_plot_class, "on_resize"):
+                self.plotCanvasMain.resized.connect(self.active_plot_class.on_resize)
 
         self.update_plottedTreeView()
         self.dodgyForceUpdate()
@@ -10095,6 +10497,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             else:
                 fmRemoved = True
 
+        if self.a_merge_graph is not None:
+            if self.a_merge_graph.plot_flow_monitor is not None:
+                if self.a_merge_graph.plot_flow_monitor.monitorName == fmName:
+                    self.a_merge_graph = graphMerge(self.plotCanvasMain)
+                    fmRemoved = True
+            else:
+                fmRemoved = True
+
         if self.openFlowMonitors.dictFlowMonitors[fmName]._schematicGraphicItem is not None:
             fm_sgvItem = self.schematicGraphicsView.getSchematicFlowMonitorsByName(fmName)
             self.schematicGraphicsView.deleteItem(fm_sgvItem)
@@ -10150,19 +10560,33 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 if item.childCount() > 0:
                     item.setExpanded(True)
 
-            elif item.text(0) == 'DWF':
+            elif item.text(0) == 'Dry Day':
                 for i in range(item.childCount()):
                     item.removeChild(item.child(0))
 
                 if self.identifiedSurveyEvents is not None:
                     for se in self.identifiedSurveyEvents.survEvents.values():
-                        if se.eventType == "DWF":
+                        if se.eventType == "Dry Day":
                             it = QtWidgets.QTreeWidgetItem()
                             it.setText(0, se.eventName)
                             item.addChild(it)
 
                 if item.childCount() > 0:
                     item.setExpanded(True)
+
+            elif item.text(0) == 'Dry Period':
+                for i in range(item.childCount()):
+                    item.removeChild(item.child(0))
+
+                if self.identifiedSurveyEvents is not None:
+                    for se in self.identifiedSurveyEvents.survEvents.values():
+                        if se.eventType == "Dry Period":
+                            it = QtWidgets.QTreeWidgetItem()
+                            it.setText(0, se.eventName)
+                            item.addChild(it)
+
+                if item.childCount() > 0:
+                    item.setExpanded(True)                    
 
             else:
                 root.removeChild(item)
@@ -10509,7 +10933,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         selected_items = self.lst_FlowMonitors.selectedItems()
 
         if not selected_items:
-            self.mainMapCanvas.unsetMapTool()
+            # self.mainMapCanvas.unsetMapTool()
+            self.mainMapCanvas.setMapTool(self.toolDefaultPointer)
             return  # Nothing selected, exit early
         
         for item in selected_items:
@@ -10521,6 +10946,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.mappedFlowMonitors._update_monitor_in_layer(monitor_name)
             else:
                 self.mappedFlowMonitors.addMappedFlowMonitor(fm)
+            self.refresh()
+            self.mainMapCanvas.setMapTool(self.toolDefaultPointer)
             break
 
     # def update_fm_coordinates(self, x: float, y: float):

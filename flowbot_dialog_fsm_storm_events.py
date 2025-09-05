@@ -220,12 +220,6 @@ class flowbot_dialog_fsm_storm_events(QtWidgets.QDialog, Ui_Dialog):
             it = QtGui.QStandardItem(se.storm_event_id)
             self.eventsModel.appendRow(it)
 
-        # if self.surveyEvents is not None:
-        #     for se in self.surveyEvents.survEvents.values():
-        #         if se.eventType in ["Storm", "DWF"]:
-        #             it = QtGui.QStandardItem(se.eventName)
-        #             self.eventsModel.appendRow(it)
-
     def enable_update_button(self):
         """Enable the update button."""
         self.btnUpdate.setEnabled(True)

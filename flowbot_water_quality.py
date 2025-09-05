@@ -10,7 +10,8 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLabel, QComboBox,
                              QPushButton, QTableWidget, QTableWidgetItem,
                              QHBoxLayout)
 from PyQt5.QtCore import Qt
-
+from flowbot_logging import get_logger
+logger = get_logger('flowbot_logger')
 
 class fwqMonitor(object):
 
@@ -221,12 +222,15 @@ class fwqMonitors:
                              (monitor.monitor_id, monitor.csv_filespec, monitor.data_start.isoformat(), monitor.data_end.isoformat(), int(monitor.data_interval), pickle.dumps(monitor.data_cond), pickle.dumps(monitor.data_do), pickle.dumps(monitor.data_do_sat), pickle.dumps(monitor.data_nh4), pickle.dumps(monitor.data_ph), pickle.dumps(monitor.data_temp)))
             conn.commit()
             result = True
+            logger.debug("fwqMonitors.write_to_database Completed")
 
         except sqlite3.Error as e:
-            print(f"Database error: {e}")
+            logger.error(f"fwqMonitors.write_to_database: Database error: {e}")
+            # print(f"Database error: {e}")
             conn.rollback()
         except Exception as e:
-            print(f"Exception in _query: {e}")
+            logger.error(f"fwqMonitors.write_to_database: Exception in _query: {e}")
+            # print(f"Exception in _query: {e}")
             conn.rollback()
         finally:
             return result

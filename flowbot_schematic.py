@@ -3,7 +3,7 @@ from typing import Optional, List
 # from flowbot_helper import cstCONNECTION
 from PyQt5 import (QtWidgets, QtCore, QtGui)
 from PyQt5.QtWidgets import (QInputDialog, QMenu, QGraphicsScene, QGraphicsTextItem, QGraphicsView, QGraphicsItem,
-                             QStyle, QGraphicsEllipseItem, QAction, QLineEdit, QApplication, QLabel)
+                             QStyle, QGraphicsEllipseItem, QAction, QLineEdit, QApplication, QLabel, QGraphicsRectItem)
 from PyQt5.QtCore import (Qt, QRectF, QPointF)
 from PyQt5.QtGui import (QBrush, QPen, QColor, QPainter, QPainterPath)
 from PyQt5.QtPrintSupport import QPrintPreviewDialog
@@ -41,8 +41,8 @@ class genericGraphicsItem(QGraphicsItem):
         super().__init__(parent)
 
         self._thisApp: Optional[QApplication] = thisApp
-        self.setFlags(QGraphicsItem.ItemIsMovable |
-                      QGraphicsItem.ItemIsSelectable)
+        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable)
+        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
         self.setAcceptHoverEvents(True)
 
         self._controls = []
@@ -97,6 +97,14 @@ class genericGraphicsItem(QGraphicsItem):
                 return True
         return False
 
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemPositionChange:
+            new_pos = value
+            new_bounds = self.mapRectToScene(self.boundingRect()).translated(new_pos - self.pos())
+            scene = self.scene()
+            if scene and not scene.sceneRect().contains(new_bounds):
+                scene.setSceneRect(scene.sceneRect().united(new_bounds))
+        return super().itemChange(change, value)
 
 class fmGraphicsItem(genericGraphicsItem):
 
@@ -806,6 +814,30 @@ class SchematicGraphicsScene(QGraphicsScene):
     def dragMoveEvent(self, e):
         e.acceptProposedAction()
 
+    def addItem(self, item):
+        super().addItem(item)
+        item_rect = item.sceneBoundingRect()
+        if not self.sceneRect().contains(item_rect):
+            new_rect = self.sceneRect().united(item_rect)
+            self.setSceneRect(new_rect)
+
+    # def drawBackground(self, painter, rect):
+    #     super().drawBackground(painter, rect)
+    #     # Draw a red border around the current scene rect
+    #     pen = QPen(QColor("red"))
+    #     pen.setWidth(2)
+    #     painter.setPen(pen)
+    #     painter.drawRect(self.sceneRect())
+        
+# from PyQt5.QtWidgets import QGraphicsScene
+# from PyQt5.QtCore import QRectF
+# from PyQt5.QtGui import QPen, QColor
+
+# class CustomGraphicsScene(QGraphicsScene):
+#     def __init__(self, parent=None):
+#         super().__init__(parent)
+
+
 
 class SchematicGraphicsView(QGraphicsView):
 
@@ -867,6 +899,20 @@ class SchematicGraphicsView(QGraphicsView):
         self._scene = SchematicGraphicsScene(self)
         self._scene.setSceneRect(0, 0, 3200, 1800)
         self.setScene(self._scene)
+
+        # # Create a rectangle item for the scene outline
+        # rect_item = QGraphicsRectItem(self._scene.sceneRect())
+        
+        # # Set the pen for the rectangle (red color, 2 pixels wide)
+        # pen = QPen(QColor(255, 0, 0))  # Red color
+        # pen.setWidth(2)  # Set the width of the outline
+        # rect_item.setPen(pen)
+        
+        # # Optionally, set the brush to transparent if you want just the outline
+        # rect_item.setBrush(Qt.transparent)
+        
+        # # Add the rectangle item to the scene
+        # self._scene.addItem(rect_item)        
 
     def getSchematicGraphicsItemAt(self, pPointF, searchBuffer):
 
@@ -981,12 +1027,62 @@ class SchematicGraphicsView(QGraphicsView):
                 aCallback.triggered.connect(self.removeEvent)
                 menu.addAction(aCallback)
 
+            # if menu is None:
+            #         menu = QMenu()
+            # aCallback = QAction("Toggle Volume Balance", menu)
+            # aCallback.triggered.connect(self.toggleVolumeBalance)
+            # menu.addAction(aCallback)
+
         if menu is not None:
             if not len(menu.actions()) == 0:
                 self._contextMenuClickPos = self.mapToScene(event.pos())
                 menu.exec_(self.mapToGlobal(event.pos()))
                 self._contextMenuClickPos = None
                 self._currentContextItem = None
+
+    # def toggleVolumeBalance(self):
+    #     self.showVolumeBalance = not self.showVolumeBalance
+
+    #     # if update:
+    #     #     if self._currentTrace is not None:
+    #     #         self._currentContextItem = self._currentTrace[0]
+    #     # else:
+    #     #     self.schematicFMUSTrace(stopAtFM=True)
+
+    #     if self._currentEvent is not None:
+    #         startDate = self._currentEvent.eventStart
+    #         endDate = self._currentEvent.eventEnd
+
+    #     for item in self.scene().items():
+    #         if isinstance(item, fmGraphicsItem):
+    #             fmVolume = 0
+    #             fm = self._thisApp.activeWindow().openFlowMonitors.getFlowMonitor(item._text)
+
+    #             if self._currentEvent is None:
+    #                 startDate = fm.dateRange[0]
+    #                 endDate = fm.dateRange[len(fm.dateRange)-1]
+
+    #             fmVolume += fm.getFlowVolumeBetweenDates(startDate, endDate)
+
+    #             self.schematicFMUSTrace(stopAtFM=True)                
+
+    #             cumUsVolume = 0
+    #             incUsVolume = 0
+    #             hasUSFM = False
+    #             for item in self._currentTrace:
+    #                 if isinstance(item, fmGraphicsItem):
+    #                     if item is not self._currentContextItem:
+    #                         hasUSFM = True
+    #                         fm = self._thisApp.activeWindow().openFlowMonitors.getFlowMonitor(item._text)
+    #                         incUsVolume = fm.getFlowVolumeBetweenDates(startDate, endDate)
+    #                         cumUsVolume += incUsVolume
+    #                         item.toggleVolumeLabel(incUsVolume)
+
+    #             volDiff = fmVolume - cumUsVolume
+    #             if hasUSFM:
+    #                 self._currentContextItem.toggleVolumeLabel(fmVolume, volDiff)
+    #             else:
+    #                 self._currentContextItem.toggleVolumeLabel(fmVolume)        
 
     def clearCurrentTrace(self):
         for item in self._currentTrace:
@@ -995,6 +1091,40 @@ class SchematicGraphicsView(QGraphicsView):
                 item.toggleVolumeLabel(toggleOn=False)
         self._currentTrace = []
         self.viewport().repaint()
+
+    # def getFMUS(self, fmName):
+    #     currentTrace = self._currentTrace
+    #     self.clearCurrentTrace()
+
+    #     itemsInTrace = []
+    #     itemsToTrace = []
+    #     currentItem = self.getSchematicFlowMonitorsByName(fmName)
+    #     if currentItem is not None:
+    #         itemsToTrace.append(self._currentContextItem)
+
+    #     while len(itemsToTrace) > 0:
+    #         traceItem = itemsToTrace.pop()
+    #         itemsInTrace.append(traceItem)
+    #         traceItem._inTrace = True
+    #         if isinstance(traceItem, ConnectionPath):
+    #             cp = traceItem.fromControlPoint
+    #             item = self.getItemByControlPoint(cp)
+    #             if not item._inTrace:
+    #                 if isinstance(item, fmGraphicsItem) and stopAtFM:
+    #                     itemsInTrace.append(item)
+    #                     item._inTrace = True
+    #                 else:
+    #                     itemsToTrace.append(item)
+    #         else:
+    #             for cp in traceItem._controls:
+    #                 usConns = self.getIncomingConnections(cp)
+    #                 if len(usConns) > 0:
+    #                     for conn in usConns:
+    #                         if not conn._inTrace:
+    #                             itemsToTrace.append(conn)
+
+    #     self._currentTrace = itemsInTrace
+    #     self.viewport().repaint()
 
     def schematicFMUSTrace(self, fmName=None, stopAtFM=False):
         self.clearCurrentTrace()
@@ -1344,7 +1474,54 @@ class SchematicGraphicsView(QGraphicsView):
 
         super(SchematicGraphicsView, self).mouseReleaseEvent(event)
 
+    # def wheelEvent(self, event):
+    #     if event.angleDelta().y() > 0:
+    #         factor = 1.25
+    #         self._zoom += 1
+    #     else:
+    #         factor = 0.75
+    #         self._zoom -= 1
+
+    #     if self._zoom == 0:
+    #         self.scale(1, 1)
+
+    #     self.scale(factor, factor)
+
+    # def wheelEvent(self, event):
+    #     # Get the cursor position in scene coordinates
+    #     cursor_pos = self.mapToScene(event.pos())
+
+    #     if event.angleDelta().y() > 0:
+    #         factor = 1.25
+    #         self._zoom += 1
+    #     else:
+    #         factor = 0.75
+    #         self._zoom -= 1
+
+    #     # Prevent zooming out too much
+    #     if self._zoom < 0:
+    #         self._zoom = 0
+
+    #     # Save the current transformation
+    #     self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    #     self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+    #     # Scale the view
+    #     self.scale(factor, factor)
+
+    #     # Get the new cursor position in the view after scaling
+    #     new_cursor_pos = self.mapToScene(event.pos())
+
+    #     # Calculate the difference in position
+    #     delta = new_cursor_pos - cursor_pos
+
+    #     # Adjust the view to keep the cursor position the same
+    #     self.translate(delta.x(), delta.y())
+    
     def wheelEvent(self, event):
+        # Get the cursor position in scene coordinates
+        cursor_pos = self.mapToScene(event.pos())
+
         if event.angleDelta().y() > 0:
             factor = 1.25
             self._zoom += 1
@@ -1352,7 +1529,19 @@ class SchematicGraphicsView(QGraphicsView):
             factor = 0.75
             self._zoom -= 1
 
-        if self._zoom == 0:
-            self.scale(1, 1)
+        # Prevent zooming out too much
+        if self._zoom < 0:
+            self._zoom = 0
 
+        # Scale the view
         self.scale(factor, factor)
+
+        # Get the new cursor position in the scene after scaling
+        new_cursor_pos = self.mapToScene(event.pos())
+
+        # Calculate the difference in position
+        delta = new_cursor_pos - cursor_pos
+
+        # Adjust the view to keep the cursor position the same
+        self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + int(-delta.x()))
+        self.verticalScrollBar().setValue(self.verticalScrollBar().value() + int(-delta.y()))

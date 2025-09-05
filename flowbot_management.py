@@ -19,6 +19,9 @@ from catboost import CatBoostClassifier
 from scipy import interpolate
 from flowbot_database import Tables
 from PyQt5.QtWidgets import QDialog, QMessageBox
+from flowbot_logging import get_logger
+
+logger = get_logger('flowbot_logger')
 
 
 class fsmMonitor(object):
@@ -168,12 +171,33 @@ class fsmInstall(object):
                 flowDataRange: List[float] = []
                 depthDataRange: List[float] = []
                 velocityDataRange: List[float] = []
+                # for unit in all_units:
+                #     i_record += 1
+                #     if i_record <= no_of_records:
+                #         flowDataRange.append(float(unit["FLOW"]))
+                #         depthDataRange.append(float(unit["DEPTH"]))
+                #         velocityDataRange.append(float(unit["VELOCITY"]))
+
                 for unit in all_units:
                     i_record += 1
                     if i_record <= no_of_records:
-                        flowDataRange.append(float(unit["FLOW"]))
-                        depthDataRange.append(float(unit["DEPTH"]))
-                        velocityDataRange.append(float(unit["VELOCITY"]))
+                        flow = unit.get("FLOW")
+                        if flow is not None:
+                            flowDataRange.append(float(flow))
+                        else:
+                            flowDataRange.append(0.0)
+
+                        depth = unit.get("DEPTH")
+                        if depth is not None:
+                            depthDataRange.append(float(depth))
+                        else:
+                            depthDataRange.append(0.0)
+
+                        velocity = unit.get("VELOCITY")
+                        if velocity is not None:
+                            velocityDataRange.append(float(velocity))
+                        else:
+                            velocityDataRange.append(0.0)                        
 
                 # Check that the number of dates matches the number of data units.
                 if len(dateRange) != len(flowDataRange):
@@ -523,11 +547,16 @@ class fsmRawData(object):
         self.silt_levels: Optional[pd.DataFrame] = None
         self.pipe_shape_intervals: int = 20
         self.file_path: str = ''
-        self.rainfall_file_format: str = '{inst_id}_02.dat'
-        self.depth_file_format: str = '{inst_id}_06.dat'
-        self.velocity_file_format: str = '{inst_id}_07.dat'
-        self.battery_file_format: str = '{inst_id}_08.dat'
-        self.pumplogger_file_format: str = '{inst_id}.csv'
+        # self.rainfall_file_format: str = '{inst_id}_02.dat'
+        # self.depth_file_format: str = '{inst_id}_06.dat'
+        # self.velocity_file_format: str = '{inst_id}_07.dat'
+        # self.battery_file_format: str = '{inst_id}_08.dat'
+        # self.pumplogger_file_format: str = '{inst_id}.csv'
+        self.rainfall_file_format: str = '{ast_id}_02.dat'
+        self.depth_file_format: str = '{ast_id}_06.dat'
+        self.velocity_file_format: str = '{ast_id}_07.dat'
+        self.battery_file_format: str = '{ast_id}_08.dat'
+        self.pumplogger_file_format: str = '{ast_id}.csv'
 
     def from_database_row_dict(self, row_dict:Dict):
         self.rawdata_id = row_dict.get('rawdata_id')
@@ -754,7 +783,7 @@ class fsmInstallPictures(object):
 
         self.picture_id = row_dict.get('picture_id')
         self.install_id = row_dict.get('install_id')
-        self.picture_taken_date = datetime.fromisoformat(row[2])
+        # self.picture_taken_date = datetime.fromisoformat(row[2])
         if isinstance(row_dict.get('picture_taken_date'), str):
             self.picture_taken_date = datetime.fromisoformat(row_dict['picture_taken_date'])
         self.picture_type = row_dict.get('picture_type')
@@ -1228,6 +1257,7 @@ class fsmProject(object):
             conn.commit()
 
             result = True
+            logger.debug("fsmProject.write_to_database Completed")
 
         except sqlite3.Error as e:
             print(f"Database error: {e}")
@@ -1424,7 +1454,8 @@ class fsmProject(object):
         else:
             return self.survey_start_date
 
-    def get_interim_review(self, interim_review_id: Optional[int] = None, interim_id: Optional[int] = None, install_id: Optional[int] = None) -> Optional[fsmInterimReview]:
+    def get_interim_review(self, interim_review_id: Optional[int] = None, interim_id: Optional[int] = None,
+                           install_id: Optional[str] = None) -> Optional[fsmInterimReview]:
         if interim_review_id is not None:
             # Case 1: interim_review_id is provided
             return self.dict_fsm_interim_reviews.get(interim_review_id)
@@ -1618,7 +1649,7 @@ class fsmProject(object):
                     return True
         return False
 
-    def uninstalled(self, inst_id: int) -> bool:
+    def uninstalled(self, inst_id: str) -> bool:
 
         return self.dict_fsm_installs[inst_id].remove_date > self.dict_fsm_installs[inst_id].install_date
 

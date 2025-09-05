@@ -21,9 +21,10 @@ from PIL import Image
 import io
 import json
 import pickle
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 from pandas import Timestamp
+from copy import deepcopy
 
 from flowbot_logging import get_logger
 # from flowbot_management import fsmRawData
@@ -42,12 +43,13 @@ except NameError:
 
 strMajorRelease = "4"
 strMinorRelease = "2"
-strUpdate = "2"
-strOther = " (Beta)"
+strUpdate = "5"
+strOther = ""
+# strOther = " (Beta)"
 strVersion = f'{strMajorRelease}.{strMinorRelease}.{strUpdate}{strOther}'
 
-rps_or_tt = "rps"
-# rps_or_tt = "tt"
+# rps_or_tt = "rps"
+rps_or_tt = "tt"
 
 
 def resource_path(relative_path):
@@ -392,6 +394,8 @@ class PlotWidget(QWidget):
     mouseClicked = pyqtSignal(object)
     scrollZoomCompleted = pyqtSignal()
     pan_finished = pyqtSignal(object)
+    resized = pyqtSignal(int, int)  # width, height
+
     event_connections = []
 
     def __init__(self, parent=None, toolbar=False, figsize=None, dpi=100, scroll_zoom=False, x_pan=False):
@@ -543,6 +547,10 @@ class PlotWidget(QWidget):
 
         self.scrollZoomCompleted.emit()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.resized.emit(event.size().width(), event.size().height())
+
 def parse_format_token(token):
     """
     Given a token string (e.g. "I5", "F5.2", "A20", "D10", "2X", or "[5]"),
@@ -600,9 +608,14 @@ def parse_format_token(token):
     m = re.match(r'^I(\d+)$', token)
     if m:
         return ('int', int(m.group(1)), 1)
-    m = re.match(r'^F(\d+)\.(\d+)$', token)
+    # #Previous Version
+    # m = re.match(r'^F(\d+)\.(\d+)$', token)
+    # if m:
+    #     return ('float', int(m.group(1)), int(m.group(2)), 1)
+    #Current Version
+    m = re.match(r'^F(\d+)(?:\.(\d+))?$', token)    
     if m:
-        return ('float', int(m.group(1)), int(m.group(2)), 1)
+        return ('float', int(m.group(1)), int(m.group(2) or 0), 1)    
     m = re.match(r'^A(\d+)$', token)
     if m:
         return ('string', int(m.group(1)), 1)
@@ -810,82 +823,209 @@ def parse_header(lines):
             break
     return header
 
+# def parse_payload(payload_lines, record_format, record_length, field_names):
+#     """
+#     Parses the payload section (after *CEND up to *END).
+#     Each record is of fixed length (record_length) and consists of
+#     a number of repeated units. The record_format string defines both
+#     the unit format and the repeat count (e.g. "4,I5,I5,F5.2,[5]").
+#     Returns a list of records, where each record is a list of dictionaries,
+#     each dictionary mapping field names to values.
+#     """
+#     tokens = [tok.strip() for tok in record_format.split(',') if tok.strip()]
+#     # Remove the count token.
+#     tokens.pop(0)
+#     # The last token should be a repeat indicator like [5].
+#     repeat_token = tokens.pop(-1)
+#     repeat_count = int(repeat_token.strip('[]'))
+#     unit_format_tokens = tokens
+#     fields = [f.strip() for f in field_names.split(',')]
+#     records = []
+#     for line in payload_lines:
+#         line = line.rstrip('\n')
+#         if line.startswith('*END'):
+#             break
+#         if not line.strip():
+#             continue
+#         if len(line) < record_length:
+#             line = line.ljust(record_length)
+#         record = []
+#         unit_width = record_length // repeat_count
+#         for i in range(repeat_count):
+#             unit_text = line[i*unit_width:(i+1)*unit_width]
+#             values = parse_fixed_width(unit_text, unit_format_tokens)
+#             unit_data = dict(zip(fields, values))
+#             record.append(unit_data)
+#         records.append(record)
+#     return records
+
 def parse_payload(payload_lines, record_format, record_length, field_names):
     """
     Parses the payload section (after *CEND up to *END).
-    Each record is of fixed length (record_length) and consists of
-    a number of repeated units. The record_format string defines both
-    the unit format and the repeat count (e.g. "4,I5,I5,F5.2,[5]").
+    Each record is of fixed length (record_length) and consists of a number of repeated units.
+    The record_format string defines both the unit format and the repeat count (e.g. "4,I5,I5,F5.2,[5]").
     Returns a list of records, where each record is a list of dictionaries,
     each dictionary mapping field names to values.
     """
     tokens = [tok.strip() for tok in record_format.split(',') if tok.strip()]
-    # Remove the count token.
-    tokens.pop(0)
-    # The last token should be a repeat indicator like [5].
+    tokens.pop(0)  # Remove the count token.
     repeat_token = tokens.pop(-1)
     repeat_count = int(repeat_token.strip('[]'))
     unit_format_tokens = tokens
     fields = [f.strip() for f in field_names.split(',')]
+
+    unit_width = record_length // repeat_count
     records = []
+
     for line in payload_lines:
         line = line.rstrip('\n')
         if line.startswith('*END'):
             break
         if not line.strip():
             continue
-        if len(line) < record_length:
-            line = line.ljust(record_length)
+
         record = []
-        unit_width = record_length // repeat_count
-        for i in range(repeat_count):
-            unit_text = line[i*unit_width:(i+1)*unit_width]
+        max_units = len(line) // unit_width  # Only as many as fit completely
+        for i in range(max_units):
+            unit_text = line[i * unit_width:(i + 1) * unit_width]
             values = parse_fixed_width(unit_text, unit_format_tokens)
             unit_data = dict(zip(fields, values))
             record.append(unit_data)
-        records.append(record)
+
+        if record:
+            records.append(record)
+
     return records
 
+# def parse_file(filename):
+#     """
+#     Main parser function. It reads the file, splits it into header,
+#     constants, and payload sections, and parses each section according
+#     to the header definitions.
+#     """
+#     with open(filename, 'r') as f:
+#         lines = f.readlines()
+
+#     header_lines = []
+#     constants_lines = []
+#     payload_lines = []
+
+#     in_constants = False
+#     in_payload = False
+#     for line in lines:
+#         if line.startswith('*CSTART'):
+#             in_constants = True
+#             continue
+#         elif line.startswith('*CEND'):
+#             in_constants = False
+#             in_payload = True
+#             continue
+#         elif line.startswith('*END'):
+#             in_payload = False
+#             continue
+    
+#         if not in_constants and not in_payload:
+#             header_lines.append(line)
+#         elif in_constants:
+#             constants_lines.append(line)
+#         elif in_payload:
+#             payload_lines.append(line)
+
+#     header = parse_header(header_lines)
+
+#     # Extract header fields.
+#     data_format = header.get('DATA_FORMAT', '')
+#     identifier = header.get('IDENTIFIER', '')
+
+#     # Process FIELD and UNITS.
+#     field_line = header.get('FIELD', '')
+#     field_tokens = [tok.strip() for tok in field_line.split(',') if tok.strip()]
+#     if field_tokens and field_tokens[0].isdigit():
+#         field_names = ",".join(field_tokens[1:])
+#     else:
+#         field_names = ",".join(field_tokens)
+
+#     # RECORD_LENGTH e.g., "I2,75"
+#     record_length = None
+#     record_line = header.get('RECORD_LENGTH', '')
+#     if record_line:
+#         parts = [p.strip() for p in record_line.split(',')]
+#         if len(parts) >= 2:
+#             record_length = int(parts[1])
+
+#     # FORMAT for the payload record.
+#     record_format = header.get('FORMAT', '')
+
+#     # CONSTANTS names.
+#     constants_line = header.get('CONSTANTS', '')
+#     constants_tokens = [tok.strip() for tok in constants_line.split(',') if tok.strip()]
+#     if constants_tokens and constants_tokens[0].isdigit():
+#         constants_names = ",".join(constants_tokens[1:])
+#     else:
+#         constants_names = ",".join(constants_tokens)
+
+#     # C_FORMAT for the constants block.
+#     c_format = header.get('C_FORMAT', '')
+
+#     constants = parse_constants(constants_lines, c_format, constants_names)
+#     payload = parse_payload(payload_lines, record_format, record_length, field_names)
+
+#     return {
+#         'header': header,
+#         'constants': constants,
+#         'payload': payload,
+#         'data_format': data_format,
+#         'identifier': identifier
+#     }
+
 def parse_file(filename):
-    """
-    Main parser function. It reads the file, splits it into header,
-    constants, and payload sections, and parses each section according
-    to the header definitions.
-    """
     with open(filename, 'r') as f:
         lines = f.readlines()
     
     header_lines = []
-    constants_lines = []
-    payload_lines = []
-    
+    data_blocks = []  # list of (constants_lines, payload_lines)
+    current_constants = []
+    current_payload = []
+
+    in_header = True
     in_constants = False
     in_payload = False
+
     for line in lines:
         if line.startswith('*CSTART'):
             in_constants = True
+            in_payload = False
+            current_constants = []
             continue
         elif line.startswith('*CEND'):
             in_constants = False
             in_payload = True
+            current_payload = []
             continue
-        elif line.startswith('*END'):
+        elif line.startswith('*$') or line.startswith('*END'):
             in_payload = False
+            if current_constants and current_payload:
+                data_blocks.append((current_constants, current_payload))
+            current_constants = []
+            current_payload = []
             continue
-        
-        if not in_constants and not in_payload:
-            header_lines.append(line)
         elif in_constants:
-            constants_lines.append(line)
+            current_constants.append(line)
         elif in_payload:
-            payload_lines.append(line)
-    
+            current_payload.append(line)
+        elif in_header:
+            header_lines.append(line)
+
+    # Don't forget the last block (if *END without *$)
+    if current_constants and current_payload:
+        data_blocks.append((current_constants, current_payload))
+
     header = parse_header(header_lines)
-    
-    # Extract header fields.
+
+    # Extract header fields.    
     data_format = header.get('DATA_FORMAT', '')
     identifier = header.get('IDENTIFIER', '')
-    
+
     # Process FIELD and UNITS.
     field_line = header.get('FIELD', '')
     field_tokens = [tok.strip() for tok in field_line.split(',') if tok.strip()]
@@ -893,18 +1033,17 @@ def parse_file(filename):
         field_names = ",".join(field_tokens[1:])
     else:
         field_names = ",".join(field_tokens)
-    
-    # RECORD_LENGTH e.g., "I2,75"
+
     record_length = None
     record_line = header.get('RECORD_LENGTH', '')
     if record_line:
         parts = [p.strip() for p in record_line.split(',')]
         if len(parts) >= 2:
             record_length = int(parts[1])
-    
+
     # FORMAT for the payload record.
     record_format = header.get('FORMAT', '')
-    
+
     # CONSTANTS names.
     constants_line = header.get('CONSTANTS', '')
     constants_tokens = [tok.strip() for tok in constants_line.split(',') if tok.strip()]
@@ -912,20 +1051,283 @@ def parse_file(filename):
         constants_names = ",".join(constants_tokens[1:])
     else:
         constants_names = ",".join(constants_tokens)
-    
+
     # C_FORMAT for the constants block.
     c_format = header.get('C_FORMAT', '')
-    
-    constants = parse_constants(constants_lines, c_format, constants_names)
-    payload = parse_payload(payload_lines, record_format, record_length, field_names)
-    
+
+    full_payload = []
+    constants = {}
+    blocks = []
+
+    for idx, (const_lines, payload_lines) in enumerate(data_blocks):
+        parsed_constants = parse_constants(const_lines, c_format, constants_names)
+        parsed_payload = parse_payload(payload_lines, record_format, record_length, field_names)
+
+        duration_mins = (parse_date(parsed_constants["END"]) - parse_date(parsed_constants["START"])).total_seconds() / 60
+        interval_minutes = int(parsed_constants["INTERVAL"])
+        no_of_records = int(duration_mins / interval_minutes) + 1
+        payload_length = sum(len(nested_list) for nested_list in parsed_payload)
+
+        if payload_length != no_of_records:
+            raise ValueError("Error in flowbot_helper::parse_file: Payload length does not match no of records inferred by dates")
+                
+        blocks.append({'constants': parsed_constants, 'payload': parsed_payload})
+        full_payload.extend(parsed_payload)
+        if idx == 0:
+            constants = parsed_constants
+
+# Replace 'END' in constants with the one from the last block (if available)
+    if blocks:
+        last_constants = blocks[-1]['constants']
+        if 'END' in last_constants:
+            constants['END'] = last_constants['END']
+
     return {
         'header': header,
         'constants': constants,
-        'payload': payload,
+        'payload': full_payload,
+        'blocks': blocks,
         'data_format': data_format,
         'identifier': identifier
     }
+    # return {
+    #     'header': header,
+    #     'blocks': parsed_blocks,
+    #     'data_format': data_format,
+    #     'identifier': identifier
+    # }
+
+
+def parse_file(filename):
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    
+    header_lines = []
+    data_blocks = []  # list of (constants_lines, payload_lines)
+    current_constants = []
+    current_payload = []
+
+    in_header = True
+    in_constants = False
+    in_payload = False
+
+    for line in lines:
+        if line.startswith('*CSTART'):
+            in_constants = True
+            in_payload = False
+            current_constants = []
+            continue
+        elif line.startswith('*CEND'):
+            in_constants = False
+            in_payload = True
+            current_payload = []
+            continue
+        elif line.startswith('*$') or line.startswith('*END'):
+            in_payload = False
+            if current_constants and current_payload:
+                data_blocks.append((current_constants, current_payload))
+            current_constants = []
+            current_payload = []
+            continue
+        elif in_constants:
+            current_constants.append(line)
+        elif in_payload:
+            current_payload.append(line)
+        elif in_header:
+            header_lines.append(line)
+
+    # Don't forget the last block (if *END without *$)
+    if current_constants and current_payload:
+        data_blocks.append((current_constants, current_payload))
+
+    header = parse_header(header_lines)
+
+    # Extract header fields.    
+    data_format = header.get('DATA_FORMAT', '')
+    identifier = header.get('IDENTIFIER', '')
+
+    # Process FIELD and UNITS.
+    field_line = header.get('FIELD', '')
+    field_tokens = [tok.strip() for tok in field_line.split(',') if tok.strip()]
+    if field_tokens and field_tokens[0].isdigit():
+        field_names = ",".join(field_tokens[1:])
+    else:
+        field_names = ",".join(field_tokens)
+
+    record_length = None
+    record_line = header.get('RECORD_LENGTH', '')
+    if record_line:
+        parts = [p.strip() for p in record_line.split(',')]
+        if len(parts) >= 2:
+            record_length = int(parts[1])
+
+    # FORMAT for the payload record.
+    record_format = header.get('FORMAT', '')
+
+    # CONSTANTS names.
+    constants_line = header.get('CONSTANTS', '')
+    constants_tokens = [tok.strip() for tok in constants_line.split(',') if tok.strip()]
+    if constants_tokens and constants_tokens[0].isdigit():
+        constants_names = ",".join(constants_tokens[1:])
+    else:
+        constants_names = ",".join(constants_tokens)
+
+    # C_FORMAT for the constants block.
+    c_format = header.get('C_FORMAT', '')
+
+    full_payload = []
+    constants = {}
+    blocks = []
+    previous_end = None
+
+    for idx, (const_lines, payload_lines) in enumerate(data_blocks):
+        parsed_constants = parse_constants(const_lines, c_format, constants_names)
+        start_dt = parse_date(parsed_constants["START"])
+        end_dt = parse_date(parsed_constants["END"])
+        interval_minutes = int(parsed_constants["INTERVAL"])
+
+        # First, parse the current block
+        parsed_payload = parse_payload(payload_lines, record_format, record_length, field_names)
+
+        # If there's a gap from the previous block
+        if previous_end is not None:
+            expected_start = previous_end + timedelta(minutes=interval_minutes)
+            if start_dt > expected_start:
+                gap_minutes = int((start_dt - expected_start).total_seconds() / 60)
+                missing_steps = gap_minutes // interval_minutes
+
+                unit_template = parsed_payload[0] if parsed_payload else [
+                    dict.fromkeys([f.strip() for f in field_names.split(',')], None)
+                    for _ in range(record_length // (record_length // int(record_format.strip().split(',')[-1].strip('[]'))))
+                ]
+
+                parsed_payload = fill_payload_gap(parsed_payload, missing_steps, unit_template)
+
+                # Update the start date in constants
+                parsed_constants["START"] = format_value(
+                    ('date', len(parsed_constants["START"]), 1),
+                    expected_start
+                )
+
+        duration_mins = (parse_date(parsed_constants["END"]) - parse_date(parsed_constants["START"])).total_seconds() / 60
+        no_of_records = int(duration_mins / interval_minutes) + 1
+        payload_length = sum(len(nested_list) for nested_list in parsed_payload)
+
+        if payload_length != no_of_records:
+            raise ValueError("Error in flowbot_helper::parse_file: Payload length does not match number of records inferred by dates")
+                    
+        blocks.append({'constants': parsed_constants, 'payload': parsed_payload})
+        full_payload.extend(parsed_payload)
+        if idx == 0:
+            constants = parsed_constants
+        previous_end = parse_date(parsed_constants["END"])
+
+    # for idx, (const_lines, payload_lines) in enumerate(data_blocks):
+    #     parsed_constants = parse_constants(const_lines, c_format, constants_names)
+
+    #     start_dt = parse_date(parsed_constants["START"])
+    #     end_dt = parse_date(parsed_constants["END"])
+    #     interval_minutes = int(parsed_constants["INTERVAL"])
+
+    #     # If there's a gap, we fill it
+    #     if previous_end is not None:
+    #         expected_start = previous_end + timedelta(minutes=interval_minutes)
+    #         if start_dt > expected_start:
+    #             gap_minutes = int((start_dt - expected_start).total_seconds() / 60)
+    #             missing_steps = gap_minutes // interval_minutes
+
+    #             unit_template = parsed_payload[0] if parsed_payload else [
+    #                 dict.fromkeys([f.strip() for f in field_names.split(',')], None)
+    #                 for _ in range(repeat_count)
+    #             ]
+
+    #             parsed_payload = fill_payload_gap(parsed_payload, missing_steps, unit_template)
+
+    #             # print(f"Gap detected before block {idx}: {missing_steps} records")
+
+    #             # # Clone one unit structure to build empty units
+    #             # parsed_example_payload = parse_payload(payload_lines, record_format, record_length, field_names)
+    #             # unit_template = [dict.fromkeys(unit.keys(), None) for unit in parsed_example_payload[0]] if parsed_example_payload else []
+
+    #             # total_steps_per_record = len(unit_template)
+    #             # if missing_steps % total_steps_per_record != 0:
+    #             #     raise ValueError(f"Gap of {missing_steps} steps is not divisible by {total_steps_per_record} steps per record.")
+
+    #             # blank_payload = [deepcopy(unit_template) for _ in range(missing_steps // total_steps_per_record)]
+
+    #             # # Prepend the blank records
+    #             # payload_lines = []  # You could optionally keep raw lines, but we bypass them now
+    #             # parsed_payload = blank_payload + parse_payload(payload_lines, record_format, record_length, field_names)
+
+    #             # Modify the START date to expected_start
+    #             parsed_constants["START"] = format_value(('date', len(parsed_constants["START"]), 1), expected_start)
+    #         else:
+    #             parsed_payload = parse_payload(payload_lines, record_format, record_length, field_names)
+    #     else:
+    #         parsed_payload = parse_payload(payload_lines, record_format, record_length, field_names)
+
+    #     duration_mins = (parse_date(parsed_constants["END"]) - parse_date(parsed_constants["START"])).total_seconds() / 60
+    #     # interval_minutes = int(parsed_constants["INTERVAL"])
+    #     no_of_records = int(duration_mins / interval_minutes) + 1
+    #     payload_length = sum(len(nested_list) for nested_list in parsed_payload)
+
+    #     if payload_length != no_of_records:
+    #         raise ValueError("Error in flowbot_helper::parse_file: Payload length does not match no of records inferred by dates")
+                
+    #     blocks.append({'constants': parsed_constants, 'payload': parsed_payload})
+    #     full_payload.extend(parsed_payload)
+    #     if idx == 0:
+    #         constants = parsed_constants
+
+    #     previous_end = parse_date(parsed_constants["END"])
+
+# Replace 'END' in constants with the one from the last block (if available)
+    if blocks:
+        last_constants = blocks[-1]['constants']
+        if 'END' in last_constants:
+            constants['END'] = last_constants['END']
+
+    return {
+        'header': header,
+        'constants': constants,
+        'payload': full_payload,
+        'blocks': blocks,
+        'data_format': data_format,
+        'identifier': identifier
+    }
+
+
+
+def fill_payload_gap(parsed_payload, missing_steps, unit_template):
+    """
+    Prepends blank units to parsed_payload to cover a gap of `missing_steps` timesteps.
+    Each unit_template is one timestep, and records contain repeat_count units.
+    
+    Returns the new payload list, grouped back into records of repeat_count units.
+    """
+    if not unit_template:
+        raise ValueError("unit_template must not be empty.")
+
+    repeat_count = len(unit_template)
+    field_list = list(unit_template[0].keys())
+
+    # Create the required number of blank units
+    blank_units = [dict.fromkeys(field_list, None) for _ in range(missing_steps)]
+
+    # Flatten the parsed payload to append after the blanks
+    flat_parsed_units = [unit for record in parsed_payload for unit in record]
+
+    # Combine blank units and parsed units
+    all_units = blank_units + flat_parsed_units
+
+    # Regroup into records
+    new_payload = []
+    while all_units:
+        record = all_units[:repeat_count]
+        new_payload.append(record)
+        all_units = all_units[repeat_count:]
+
+    return new_payload
 
 def parse_date(date_str: str) -> datetime:
     """
@@ -1368,10 +1770,39 @@ def write_fsm_fm_payload(a_inst, record_format_str, record_length):
         token_info = parse_format_token(token)
         if token_info[0] != 'repeat':
             unit_width += token_info[1] * token_info[-1]
-    # Group the intensity values into records of repeat_count units per line.
-    flow_values = a_inst.data['FlowData']
-    depth_values = a_inst.data['DepthData']
-    velocity_values = a_inst.data['VelocityData']
+    # # Group the intensity values into records of repeat_count units per line.
+    # flow_values = a_inst.data['FlowData']
+    # depth_values = a_inst.data['DepthData']
+    # velocity_values = a_inst.data['VelocityData']
+
+    # Ensure the interval is in seconds
+    interval_seconds = a_inst.data_interval * 60
+
+    # Build a complete datetime index from the full expected time range
+    full_time_index = pd.date_range(
+        start=pd.to_datetime(a_inst.data['Date'].iloc[0]),
+        end=pd.to_datetime(a_inst.data['Date'].iloc[-1]),
+        freq=f"{interval_seconds}s"
+    )
+
+    # Build DataFrame from actual data
+    df = pd.DataFrame({
+        'Date': a_inst.data['Date'],
+        'Flow': a_inst.data['FlowData'],
+        'Depth': a_inst.data['DepthData'],
+        'Velocity': a_inst.data['VelocityData'],
+    })
+
+    df.set_index('Date', inplace=True)
+
+    # Reindex to the full time range, filling missing timestamps with 0.0
+    df_full = df.reindex(full_time_index, fill_value=0.0)
+
+    # Replace original series with gap-filled versions
+    flow_values = df_full['Flow'].tolist()
+    depth_values = df_full['Depth'].tolist()
+    velocity_values = df_full['Velocity'].tolist()
+    
     payload_lines = []
     for i in range(0, len(flow_values), repeat_count):
         # if i >= 5084:
@@ -1391,8 +1822,9 @@ def write_fsm_fm_payload(a_inst, record_format_str, record_length):
                 unit_str = unit_str.ljust(unit_width)[:unit_width]
                 unit_strs.append(unit_str)
         line = "".join(unit_strs)
-        # The record line should be exactly record_length characters.
-        line = line.ljust(record_length)[:record_length]
+        # The record line should be exactly record_length characters unless its the last line.
+        if (i + len(group)) < len(a_inst.data):
+            line = line.ljust(record_length)[:record_length]
         payload_lines.append(line)
     return payload_lines
 

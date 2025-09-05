@@ -94,12 +94,6 @@ class flowbot_dialog_reporting_eventsuitability(QtWidgets.QDialog, Ui_Dialog):
                                  Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 newItem.setCheckState(Qt.Unchecked)
                 newItem.setSelected(False)
-                # if se[1].eventType == "Storm":
-                #     newItem = QListWidgetItem(se[1].eventName, self.lst_Events)
-                #     newItem.setFlags(Qt.ItemIsUserCheckable |
-                #                      Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                #     newItem.setCheckState(Qt.Unchecked)
-                #     newItem.setSelected(False)
 
     def onAccept(self):
         self.updateCheckCount()

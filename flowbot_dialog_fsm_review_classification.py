@@ -1,15 +1,16 @@
 # from ast import List
 # import site
 # from flowbot_graphing import GraphFDV
-from typing import Optional, List, Dict
+from typing import Optional
 from datetime import datetime
 
 import matplotlib.patches as mpl_patches
-import matplotlib.dates as mpl_dates
-import matplotlib.gridspec as mpl_gridspec
-from matplotlib import pyplot as plt
-from matplotlib import axes, lines, text
-from collections import Counter
+# import matplotlib.dates as mpl_dates
+# import matplotlib.gridspec as mpl_gridspec
+# from matplotlib import pyplot as plt
+# from matplotlib import axes, lines, text
+# from collections import Counter
+from matplotlib import axes
 from matplotlib.dates import DateFormatter, HourLocator, num2date
 from matplotlib.ticker import MaxNLocator, FuncFormatter
 from flowbot_helper import get_classification_legend_dataframe, get_classification_color_mapping
@@ -21,7 +22,7 @@ import numpy as np
 from PyQt5 import QtWidgets, QtCore
 
 # from flowbot_monitors import plottedFlowMonitors
-from flowbot_management import fsmInterim, fsmInterimReview, fsmMonitor, fsmProject, fsmSite, fsmInstall
+from flowbot_management import fsmInterimReview, fsmProject
 from ui_elements.ui_flowbot_dialog_fsm_review_classification_base import Ui_Dialog
 
 

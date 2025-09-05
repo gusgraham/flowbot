@@ -4,6 +4,8 @@ from typing import Dict
 import sqlite3
 from flowbot_database import Tables
 # from contextlib import closing
+from flowbot_logging import get_logger
+logger = get_logger('flowbot_logger')
 
 class surveyEvent():
 
@@ -80,12 +82,15 @@ class surveyEvents():
                         (event.eventName, event.eventType, event.eventStart.isoformat(), event.eventEnd.isoformat()))
             conn.commit()
             result = True
+            logger.debug("surveyEvents.write_to_database Completed")
 
         except sqlite3.Error as e:
-            print(f"Database error: {e}")
+            logger.error(f"surveyEvents.write_to_database: Database error: {e}")
+            # print(f"Database error: {e}")
             conn.rollback()
         except Exception as e:
-            print(f"Exception in _query: {e}")
+            logger.error(f"surveyEvents.write_to_database: Exception in _query: {e}")
+            # print(f"Exception in _query: {e}")
             conn.rollback()
         finally:
             return result

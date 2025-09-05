@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'c:\Users\Fergus.Graham\OneDrive - Tetra Tech, Inc\vscode\Tt_Flowbot\FlowBot\ui_flowbot_dialog_event_analysis_params_base.ui'
+# Form implementation generated from reading ui file 'd:\vscode\_qgis_bundled_apps\flowbot_v4_qgis\ui_elements\ui_flowbot_dialog_event_analysis_params_base.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.9
 #
@@ -196,20 +196,28 @@ class Ui_Dialog(object):
         Dialog.setWindowTitle(_translate("Dialog", "Dialog"))
         self.grpStormParams.setTitle(_translate("Dialog", "Storm Event Selection Parameters:"))
         self.label.setText(_translate("Dialog", "Consecutive Zeros (x2mins) >= :"))
+        self.edtConsecZeros.setToolTip(_translate("Dialog", "<html><head/><body><p><span style=\" font-weight:600; text-decoration: underline;\">Consecutive Zeros (Dry Gap)</span></p><p>Number of zero-rainfall timesteps required to close an event.</p><p>The actual dry period is this value × the timestep (e.g. 5 zeros × 2-min timestep = 10-min dry gap).</p><p>Larger values merge nearby showers into one event; smaller values split them apart.</p></body></html>"))
         self.edtConsecZeros.setText(_translate("Dialog", "5"))
         self.label_4.setText(_translate("Dialog", "Required Depth (mm) > :"))
+        self.edtReqDepth.setToolTip(_translate("Dialog", "<html><head/><body><p><span style=\" font-weight:600; text-decoration: underline;\">Required Depth</span></p><p>Minimum total rainfall depth (all rain during the event) needed for it to qualify as an event.</p><p>Even if the intensity conditions are met, events with less than this depth will not pass.</p></body></html>"))
         self.edtReqDepth.setText(_translate("Dialog", "5"))
         self.label_2.setText(_translate("Dialog", "Required Intensity (mm/hr) > :"))
+        self.edtReqIntensity.setToolTip(_translate("Dialog", "<html><head/><body><p><span style=\" font-weight:600; text-decoration: underline;\">Required Intensity</span></p><p>This is the intensity threshold that must be exceeded for at least the <span style=\" font-weight:600; font-style:italic;\">&quot;Required Intensity Duration&quot;</span> for an event to qualify.</p><p>All rainfall contributes to event depth; this setting only verifies that the event includes a period of heavy rain.</p><p>If <span style=\" font-weight:600; font-style:italic;\">&quot;Consecutive Intensities&quot;</span> is checked, the duration above threshold must be continuous; if unchecked, it can be accumulated.</p></body></html>"))
         self.edtReqIntensity.setText(_translate("Dialog", "6"))
         self.label_5.setText(_translate("Dialog", "Required Intensity Duration (min) >= :"))
+        self.edtReqIntensityDuration.setToolTip(_translate("Dialog", "<html><head/><body><p><span style=\" font-weight:600; text-decoration: underline;\">Required Intensity Duration</span></p><p>Minimum time that rainfall must stay above the <span style=\" font-weight:600; font-style:italic;\">&quot;Required Intensity&quot;</span> for an event to qualify.</p><p>If <span style=\" font-weight:600;\">&quot;Consecutive Intensities&quot;</span> is checked, this period must be continuous; if unchecked, the duration can be built up from multiple shorter bursts.</p></body></html>"))
         self.edtReqIntensityDuration.setText(_translate("Dialog", "4"))
-        self.label_3.setText(_translate("Dialog", "Partial Event Threshold (%) >= :"))
+        self.label_3.setText(_translate("Dialog", "Partial Event Margin (%) >= :"))
+        self.edtPartialEventThreshold.setToolTip(_translate("Dialog", "<html><head/><body><p><span style=\" font-weight:600; text-decoration: underline;\">Partial Event Margin</span></p><p>Percentage margin for identifying &quot;near-miss&quot; events.</p><p>Applies to <span style=\" font-weight:600; font-style:italic;\">&quot;Required Depth&quot;</span>, <span style=\" font-weight:600; font-style:italic;\">&quot;Required Intensity&quot;</span>, and <span style=\" font-weight:600;\">&quot;Required Intensity Duration&quot;</span>.</p><p>With the default margin of 20%, an event reaching at least 80% of the required depth and lasting at least 80% of the required duration above 80% of the required intensity will be flagged as a partial event (instead of being discarded).</p></body></html>"))
         self.edtPartialEventThreshold.setText(_translate("Dialog", "20"))
+        self.chkConsecIntensities.setToolTip(_translate("Dialog", "<html><head/><body><p><span style=\" font-weight:600; text-decoration: underline;\">Consecutive Intensities</span></p><p>When checked, the <span style=\" font-weight:600; font-style:italic;\">&quot;Required Intensity&quot;</span> must be exceeded continuously for the full <span style=\" font-weight:600; font-style:italic;\">&quot;Required Intensity Duration&quot;</span>.</p><p>When unchecked, the duration can be built up from multiple shorter bursts above the threshold.</p></body></html>"))
         self.chkConsecIntensities.setText(_translate("Dialog", "Consecutive Intensities"))
         self.grpDWFParams.setTitle(_translate("Dialog", "Dry Day Selection Parameters:"))
         self.label_6.setText(_translate("Dialog", "Rainfall Depth Tolerance (mm) <= :"))
+        self.edtRainfallDepthTolerance.setToolTip(_translate("Dialog", "<html><head/><body><p><span style=\" font-weight:600; text-decoration: underline;\">Rainfall Depth Tolerance</span></p><p>Maximum daily rainfall (mm) that still counts as a &quot;zero-rainfall day&quot;.</p><p>For example, with a tolerance of 0.2 mm, any day with ≤ 0.2 mm rainfall is treated as a &quot;zero-rainfall day&quot;.</p></body></html>"))
         self.edtRainfallDepthTolerance.setText(_translate("Dialog", "0"))
         self.label_7.setText(_translate("Dialog", "Preceding Dry Days (days) > :"))
+        self.edtPrecedingDryDays.setToolTip(_translate("Dialog", "<html><head/><body><p><span style=\" font-weight:600; text-decoration: underline;\">Preceding Dry Days</span></p><p>Number of consecutive &quot;zero-rainfall days&quot; (days with rainfall ≤ <span style=\" font-weight:600; font-style:italic;\">&quot;Rainfall Depth Tolerance&quot;</span>) required before a it can qualify as a &quot;dry day&quot;.</p><p>For example, if set to the default of 4, only the &quot;zero-rainfall days&quot; following at least 4 consecutive &quot;zero-rainfall days&quot; will be considered &quot;dry days&quot;.</p></body></html>"))
         self.edtPrecedingDryDays.setText(_translate("Dialog", "4"))
         self.btnOK.setText(_translate("Dialog", "OK"))
         self.btnCancel.setText(_translate("Dialog", "Cancel"))

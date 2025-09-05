@@ -4128,13 +4128,27 @@ class FlowbotMainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 if item.childCount() > 0:
                     item.setExpanded(True)
 
-            elif item.text(0) == 'DWF':
+            elif item.text(0) == 'Dry Day':
                 for i in range(item.childCount()):
                     item.removeChild(item.child(0))
 
                 if not self.identifiedSurveyEvents is None:
                     for se in self.identifiedSurveyEvents.survEvents.values():
-                        if se.eventType == "DWF":
+                        if se.eventType == "Dry Day":
+                            it = QtWidgets.QTreeWidgetItem()
+                            it.setText(0, se.eventName)
+                            item.addChild(it)
+
+                if item.childCount() > 0:
+                    item.setExpanded(True)
+
+            elif item.text(0) == 'Dry Period':
+                for i in range(item.childCount()):
+                    item.removeChild(item.child(0))
+
+                if not self.identifiedSurveyEvents is None:
+                    for se in self.identifiedSurveyEvents.survEvents.values():
+                        if se.eventType == "Dry Period":
                             it = QtWidgets.QTreeWidgetItem()
                             it.setText(0, se.eventName)
                             item.addChild(it)

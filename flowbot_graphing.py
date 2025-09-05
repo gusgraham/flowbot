@@ -9,7 +9,8 @@ from collections import Counter
 import matplotlib.ticker as ticker
 from matplotlib.ticker import MaxNLocator, FuncFormatter
 from matplotlib.dates import DateFormatter, HourLocator, DayLocator, MonthLocator, YearLocator, ConciseDateFormatter, AutoDateLocator
-from typing import Optional, Dict, Tuple, List, Any
+from matplotlib.widgets import SpanSelector
+from typing import Callable, Optional, Dict, Tuple, List, Any, Union
 from dataclasses import dataclass, field
 from itertools import cycle
 from flowbot_helper import (
@@ -46,10 +47,13 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from PIL import Image
 import matplotlib.colors as mcolors
 import scipy.stats as st
+from scipy.signal import savgol_filter
 # from matplotlib.widgets import Button
 from matplotlib.backend_bases import PickEvent
 # from matplotlib.figure import Figure
 # from matplotlib.patches import Rectangle
+from PyQt5.QtWidgets import QApplication
+import traceback
 
 
 class GraphFDV:
@@ -1206,6 +1210,61 @@ class GraphFDV:
 
 #         self.main_window_plot_widget.figure.canvas.draw()
 
+# @dataclass
+# class scatterGraphConfig:
+#     depth_proportions: List[float] = field(default_factory=lambda: [
+#         0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 
+#         0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 
+#         0.75, 0.8, 0.85, 0.9, 0.95, 0.96, 0.97, 0.98, 0.99, 1
+#     ])
+#     pipe_profile_depth_prop = [i / 24 for i in range(25)]
+#     x_buffer_factor: float = 1.25
+#     y_buffer_factor: float = 1.5
+#     pipe_exaggeration: float = 0.1
+#     # plot_colors: List[str] = field(default_factory=lambda: [
+#     #     "aqua", "red", "lime", "fuchsia", "green", "teal", 
+#     #     "black", "navy", "olive", "purple", "maroon", "silver", 
+#     #     "blue", "yellow", "Gold", "crimson"
+#     # ])
+#     # Define the colors as a property that returns a cycle
+#     @property
+#     def plot_colors(self):
+#         return cycle([
+#             "mediumseagreen",
+#             "indianred",
+#             "steelblue",
+#             "goldenrod",
+#             "deepskyblue",
+#             "lime",
+#             "black",
+#             "purple",
+#             "navy",
+#             "olive",
+#             "fuchsia",
+#             "grey",
+#             "silver",
+#             "teal",
+#             "red",
+#         ])
+
+
+# @dataclass
+# class scatterGraphConfig:
+#     depth_proportions: List[float] = field(default_factory=lambda: [
+#         0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 
+#         0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 
+#         0.75, 0.8, 0.85, 0.9, 0.95, 0.96, 0.97, 0.98, 0.99, 1
+#     ])
+#     pipe_profile_depth_prop: List[float] = field(default_factory=lambda: [i / 24 for i in range(25)])
+#     x_buffer_factor: float = 1.25
+#     y_buffer_factor: float = 1.5
+#     pipe_exaggeration: float = 0.1
+#     plot_colors: any = field(default_factory=lambda: cycle([
+#         "aqua", "red", "lime", "fuchsia", "green", "teal", 
+#         "black", "navy", "olive", "purple", "maroon", "silver", 
+#         "blue", "yellow", "Gold", "crimson"
+#     ]))
+
 @dataclass
 class scatterGraphConfig:
     depth_proportions: List[float] = field(default_factory=lambda: [
@@ -1213,15 +1272,21 @@ class scatterGraphConfig:
         0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 
         0.75, 0.8, 0.85, 0.9, 0.95, 0.96, 0.97, 0.98, 0.99, 1
     ])
-    pipe_profile_depth_prop = [i / 24 for i in range(25)]
+    pipe_profile_depth_prop: List[float] = field(default_factory=lambda: [i / 24 for i in range(25)])
     x_buffer_factor: float = 1.25
     y_buffer_factor: float = 1.5
     pipe_exaggeration: float = 0.1
-    plot_colors: List[str] = field(default_factory=lambda: [
+    _base_colors: List[str] = field(default_factory=lambda: [
         "aqua", "red", "lime", "fuchsia", "green", "teal", 
         "black", "navy", "olive", "purple", "maroon", "silver", 
         "blue", "yellow", "Gold", "crimson"
     ])
+    
+    def __post_init__(self):
+        self.reset_colors()
+        
+    def reset_colors(self):
+        self.plot_colors = cycle(self._base_colors)
 
 class graphScatter:
 
@@ -1411,6 +1476,7 @@ class graphScatter:
     def updateScattergraphLines(self):
 
         self.cScatterLines = []
+        self.config.reset_colors()
 
         dates = self._plot_flow_monitor.dateRange
         depth = self._plot_flow_monitor.depthDataRange
@@ -1870,9 +1936,12 @@ class graphDWF:
         # if fm and self.plotModelData:
         #     self.plotModelData = fm.hasModelData    
 
-    def update_plot(self):
+    def update_plot(self, use_sg_filter: bool = False, sg_window: int = 11, sg_polyorder: int = 3):
 
         self.clearFigure()
+        self.use_sg_filter: bool = use_sg_filter
+        self.sg_window: int = sg_window
+        self.sg_polyorder: int = sg_polyorder
         if self._plot_flow_monitor is not None:
             self.update_dwf_plot()
             self.main_window_plot_widget.figure.subplots_adjust(left=0.05, right=0.85, bottom=0.1, top=0.95)
@@ -1882,6 +1951,102 @@ class graphDWF:
             self.isBlank = True
 
         self.updateCanvas()
+
+    # def update_dwf_plot(self):
+    #     filename = self._plot_flow_monitor.monitorName
+    #     if self._plot_flow_monitor.hasModelData:
+    #         i_soffit_mm = self._plot_flow_monitor.modelDataPipeHeight
+    #     else:
+    #         i_soffit_mm = 0
+
+    #     self.filter_dwf_data()
+
+    #     if self.df_dwf_filtered.empty:
+    #         # Create a figure with a single subplot
+    #         ax = self.main_window_plot_widget.figure.subplots()
+    #         ax.text(0.5, 0.5, 'No dry days identified', horizontalalignment='center', verticalalignment='center', fontsize=16)
+    #         ax.set_axis_off()  # Hide the axes
+    #         # self.main_window_plot_widget.figure = fig
+    #         return
+
+    #     # Create a figure and subplots
+    #     (self.plot_axis_flow, self.plot_axis_depth, self.plot_axis_velocity) = self.main_window_plot_widget.figure.subplots(
+    #         nrows=3, sharex=True, gridspec_kw={'height_ratios': [1, 1, 1]}
+    #     )
+
+    #     # Group the data by day
+    #     grouped = self.df_dwf_filtered.groupby(self.df_dwf_filtered['Date'].dt.date)
+
+    #     for day, group in grouped:
+    #         # Plot Flow vs Time of Day
+    #         self.plot_axis_flow.plot(group['TimeOfDay'], group['FlowData'], color='lightblue')
+
+    #         # Plot Depth vs Time of Day
+    #         self.plot_axis_depth.plot(group['TimeOfDay'], group['DepthData'], color='lightsalmon')
+
+    #         # Plot Velocity vs Time of Day
+    #         self.plot_axis_velocity.plot(group['TimeOfDay'], group['VelocityData'], color='palegreen')
+
+    #     if i_soffit_mm > 0:
+    #         self.plot_axis_depth.plot(self.df_dwf_average['TimeOfDay'], [i_soffit_mm] *
+    #                                 len(self.df_dwf_average), color='darkblue', linestyle='--', label='Soffit')
+
+    #     self.plot_axis_flow.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['AvgFlowData'], color='blue')
+    #     self.plot_axis_depth.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['AvgDepthData'], color='red')
+    #     self.plot_axis_velocity.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['AvgVelocityData'], color='green')
+
+    #     # Add labels and titles
+    #     self.plot_axis_flow.set_ylabel('Flow (l/sec)')
+    #     self.plot_axis_flow.set_title(f'Flow: {filename}', loc='left', fontsize=16)
+
+    #     self.plot_axis_depth.set_ylabel('Depth (mm)')
+    #     self.plot_axis_depth.set_title('Depth', loc='left', fontsize=16)
+    #     if i_soffit_mm > 0:
+    #         self.plot_axis_depth.text(self.df_dwf_average['TimeOfDay'].iloc[0], i_soffit_mm - 10, f"Soffit Height = {i_soffit_mm}mm", color='darkblue', verticalalignment='top', horizontalalignment='left')
+
+    #     self.plot_axis_velocity.set_ylabel('Velocity (m/sec)')
+    #     self.plot_axis_velocity.set_title('Velocity', loc='left', fontsize=16)
+    #     self.plot_axis_velocity.set_xlabel('Time of Day')
+
+    #     # Add statistics text (optional)
+    #     flow_min = self.df_dwf_average['AvgFlowData'].min()
+    #     flow_max = self.df_dwf_average['AvgFlowData'].max()
+    #     flow_range = flow_max - flow_min
+    #     flow_avg = self.df_dwf_average['AvgFlowData'].mean()
+    #     total_flow_volume_m3 = (flow_avg * (24 * 60 * 60)) / 1000
+    #     self.plot_axis_flow.text(1.02, 0.5, f"Min: {flow_min:.2f}\nMax: {flow_max:.2f}\nRange: {flow_range:.2f}\nAverage: {flow_avg:.2f}\nTotal Volume: {total_flow_volume_m3:.1f} m³",
+    #                             transform=self.plot_axis_flow.transAxes, verticalalignment='center')
+
+    #     depth_min = self.df_dwf_average['AvgDepthData'].min()
+    #     depth_max = self.df_dwf_average['AvgDepthData'].max()
+    #     depth_range = depth_max - depth_min
+    #     depth_avg = self.df_dwf_average['AvgDepthData'].mean()
+    #     self.plot_axis_depth.text(1.02, 0.5, f"Min: {depth_min:.2f}\nMax: {depth_max:.2f}\nRange: {depth_range:.2f}\nAverage: {depth_avg:.2f}",
+    #                             transform=self.plot_axis_depth.transAxes, verticalalignment='center')
+
+    #     velocity_min = self.df_dwf_average['AvgVelocityData'].min()
+    #     velocity_max = self.df_dwf_average['AvgVelocityData'].max()
+    #     velocity_range = velocity_max - velocity_min
+    #     velocity_avg = self.df_dwf_average['AvgVelocityData'].mean()
+    #     self.plot_axis_velocity.text(1.02, 0.5, f"Min: {velocity_min:.2f}\nMax: {velocity_max:.2f}\nRange: {velocity_range:.2f}\nAverage: {velocity_avg:.2f}",
+    #                                 transform=self.plot_axis_velocity.transAxes, verticalalignment='center')
+
+    #     # Set x-axis major locator to hour
+    #     self.plot_axis_velocity.xaxis.set_major_locator(ticker.MultipleLocator(3600))
+    #     # Custom formatter for the x-axis to display HH:MM
+    #     def format_func(value, tick_number):
+    #         hours = int(value // 3600)
+    #         minutes = int((value % 3600) // 60)
+    #         return f'{hours:02d}:{minutes:02d}'
+    #     self.plot_axis_velocity.xaxis.set_major_formatter(ticker.FuncFormatter(format_func))
+
+    #     self.plot_axis_velocity.set_xticklabels(self.plot_axis_velocity.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
+
+    #     # Adjust layout
+    #     self.main_window_plot_widget.figure.tight_layout()
+
+    #     # Show plot
+    #     self.main_window_plot_widget.canvas.show()
 
     def update_dwf_plot(self):
         filename = self._plot_flow_monitor.monitorName
@@ -1910,21 +2075,29 @@ class graphDWF:
 
         for day, group in grouped:
             # Plot Flow vs Time of Day
-            self.plot_axis_flow.plot(group['TimeOfDay'], group['FlowData'], color='lightblue')
+            self.plot_axis_flow.plot(group['TimeOfDay'], group['FlowData'], color='lightgray')
 
             # Plot Depth vs Time of Day
-            self.plot_axis_depth.plot(group['TimeOfDay'], group['DepthData'], color='lightsalmon')
+            self.plot_axis_depth.plot(group['TimeOfDay'], group['DepthData'], color='lightgray')
 
             # Plot Velocity vs Time of Day
-            self.plot_axis_velocity.plot(group['TimeOfDay'], group['VelocityData'], color='palegreen')
+            self.plot_axis_velocity.plot(group['TimeOfDay'], group['VelocityData'], color='lightgray')
 
         if i_soffit_mm > 0:
             self.plot_axis_depth.plot(self.df_dwf_average['TimeOfDay'], [i_soffit_mm] *
                                     len(self.df_dwf_average), color='darkblue', linestyle='--', label='Soffit')
 
-        self.plot_axis_flow.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['AvgFlowData'], color='blue')
-        self.plot_axis_depth.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['AvgDepthData'], color='red')
-        self.plot_axis_velocity.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['AvgVelocityData'], color='green')
+        self.plot_axis_flow.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['AvgFlowData'], color='darkorange')
+        self.plot_axis_depth.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['AvgDepthData'], color='forestgreen')
+        self.plot_axis_velocity.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['AvgVelocityData'], color='darkviolet')
+
+        self.plot_axis_flow.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['MaxFlowData'], color='red')
+        self.plot_axis_depth.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['MaxDepthData'], color='red')
+        self.plot_axis_velocity.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['MaxVelocityData'], color='red')
+
+        self.plot_axis_flow.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['MinFlowData'], color='blue')
+        self.plot_axis_depth.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['MinDepthData'], color='blue')
+        self.plot_axis_velocity.plot(self.df_dwf_average['TimeOfDay'], self.df_dwf_average['MinVelocityData'], color='blue')
 
         # Add labels and titles
         self.plot_axis_flow.set_ylabel('Flow (l/sec)')
@@ -1979,6 +2152,128 @@ class graphDWF:
         # Show plot
         self.main_window_plot_widget.canvas.show()
 
+    # def filter_dwf_data(self):
+
+    #     # Create the DataFrame
+    #     self.df_filtered = pd.DataFrame(
+    #         {
+    #             "Date": self._plot_flow_monitor.dateRange,
+    #             "FlowData": self._plot_flow_monitor.flowDataRange,
+    #             "DepthData": self._plot_flow_monitor.depthDataRange,
+    #             "VelocityData": self._plot_flow_monitor.velocityDataRange,
+    #         }
+    #     )
+
+    #     dry_days_df = pd.DataFrame({"Date": []})
+
+    #     # Loop through each plotted event and add the corresponding dates.
+    #     for se in self.plotted_events.plotEvents.values():
+    #         if se.eventType == 'Dry Day':
+    #             # For a dry day, add just the eventStart date.
+    #             dry_day = se.eventStart.date()
+    #             dry_days_df = pd.concat(
+    #                 [dry_days_df, pd.DataFrame({"Date": [dry_day]})],
+    #                 ignore_index=True
+    #             )
+    #         elif se.eventType == 'Dry Period':
+    #             # For a dry period, add every day from eventStart to eventEnd (inclusive).
+    #             # Create a date range with daily frequency.
+    #             all_days = pd.date_range(start=se.eventStart, end=se.eventEnd, freq='D')
+    #             # Convert Timestamp objects to date objects.
+    #             all_days = [d.date() for d in all_days]
+    #             dry_days_df = pd.concat(
+    #                 [dry_days_df, pd.DataFrame({"Date": all_days})],
+    #                 ignore_index=True
+    #             )
+
+    #     # flow_monitor_data = self.current_inst.data.copy()  # Make a copy of the data
+    #     flow_monitor_data = self.df_filtered.copy()  # Make a copy of the data
+
+    #     # Filter flow monitor data to include only dry days
+    #     flow_monitor_data['Date'] = pd.to_datetime(flow_monitor_data['Date'])
+    #     flow_monitor_data['Day'] = flow_monitor_data['Date'].dt.date
+    #     flow_monitor_data = flow_monitor_data[flow_monitor_data['Day'].isin(dry_days_df['Date'])]
+
+    #     # Remove date information and keep only time part
+    #     flow_monitor_data['TimeOfDay'] = flow_monitor_data['Date'].dt.time
+
+    #     # Group by time and calculate the average flow, velocity, and depth for each time point
+    #     avg_dwf_per_time = flow_monitor_data.groupby('TimeOfDay').agg({
+    #         'FlowData': 'mean',
+    #         'DepthData': 'mean',
+    #         'VelocityData': 'mean'
+    #         }).reset_index()
+
+    #     # Rename the columns for clarity
+    #     avg_dwf_per_time.columns = ['TimeOfDay', 'AvgFlowData', 'AvgDepthData', 'AvgVelocityData']
+
+    #     # Optional: sort by time if needed
+    #     avg_dwf_per_time = avg_dwf_per_time.sort_values(by='TimeOfDay').reset_index(drop=True)
+
+    #     # # Apply Savitzky-Golay smoothing on the average data
+    #     if self.use_sg_filter:
+    #         if len(avg_dwf_per_time) >= self.sg_window:
+    #             avg_dwf_per_time['AvgFlowData'] = savgol_filter(avg_dwf_per_time['AvgFlowData'], self.sg_window, self.sg_polyorder)
+    #             avg_dwf_per_time['AvgDepthData'] = savgol_filter(avg_dwf_per_time['AvgDepthData'], self.sg_window, self.sg_polyorder)
+    #             avg_dwf_per_time['AvgVelocityData'] = savgol_filter(avg_dwf_per_time['AvgVelocityData'], self.sg_window, self.sg_polyorder)
+    #         else:
+    #             avg_dwf_per_time['AvgFlowData'] = avg_dwf_per_time['AvgFlowData']
+    #             avg_dwf_per_time['AvgDepthData'] = avg_dwf_per_time['AvgDepthData']
+    #             avg_dwf_per_time['AvgVelocityData'] = avg_dwf_per_time['AvgVelocityData']
+
+    #     self.df_dwf_filtered = pd.merge(
+    #         flow_monitor_data,
+    #         avg_dwf_per_time,
+    #         on='TimeOfDay',
+    #         how='right'
+    #     )
+
+    #     self.df_dwf_filtered['TimeOfDay'] = (
+    #         self.df_dwf_filtered['Date'].dt.hour * 3600 +
+    #         self.df_dwf_filtered['Date'].dt.minute * 60 +
+    #         self.df_dwf_filtered['Date'].dt.second
+    #     )
+
+    #     self.df_dwf_average = self.df_dwf_filtered.drop_duplicates(
+    #         subset=['TimeOfDay', 'AvgFlowData', 'AvgDepthData', 'AvgVelocityData']
+    #     )
+
+    def get_profile_from_dwf_average(self):
+        df = self.df_dwf_average.copy()
+        
+        # Ensure TimeOfDay is in the correct range
+        df['TimeOfDay'] = df['TimeOfDay'] % 86400
+
+        profile = []
+        seconds_in_hour = 3600
+        half_hour = 1800
+
+        for hour in range(24):
+            center = hour * seconds_in_hour
+            start = (center - half_hour) % 86400
+            end = (center + half_hour) % 86400
+
+            if start < end:
+                mask = (df['TimeOfDay'] >= start) & (df['TimeOfDay'] < end)
+            else:
+                # Wrap around midnight
+                mask = (df['TimeOfDay'] >= start) | (df['TimeOfDay'] < end)
+
+            avg = df.loc[mask, 'AvgFlowData'].mean()
+            profile.append({'Time': hour, 'RawAverage': avg if not np.isnan(avg) else 0})
+
+        # Create DataFrame
+        profile_df = pd.DataFrame(profile)
+
+        # Normalize so the sum of factors = 24
+        total = profile_df['RawAverage'].sum()
+        if total > 0:
+            profile_df['Factor'] = profile_df['RawAverage'] * 24 / total
+        else:
+            profile_df['Factor'] = 1.0  # fallback if all values are zero
+
+        return profile_df[['Time', 'Factor']]
+
     def filter_dwf_data(self):
 
         # Create the DataFrame
@@ -1993,10 +2288,25 @@ class graphDWF:
 
         dry_days_df = pd.DataFrame({"Date": []})
 
-        # Create a new dataframe with only the dry day event dates
+        # Loop through each plotted event and add the corresponding dates.
         for se in self.plotted_events.plotEvents.values():
-            # Append the date part to the DataFrame
-            dry_days_df = pd.concat([dry_days_df, pd.DataFrame({"Date": [se.eventStart.date()]})], ignore_index=True)
+            if se.eventType == 'Dry Day':
+                # For a dry day, add just the eventStart date.
+                dry_day = se.eventStart.date()
+                dry_days_df = pd.concat(
+                    [dry_days_df, pd.DataFrame({"Date": [dry_day]})],
+                    ignore_index=True
+                )
+            elif se.eventType == 'Dry Period':
+                # For a dry period, add every day from eventStart to eventEnd (inclusive).
+                # Create a date range with daily frequency.
+                all_days = pd.date_range(start=se.eventStart, end=se.eventEnd, freq='D')
+                # Convert Timestamp objects to date objects.
+                all_days = [d.date() for d in all_days]
+                dry_days_df = pd.concat(
+                    [dry_days_df, pd.DataFrame({"Date": all_days})],
+                    ignore_index=True
+                )
 
         # flow_monitor_data = self.current_inst.data.copy()  # Make a copy of the data
         flow_monitor_data = self.df_filtered.copy()  # Make a copy of the data
@@ -2009,26 +2319,62 @@ class graphDWF:
         # Remove date information and keep only time part
         flow_monitor_data['TimeOfDay'] = flow_monitor_data['Date'].dt.time
 
-        # Group by time and calculate the average flow, velocity, and depth for each time point
+        # Group by time and calculate the average, max, and min for flow, velocity, and depth
         avg_dwf_per_time = flow_monitor_data.groupby('TimeOfDay').agg({
-            'FlowData': 'mean',
-            'DepthData': 'mean',
-            'VelocityData': 'mean'
-            }).reset_index()
+            'FlowData': ['mean', 'max', 'min'],
+            'DepthData': ['mean', 'max', 'min'],
+            'VelocityData': ['mean', 'max', 'min']
+        }).reset_index()
 
-        # Rename the columns for clarity
-        avg_dwf_per_time.columns = ['TimeOfDay', 'AvgFlowData', 'AvgDepthData', 'AvgVelocityData']
+        # Flatten the MultiIndex columns
+        avg_dwf_per_time.columns = ['TimeOfDay', 'AvgFlowData', 'MaxFlowData', 'MinFlowData',
+                                    'AvgDepthData', 'MaxDepthData', 'MinDepthData',
+                                    'AvgVelocityData', 'MaxVelocityData', 'MinVelocityData']
 
         # Optional: sort by time if needed
         avg_dwf_per_time = avg_dwf_per_time.sort_values(by='TimeOfDay').reset_index(drop=True)
 
-        self.df_dwf_filtered = pd.merge(flow_monitor_data, avg_dwf_per_time, on='TimeOfDay', how='right')
+        # # Apply Savitzky-Golay smoothing on the average data
+        if self.use_sg_filter:
+            if len(avg_dwf_per_time) >= self.sg_window:
+                avg_dwf_per_time['AvgFlowData'] = savgol_filter(avg_dwf_per_time['AvgFlowData'], self.sg_window, self.sg_polyorder)
+                avg_dwf_per_time['AvgDepthData'] = savgol_filter(avg_dwf_per_time['AvgDepthData'], self.sg_window, self.sg_polyorder)
+                avg_dwf_per_time['AvgVelocityData'] = savgol_filter(avg_dwf_per_time['AvgVelocityData'], self.sg_window, self.sg_polyorder)
+                avg_dwf_per_time['MaxFlowData'] = savgol_filter(avg_dwf_per_time['MaxFlowData'], self.sg_window, self.sg_polyorder)
+                avg_dwf_per_time['MaxDepthData'] = savgol_filter(avg_dwf_per_time['MaxDepthData'], self.sg_window, self.sg_polyorder)
+                avg_dwf_per_time['MaxVelocityData'] = savgol_filter(avg_dwf_per_time['MaxVelocityData'], self.sg_window, self.sg_polyorder)
+                avg_dwf_per_time['MinFlowData'] = savgol_filter(avg_dwf_per_time['MinFlowData'], self.sg_window, self.sg_polyorder)
+                avg_dwf_per_time['MinDepthData'] = savgol_filter(avg_dwf_per_time['MinDepthData'], self.sg_window, self.sg_polyorder)
+                avg_dwf_per_time['MinVelocityData'] = savgol_filter(avg_dwf_per_time['MinVelocityData'], self.sg_window, self.sg_polyorder)
+            else:
+                avg_dwf_per_time['AvgFlowData'] = avg_dwf_per_time['AvgFlowData']
+                avg_dwf_per_time['AvgDepthData'] = avg_dwf_per_time['AvgDepthData']
+                avg_dwf_per_time['AvgVelocityData'] = avg_dwf_per_time['AvgVelocityData']
+                avg_dwf_per_time['MaxFlowData'] = avg_dwf_per_time['MaxFlowData']
+                avg_dwf_per_time['MaxDepthData'] = avg_dwf_per_time['MaxDepthData']
+                avg_dwf_per_time['MaxVelocityData'] = avg_dwf_per_time['MaxVelocityData']
+                avg_dwf_per_time['MinFlowData'] = avg_dwf_per_time['MinFlowData']
+                avg_dwf_per_time['MinDepthData'] = avg_dwf_per_time['MinDepthData']
+                avg_dwf_per_time['MinVelocityData'] = avg_dwf_per_time['MinVelocityData']
 
-        self.df_dwf_filtered['TimeOfDay'] = self.df_dwf_filtered['Date'].dt.hour * 3600 + \
-            self.df_dwf_filtered['Date'].dt.minute * 60 + self.df_dwf_filtered['Date'].dt.second
+        self.df_dwf_filtered = pd.merge(
+            flow_monitor_data,
+            avg_dwf_per_time,
+            on='TimeOfDay',
+            how='right'
+        )
+
+        self.df_dwf_filtered['TimeOfDay'] = (
+            self.df_dwf_filtered['Date'].dt.hour * 3600 +
+            self.df_dwf_filtered['Date'].dt.minute * 60 +
+            self.df_dwf_filtered['Date'].dt.second
+        )
 
         self.df_dwf_average = self.df_dwf_filtered.drop_duplicates(
-            subset=['TimeOfDay', 'AvgFlowData', 'AvgDepthData', 'AvgVelocityData'])
+            subset=['TimeOfDay', 'AvgFlowData', 'MaxFlowData', 'MinFlowData',
+                    'AvgDepthData', 'MaxDepthData', 'MinDepthData',
+                    'AvgVelocityData', 'MaxVelocityData', 'MinVelocityData']
+        )
 
 
     def clearFigure(self):
@@ -2065,6 +2411,356 @@ class graphDWF:
 
     #     self.main_window_plot_widget.figure.canvas.draw()
 
+
+class graphMerge:
+    def __init__(self, mw_pw: PlotWidget = None):
+        self.main_window_plot_widget: PlotWidget = mw_pw
+
+    # def _initialize_attributes(self):
+        """Initialize all class attributes with default values"""
+
+        # user-provided objects (must be same type)
+        self.targetObject: Optional[Union[rainGauge, flowMonitor]] = None
+        self.donorObject: Optional[Union[rainGauge, flowMonitor]]  = None
+
+        # which column to merge/plot (e.g. "Flow" or "Rain")
+        self.value_col: Optional[str] = None
+
+        # Plot axis + span selector
+        self.plot_axis_data: Optional[axes.Axes] = None
+        self._span: Optional[SpanSelector] = None
+
+        # Data
+        self.df_target: Optional[pd.DataFrame] = None
+        self.df_donor:  Optional[pd.DataFrame] = None
+        self.df_merged: Optional[pd.DataFrame] = None
+
+        # Current selection (clamped to donor range)
+        self.sel_range: Optional[Tuple[pd.Timestamp, pd.Timestamp]] = None
+
+        getBlankFigure(self.main_window_plot_widget)
+        self.isBlank = True
+        self.updateCanvas()
+
+    # ---------- public API you call from outside ----------
+
+    def set_pairs(
+        self,
+        target_obj: Optional[Union[rainGauge, flowMonitor]] = None,
+        donor_obj: Optional[Union[rainGauge, flowMonitor]] = None,
+        value_col: Optional[list[str]] = None
+    ):
+        changed = False
+        if target_obj is not None:
+            self.targetObject = target_obj
+            changed = True
+            if self.donorObject is not None and type(self.donorObject) is not type(self.targetObject):
+                self.donorObject = None  # reset donor if types mismatch
+        if donor_obj is not None:
+            if self.targetObject is not None and type(self.targetObject) is not type(donor_obj):
+                raise TypeError("Target and donor must be the same type.")
+            else:
+                self.donorObject = donor_obj
+                changed = True
+        if not changed and value_col is None:
+            return  # nothing to do
+
+        self.value_col = value_col
+
+        # # Type checking
+        # if self.targetObject and self.donorObject:
+        #     if type(self.targetObject) is not type(self.donorObject):
+        #         raise TypeError("Target and donor must be the same type.")
+        #     self._objects_type = type(self.targetObject)
+
+        obj_type = type(self.targetObject or self.donorObject)
+        
+        # Ingest target/donor
+        self.df_target = pd.DataFrame()
+        self.df_donor = pd.DataFrame()
+        for col in self.value_col:
+            field = self.field_mapping(obj_type, col)
+            if self.targetObject:
+                df = self._ingest_obj(self.targetObject, field)
+                if df is not None:
+                    self.df_target[col] = df[col] if col in df else df.iloc[:, 0]
+            if self.donorObject:
+                df = self._ingest_obj(self.donorObject, field)
+                if df is not None:
+                    self.df_donor[col] = df[col] if col in df else df.iloc[:, 0]
+
+        self.df_merged = self.df_target.copy() if not self.df_target.empty else None
+
+        if self.donorObject is None:
+            self.sel_range = None
+
+    # ---------- helpers ----------
+
+    # Decide field mapping
+    def field_mapping(self, obj_type, col_name: str) -> str:
+        if obj_type == flowMonitor:
+            return {
+                "Flow": "flowDataRange",
+                "Depth": "depthDataRange",
+                "Velocity": "velocityDataRange"
+            }[col_name]
+        elif obj_type == rainGauge:
+            return "rainfallDataRange"
+        else:
+            raise ValueError("Unsupported object type")
+            
+    def _infer_value_col(self, obj) -> str:
+        # simple heuristic; adjust if you have better signals
+        if obj is None:
+            return "All"  # sensible default for monitors; change if you prefer
+        name = type(obj).__name__.lower()
+        if name == "rainGauge":
+            return "All"
+        else:
+            return "All"
+
+    def _ingest_obj(self, obj, value_cols: Union[str, list[str]]) -> Optional[pd.DataFrame]:
+        """
+        Ingests one or more value columns from the given object.
+        Assumes each value list is aligned with obj.dateRange.
+        Returns a DataFrame indexed by UTC datetime with one or more data columns.
+        """
+        if obj is None or not hasattr(obj, "dateRange"):
+            return None
+
+        # Normalize to list
+        if isinstance(value_cols, str):
+            value_cols = [value_cols]
+
+        # Validate and align data
+        dates = pd.to_datetime(obj.dateRange, utc=True, errors="coerce")
+        data = {}
+
+        for col in value_cols:
+
+            values = getattr(obj, col)
+            if len(values) != len(dates):
+                raise ValueError(f"Length mismatch: {col} values ({len(values)}) vs dates ({len(dates)})")
+
+            data[col] = values
+
+        # Build DataFrame
+        df = pd.DataFrame(data, index=dates)
+        df.index.name = "Date"
+        df = df.dropna().sort_index()
+
+        return df if not df.empty else None
+
+    # ---------- CORE PLOTTING ----------
+
+    def update_plot(self):
+        self.clearFigure()
+
+        # If nothing set, show blank
+        if self.targetObject is None or self.donorObject is None:
+            getBlankFigure(self.main_window_plot_widget)
+            self.isBlank = True
+            self.updateCanvas()
+            return
+
+        # Build axis
+        fig = self.main_window_plot_widget.figure
+        self.plot_axis_data = fig.add_subplot(111)
+
+        # Decide x-lims from whatever we have
+        xmins, xmaxs = [], []
+        if self.df_target is not None and not self.df_target.empty:
+            xmins.append(self.df_target.index.min()); xmaxs.append(self.df_target.index.max())
+        if self.df_donor is not None and not self.df_donor.empty:
+            xmins.append(self.df_donor.index.min());  xmaxs.append(self.df_donor.index.max())
+
+        if xmins and xmaxs:
+            self.plot_axis_data.set_xlim(min(xmins), max(xmaxs))
+
+        # Plot available series
+        if self.df_target is not None and not self.df_target.empty:
+            col = self.value_col[0]
+            self.plot_axis_data.plot(self.df_target.index, self.df_target[col], linewidth=1, label=f"Target · {col}", zorder=3)
+
+        if self.df_donor is not None and not self.df_donor.empty:
+            col = self.value_col[0]
+            self.plot_axis_data.plot(self.df_donor.index, self.df_donor[col],
+                    linewidth=1, label=f"Donor · {col}", zorder=2)
+
+        # Merged preview only if we have a target
+        if self.df_target is not None and not self.df_target.empty:
+            if self.df_merged is None:
+                self.df_merged = self.df_target[[self.value_col]].copy()
+            col = self.value_col[0]
+            # self.plot_axis_data.plot(self.df_merged.index, self.df_merged[col],
+            #         linewidth=1.0, linestyle="--", alpha=0.5, label="Merged preview")
+            self.plot_axis_data.plot(self.df_merged.index, self.df_merged[col],
+                    linewidth=3.0, label="Merged preview", zorder=1)
+            
+        self.plot_axis_data.grid(True, alpha=0.25)
+        self.plot_axis_data.legend(loc="upper left")
+        self.plot_axis_data.set_title("Merge preview (drag when both series present)")
+        self.plot_axis_data.set_xlabel("Date/Time"); self.plot_axis_data.set_ylabel(self.value_col or "")
+
+        # Span selector only when BOTH series exist and are non-empty
+        enable_span = (self.df_target is not None and not self.df_target.empty and
+                       self.df_donor  is not None and not self.df_donor.empty)
+        if enable_span:
+            donor_min = self.df_donor.index.min()
+            donor_max = self.df_donor.index.max()
+
+            def _onselect(xmin_f, xmax_f):
+                t1 = pd.to_datetime(mpl_dates.num2date(xmin_f)).tz_localize('UTC', nonexistent='shift_forward', ambiguous='NaT', errors='ignore') \
+                        if getattr(pd.Timestamp.now(), 'tz', None) else pd.to_datetime(mpl_dates.num2date(xmin_f))
+                t2 = pd.to_datetime(mpl_dates.num2date(xmax_f)).tz_localize('UTC', nonexistent='shift_forward', ambiguous='NaT', errors='ignore') \
+                        if getattr(pd.Timestamp.now(), 'tz', None) else pd.to_datetime(mpl_dates.num2date(xmax_f))
+                if t2 < t1:
+                    t1, t2 = t2, t1
+                left  = max(t1, donor_min)
+                right = min(t2, donor_max)
+                if right <= left:
+                    self.sel_range = None
+                    self._refresh_preview(None)
+                    return
+                self.sel_range = (left, right)
+                self._refresh_preview(self.sel_range)
+
+            self._span = SpanSelector(
+                self.plot_axis_data, _onselect, direction="horizontal",
+                useblit=True, interactive=True, drag_from_anywhere=True,
+                props=dict(alpha=0.2), handle_props=dict(alpha=0.6), minspan=0
+            )
+
+            # Set initial span to full donor range so it's visible immediately
+            if self._span and donor_min and donor_max:
+                self._span.extents = (mpl_dates.date2num(donor_min), mpl_dates.date2num(donor_max))
+                self.sel_range = (donor_min, donor_max)
+                self._refresh_preview(self.sel_range)
+
+        self.isBlank = False
+        self.main_window_plot_widget.figure.subplots_adjust(left=0.05, right=0.85, bottom=0.1, top=0.95)
+        self.updateCanvas()
+
+    def clearFigure(self):
+        self.main_window_plot_widget.figure.clear()
+        if self._span is not None:
+            try: self._span.disconnect_events()
+            except Exception: pass
+            self._span = None
+        if self.plot_axis_data is not None:
+            try: self.plot_axis_data.clear()
+            except Exception: pass
+            self.plot_axis_data = None
+        if hasattr(self.main_window_plot_widget, "event_connections"):
+            for cid in getattr(self.main_window_plot_widget, "event_connections", []):
+                try: self.main_window_plot_widget.figure.canvas.mpl_disconnect(cid)
+                except Exception: pass
+            self.main_window_plot_widget.event_connections = []
+
+    def updateCanvas(self):
+        self.main_window_plot_widget.showToolbar(not self.isBlank)
+        self.main_window_plot_widget.toolbar.lockNavigation(False)
+        self.main_window_plot_widget.figure.canvas.draw_idle()
+
+    def _refresh_preview(self, sel: Optional[Tuple[pd.Timestamp, pd.Timestamp]]):
+        if self.df_target is None or self.df_target.empty:
+            return  # nothing to preview yet
+
+        col = self.value_col[0] if isinstance(self.value_col, list) else self.value_col
+
+        # Copy the original target (if it exists)
+        merged = self.df_target[[col]].copy()
+        merged.index.name = "Date"
+
+        if sel is not None and self.df_donor is not None and not self.df_donor.empty:
+            left, right = sel
+
+            # Get donor data within selected span
+            donor_win = self.df_donor.loc[(self.df_donor.index >= left) & (self.df_donor.index <= right), [col]]
+
+            if not donor_win.empty:
+                tol = pd.Timedelta("2min")
+
+                # Reindex merged to include donor timestamps ONLY within the span
+                # (even if outside original target range)
+                new_index = merged.index.union(donor_win.index).sort_values()
+                merged = merged.reindex(new_index)
+
+                # Perform asof-merge to align donor and target
+                aligned = pd.merge_asof(
+                    donor_win.reset_index().rename(columns={"Date": "Date_donor"}),
+                    merged.reset_index().rename(columns={"Date": "Date_tgt", col: "orig_val"}),
+                    left_on="Date_donor", right_on="Date_tgt",
+                    direction="nearest", tolerance=tol
+                )
+
+                # Only assign to timestamps within the span
+                mask = ~aligned[col].isna()
+                overwrite_idx = pd.to_datetime(aligned.loc[mask, "Date_tgt"], utc=True)
+                overwrite_vals = aligned.loc[mask, col].values
+
+                merged.loc[overwrite_idx, col] = overwrite_vals
+
+            # After merge, ensure that anything:
+            # - outside the original target range
+            # - and outside the donor span
+            # is set to NaN
+            min_target = self.df_target.index.min()
+            max_target = self.df_target.index.max()
+            outside_target = (merged.index < min_target) | (merged.index > max_target)
+            outside_span = (merged.index < left) | (merged.index > right)
+            merged.loc[outside_target & outside_span, col] = pd.NA
+
+        self.df_merged = merged
+
+        if self.plot_axis_data is not None:
+            # preview line is last if present; otherwise add one
+            preview_line = None
+            for ln in self.plot_axis_data.lines:
+                if ln.get_label() == "Merged preview":
+                    preview_line = ln
+                    break
+            if preview_line is None:
+                # preview_line, = self.plot_axis_data.plot(
+                #     self.df_merged.index, self.df_merged[col],
+                #     linewidth=1.0, linestyle="--", alpha=0.5, label="Merged preview"
+                # )
+                preview_line, = self.plot_axis_data.plot(
+                    self.df_merged.index, self.df_merged[col],
+                    linewidth=3.0, label="Merged preview", zorder=1
+                )                
+            else:
+                preview_line.set_data(self.df_merged.index, self.df_merged[col])
+
+        self.main_window_plot_widget.figure.canvas.draw_idle()
+        
+    # ---------- commit ----------
+
+    def commit_merge(self) -> pd.DataFrame:
+        if self.df_merged is None:
+            raise RuntimeError("No merged data available.")
+        else:
+
+            self.targetObject.dateRange = [dt.replace(tzinfo=None) for dt in self.df_merged.index.to_pydatetime()]
+
+            if type(self.targetObject) == flowMonitor:
+                for col_name in self.value_col:
+                    if col_name == "Flow":
+                        self.targetObject.flowDataRange = self.df_merged["Flow"].tolist()
+                    elif col_name == "Depth":
+                        self.targetObject.depthDataRange = self.df_merged["Depth"].tolist()
+                    elif col_name == "Velocity":
+                        self.targetObject.velocityDataRange = self.df_merged["Velocity"].tolist()
+                    else:
+                        raise ValueError("Unsupported column name")
+                    
+            elif type(self.targetObject) == rainGauge:
+                self.targetObject.rainfallDataRange = self.df_merged["Intensity"].tolist()
+
+            else:
+                raise ValueError("Unsupported object type")
+
+            self.update_plot()  # refresh plot to reflect committed data
 
 class graphRainfallAnalysis:
 
@@ -3107,7 +3803,9 @@ class graphCumulativeDepth:
 
         # self.plotFigure = self.getBlankFigure()
         # self.plotCanvas = MplCanvas(self.plotFigure)
-
+        self._cumdepth_cursor = None
+        self._cumdepth_cursor_disconnect = None
+        
         self.plotted_rgs = plottedRainGauges()
         self.update_plot()
 
@@ -3152,11 +3850,107 @@ class graphCumulativeDepth:
     def updateCanvas(self):
 
         if not self.plotAxisCumDepth is None:
-            mplcursors.cursor(self.plotAxisCumDepth, hover=True)
+            mplcursors.cursor(self.plotAxisCumDepth, hover=2)
             self.main_window_plot_widget.event_connections.append(self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self.onPick))
 
         self.main_window_plot_widget.showToolbar(not self.isBlank)
         self.main_window_plot_widget.toolbar.lockNavigation(self.has_plot_event())
+
+    # def _format_xy(self, sel, xunit=None, yunit=None, x_is_datetime=False, formatter=None):
+    #     if formatter:
+    #         return formatter(sel)
+    #     x, y = sel.target
+    #     x_txt = mpl_dates.num2date(x).strftime("%Y-%m-%d %H:%M:%S") if x_is_datetime else f"{x:,.3f}"
+    #     y_txt = f"{y:,.3f}"
+    #     if xunit: x_txt += f" {xunit}"
+    #     if yunit: y_txt += f" {yunit}"
+    #     label = getattr(sel.artist, "get_label", lambda: "")()
+    #     if label and label != "_nolegend_":
+    #         return f"{label}\nx: {x_txt}\ny: {y_txt}"
+    #     return f"x: {x_txt}\ny: {y_txt}"
+
+    # def attach_styled_cursor(self, ax, artists=None, x_is_datetime=False,
+    #                          xunit=None, yunit=None, highlight=True, formatter=None):
+    #     target = artists if artists else ax
+    #     if artists:
+    #         for art in artists:
+    #             if hasattr(art, "set_picker"): art.set_picker(True)
+    #             if hasattr(art, "set_pickradius"): art.set_pickradius(6)
+
+    #     cursor = mplcursors.cursor(
+    #         target,
+    #         hover=2,                 # transient
+    #         multiple=False,
+    #         highlight=True,
+    #         annotation_kwargs=dict(
+    #             va="bottom", ha="left",
+    #             fontsize=9, fontfamily="monospace",
+    #             bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#444", alpha=0.9),
+    #             # no xytext/textcoords here
+    #         ),
+    #     )
+
+    #     def _on_add(sel):
+    #         ann = sel.annotation
+
+    #         # Text
+    #         ann.set_text(self._format_xy(sel, xunit, yunit, x_is_datetime, formatter))
+
+    #         # Anchor at the datapoint, offset the label by a few points
+    #         ann.xy = sel.target                   # (x, y) in data coords
+    #         ann.xycoords = "data"
+    #         ann.set_position((8, 12))             # like xytext
+    #         if hasattr(ann, "set_textcoords"):    # Matplotlib API guard
+    #             ann.set_textcoords("offset points")
+
+    #         # Optional cosmetics for highlighted marker(s)
+    #         for ex in getattr(sel, "extras", []):
+    #             try:
+    #                 ex.set_markersize(7)
+    #                 ex.set_markeredgewidth(1.0)
+    #                 ex.set_markeredgecolor("#222")
+    #                 ex.set_markerfacecolor("none")
+    #             except Exception:
+    #                 pass
+
+    #     cursor.connect("add", _on_add)
+
+    #     def disconnect():
+    #         try:
+    #             cursor.remove()    # tears down handlers + annotations
+    #             ax.figure.canvas.draw_idle()
+    #         except Exception:
+    #             pass
+        
+    #     return cursor, disconnect
+
+    # def _disconnect_cumdepth_cursor(self):
+    #     if self._cumdepth_cursor_disconnect:
+    #         try:
+    #             self._cumdepth_cursor_disconnect()
+    #         finally:
+    #             self._cumdepth_cursor_disconnect = None
+    #     self._cumdepth_cursor = None
+
+    # def updateCanvas(self):
+    #     if self.plotAxisCumDepth is not None:
+    #         # remove any existing cursor cleanly
+    #         self._disconnect_cumdepth_cursor()
+
+    #         lines = getattr(self, "cumdepth_lines", None)  # or self.c_depth_lines if that's the name
+    #         cursor, disconnect = self.attach_styled_cursor(
+    #             self.plotAxisCumDepth,
+    #             artists=lines or None,
+    #             x_is_datetime=True,
+    #             yunit="mm",
+    #             highlight=True,
+    #         )
+    #         # keep both: the object (prevents GC) and the callable (cleanup)
+    #         self._cumdepth_cursor = cursor
+    #         self._cumdepth_cursor_disconnect = disconnect
+
+    #     self.main_window_plot_widget.showToolbar(not self.isBlank)
+    #     self.main_window_plot_widget.toolbar.lockNavigation(self.has_plot_event())
 
     def updateCumulativeDepthLines(self):
         # X = []
@@ -3597,7 +4391,8 @@ class graphICMTrace:
                 self.plotAxisTable,
                 [["Difference"]],
                 [0, 0, 0.125, 0.1875],
-                [["#71004b"]],
+                # [["#71004b"]],
+                [["#003478"]],
                 fs,
                 "w",
                 "bold",
@@ -3606,7 +4401,8 @@ class graphICMTrace:
                 self.plotAxisTable,
                 [["Predicted"]],
                 [0, 0.1875, 0.125, 0.1875],
-                [["#71004b"]],
+                # [["#71004b"]],
+                [["#003478"]],
                 fs,
                 "w",
                 "bold",
@@ -3615,7 +4411,8 @@ class graphICMTrace:
                 self.plotAxisTable,
                 [["Observed"]],
                 [0, 0.375, 0.125, 0.1875],
-                [["#71004b"]],
+                # [["#71004b"]],
+                [["#003478"]],
                 fs,
                 "w",
                 "bold",
@@ -3627,7 +4424,8 @@ class graphICMTrace:
                 self.plotAxisTable,
                 [["Min\n(m)", "Max\n(m)"]],
                 [0.125, 0.5625, 0.25, 0.25],
-                [["#71004b", "#71004b"]],
+                # [["#71004b", "#71004b"]],
+                [["#003478", "#003478"]],
                 fs,
                 "w",
                 "bold",
@@ -3636,7 +4434,8 @@ class graphICMTrace:
                 self.plotAxisTable,
                 [["Depth"]],
                 [0.125, 0.8125, 0.25, 0.1875],
-                [["#71004b"]],
+                # [["#71004b"]],
+                [["#003478"]],
                 fs,
                 "w",
                 "bold",
@@ -3645,7 +4444,8 @@ class graphICMTrace:
                 self.plotAxisTable,
                 [["Min\n(m3/s)", "Max\n(m3/s)", "Volume\n(m3)"]],
                 [0.375, 0.5625, 0.375, 0.25],
-                [["#71004b", "#71004b", "#71004b"]],
+                # [["#71004b", "#71004b", "#71004b"]],
+                [["#003478", "#003478", "#003478"]],
                 fs,
                 "w",
                 "bold",
@@ -3654,7 +4454,8 @@ class graphICMTrace:
                 self.plotAxisTable,
                 [["Flow"]],
                 [0.375, 0.8125, 0.375, 0.1875],
-                [["#71004b"]],
+                # [["#71004b"]],
+                [["#003478"]],
                 fs,
                 "w",
                 "bold",
@@ -3663,7 +4464,8 @@ class graphICMTrace:
                 self.plotAxisTable,
                 [["Min\n(m/s)", "Max\n(m/s)"]],
                 [0.75, 0.5625, 0.25, 0.25],
-                [["#71004b", "#71004b"]],
+                # [["#71004b", "#71004b"]],
+                [["#003478", "#003478"]],
                 fs,
                 "w",
                 "bold",
@@ -3672,7 +4474,8 @@ class graphICMTrace:
                 self.plotAxisTable,
                 [["Velocity"]],
                 [0.75, 0.8125, 0.25, 0.1875],
-                [["#71004b"]],
+                # [["#71004b"]],
+                [["#003478"]],
                 fs,
                 "w",
                 "bold",
@@ -3745,7 +4548,8 @@ class graphICMTrace:
             ]
 
             cell_colours = [
-                ["#71004b", "#71004b", "#71004b"],
+                # ["#71004b", "#71004b", "#71004b"],
+                ["#003478", "#003478", "#003478"],
                 ["#ffffff", "#ffffff", hexGreen if (aLoc.flowNSE > 0.5) else hexRed],
                 [
                     "#ffffff",
@@ -3790,7 +4594,8 @@ class graphICMTrace:
             ]
 
             cell_colours = [
-                ["#71004b", "#71004b", "#71004b"],
+                # ["#71004b", "#71004b", "#71004b"],
+                ["#003478", "#003478", "#003478"],
                 ["#ffffff", "#ffffff", hexGreen if (aLoc.flowNSE > 0.5) else hexRed],
                 [
                     "#ffffff",
@@ -3856,7 +4661,8 @@ class graphICMTrace:
                 ]
 
                 cell_colours = [
-                    ["#71004b", "#71004b", "#71004b"],
+                    # ["#71004b", "#71004b", "#71004b"],
+                    ["#003478", "#003478", "#003478"],
                     [
                         "#ffffff",
                         "#ffffff",
@@ -3885,7 +4691,8 @@ class graphICMTrace:
                 ]
 
                 cell_colours = [
-                    ["#71004b", "#71004b", "#71004b"],
+                    # ["#71004b", "#71004b", "#71004b"],
+                    ["#003478", "#003478", "#003478"],
                     [
                         "#ffffff",
                         "#ffffff",
@@ -3919,7 +4726,8 @@ class graphICMTrace:
                 ]
 
                 cell_colours = [
-                    ["#71004b", "#71004b", "#71004b"],
+                    # ["#71004b", "#71004b", "#71004b"],
+                    ["#003478", "#003478", "#003478"],
                     [
                         "#ffffff",
                         "#ffffff",
@@ -3953,7 +4761,8 @@ class graphICMTrace:
                 ]
 
                 cell_colours = [
-                    ["#71004b", "#71004b", "#71004b"],
+                    # ["#71004b", "#71004b", "#71004b"],
+                    ["#003478", "#003478", "#003478"],
                     [
                         "#ffffff",
                         "#ffffff",
@@ -8070,30 +8879,66 @@ class dashboardFSM:
 
     def __init__(self, mw_pw: PlotWidget = None):
 
-        self.main_window_plot_widget = mw_pw
-        # self.plotted_installs: plottedInstalls = plottedInstalls()
+        self.main_window_plot_widget: PlotWidget = mw_pw
+        # self.main_window_plot_widget.resized.connect(self.on_resize)
         self.fsm_project: fsmProject = None
-        getBlankFigure(self.main_window_plot_widget)
-        self.isBlank = True
+
+        self.resize_factor = 1.0  # Default resize factor
+        # Set initial scaling factor based on current widget size
+        initial_width = self.main_window_plot_widget.width()
+        initial_height = self.main_window_plot_widget.height()
+        # self.on_resize(initial_width, initial_height)
+
+        # getBlankFigure(self.main_window_plot_widget)
+        # self.isBlank = True
         self.update_plot()
 
+    def on_resize(self, width: int, height: int):
+
+        # Get screen DPI from Qt
+        screen = QApplication.primaryScreen()
+        dpi = screen.logicalDotsPerInch() if screen else 96  # Fallback to 96 dpi
+
+        # Define your design baseline
+        base_dpi = 96         # What you designed the UI for
+        base_width = 1600     # Width you expect the dashboard to look good at
+
+        # Calculate scaling factors
+        dpi_scale = dpi / base_dpi
+        width_scale = width / base_width
+
+        # Combine them (you could use height too, but width is more consistent)
+        self.resize_factor = dpi_scale * width_scale
+
+        # Prevent extreme sizes
+        self.resize_factor = max(0.5, min(self.resize_factor, 2.0))
+
+        # Redraw or just rescale fonts
+        self.update_plot(self.fsm_project)
+
+
     def update_plot(self, fsm_project: fsmProject = None):
-        self.main_window_plot_widget.figure.clear()
-        self.fsm_project = fsm_project
-        self.createDashboard()
+        if not fsm_project is None:
+            self.main_window_plot_widget.figure.clear()
+            self.fsm_project = fsm_project
+            self.createDashboard()
+            self.isBlank = False
+        else:
+            getBlankFigure(self.main_window_plot_widget)
+            self.isBlank = True
 
     def createDashboard(self):
 
-        self.grid_spec = mpl_gridspec.GridSpec(3, 3, figure=self.main_window_plot_widget.figure)  # 3 rows, 3 columns
+        self.grid_spec = mpl_gridspec.GridSpec(3, 4, figure=self.main_window_plot_widget.figure, height_ratios=[1, 2, 0.75])  # 3 rows, 3 columns
 
         # First row (3 subplots)
         self.plot_axis_details = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[0, 0])
         self.plot_axis_status = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[0, 1])
-        self.plot_axis_equipment = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[0, 2])
+        self.plot_axis_equipment = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[0, 2:])
 
         # Second row (2 subplots spanning two columns each)
-        self.plot_axis_suitability = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[1, 0:2])  # Span first 2 columns
-        self.plot_axis_acceptability = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[1, 2])    # Last column
+        self.plot_axis_suitability = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[1, :2])  # Span first column
+        self.plot_axis_acceptability = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[1, 2:])    # Last 2 columns
 
         # Third row (1 subplot spanning all columns)
         self.plot_axis_notes = self.main_window_plot_widget.figure.add_subplot(self.grid_spec[2, :])  # Span all 3 columns
@@ -8106,8 +8951,11 @@ class dashboardFSM:
         self.plot_axis_acceptability.set_title("Acceptability Plot")
         self.plot_axis_notes.set_title("Notes")
 
+        self.plot_details()
+        self.plot_status()
         self.plot_acceptability()
         self.plot_equipment()
+        self.plot_suitability()
 
         self.main_window_plot_widget.figure.tight_layout()
         # Adjust layout
@@ -8117,45 +8965,538 @@ class dashboardFSM:
         # Redraw the figure to ensure all changes are visible
         self.main_window_plot_widget.figure.canvas.draw()
 
+    def plot_details(self):
+
+        #rgb(113, 0, 75)
+        # column_colors = ['#71004b', '#e6e6e6']  # Example colors for the two columns
+        column_colors = ['#003478', '#e6e6e6']  # Example colors for the two columns
+        text_colors = ['#FFFFFF', '#000000']
+        line_color = 'white'  # Set line color to white
+
+        data = [['Client:', ''],
+                ['Job Ref:', ''],
+                ['Weeks:', '']]
+            
+        if self.fsm_project is not None:
+        
+            days_elapsed = (datetime.today() - self.fsm_project.survey_start_date).days
+            current_week = (days_elapsed // 7) + 1
+
+            data = [['Client:', self.fsm_project.client],
+                    ['Job Ref:', self.fsm_project.client_job_ref],
+                    ['Weeks:', current_week]]
+
+        # Hide any grid or spines
+        self.plot_axis_details.axis("off")
+
+        # Create the table
+        table = self.plot_axis_details.table(
+            cellText=data, 
+            cellLoc='center', 
+            loc='center'
+        )
+
+        # Adjust font size manually
+        table.auto_set_font_size(False)
+        # table.set_fontsize(12)  # Slightly larger for better readability
+        font_size = int(12 * self.resize_factor)
+        table.set_fontsize(font_size)  # Adjust font size based on resize factor
+
+        # Adjust row heights for full height distribution
+        num_rows = len(data)
+        num_cols = len(data[0]) if data else 1  # Ensure at least one column exists
+        row_height = 1.0 / num_rows  # Normalized height
+
+        for row in range(num_rows):
+            for col in range(num_cols):
+                table[(row, col)].set_height(row_height)
+                # Set the background color based on the column
+                if col == 0:  # First column
+                    table[(row, col)].set_facecolor(column_colors[0])
+                    table[(row, col)].set_text_props(color=text_colors[0])
+                else:  # Second column
+                    table[(row, col)].set_facecolor(column_colors[1])
+                    table[(row, col)].set_text_props(color=text_colors[1])
+                
+                # Set the edge color to white
+                table[(row, col)].set_edgecolor(line_color)
+
+    def plot_status(self):
+
+        #rgb(113, 0, 75)
+        # column_colors = ['#71004b', '#e6e6e6']  # Example colors for the two columns
+        column_colors = ['#003478', '#e6e6e6']  # Example colors for the two columns
+        text_colors = ['#FFFFFF', '#000000']
+        line_color = 'white'  # Set line color to white
+
+        data = [['Start Date:', ''],
+                ['', ''],
+                ['End Date:', '']]
+            
+        if self.fsm_project is not None:
+        
+            days_elapsed = (datetime.today() - self.fsm_project.survey_start_date).days
+            current_week = (days_elapsed // 7) + 1
+
+            if self.fsm_project.survey_complete:
+                end_date = self.fsm_project.survey_end_date.strftime("%d/%m/%Y")
+            else:
+                end_date = ''
+
+            data = [['Start Date:', self.fsm_project.survey_start_date.strftime("%d/%m/%Y")],
+                    ['', ''],
+                    ['End Date:', end_date]]
+
+        # # col_labels = ['Flow', 'Depth', 'Rainfall', 'Pump', 'Samplers', 'Quality']
+        # row_labels = ['Client:', 'Job Ref:', 'Weeks:']
+
+        # Hide any grid or spines
+        self.plot_axis_status.axis("off")
+
+        # Create the table
+        table = self.plot_axis_status.table(
+            cellText=data, 
+            # rowLabels=row_labels, 
+            cellLoc='center', 
+            loc='center'
+        )
+
+        # Adjust font size manually
+        table.auto_set_font_size(False)
+        # table.set_fontsize(12)  # Slightly larger for better readability
+        font_size = int(12 * self.resize_factor)
+        table.set_fontsize(font_size)
+
+        # Adjust row heights for full height distribution
+        num_rows = len(data)
+        num_cols = len(data[0]) if data else 1  # Ensure at least one column exists
+        row_height = 1.0 / num_rows  # Normalized height
+
+        for row in range(num_rows):
+            for col in range(num_cols):
+                table[(row, col)].set_height(row_height)
+                # Set the background color based on the column
+                if col == 0:  # First column
+                    table[(row, col)].set_facecolor(column_colors[0])
+                    table[(row, col)].set_text_props(color=text_colors[0])
+                else:  # Second column
+                    table[(row, col)].set_facecolor(column_colors[1])
+                    table[(row, col)].set_text_props(color=text_colors[1])
+                
+                # Set the edge color to white
+                table[(row, col)].set_edgecolor(line_color)
 
     def plot_acceptability(self):
 
-        # Sample data
-        velocity = np.random.uniform(0, 3, 100)  # Velocity data
-        depth = np.random.uniform(0, 1600, 100)   # Depth data
+        # labels = []
+        velocity = []
+        depth = []
 
-        self.plot_axis_acceptability.scatter(velocity, depth, color='orange', s=10, label='Data')
+        if self.fsm_project is not None:
+            for a_inst in self.fsm_project.dict_fsm_installs.values():
+                a_raw = self.fsm_project.get_raw_data_by_install(a_inst.install_id)
+                if a_raw is not None:
+                    if a_raw.vel_data is not None and a_raw.dep_data is not None:
+                        # labels.append(a_inst.install_id)
+                        velocity.append(a_raw.vel_data['Value'].min())
+                        depth.append(a_raw.dep_data['Value'].min() * 1000)
+
+        # velocity = np.random.uniform(0, 3, 100)  # Velocity data
+        # depth = np.random.uniform(0, 1600, 100)   # Depth data
+
+        # self.plot_axis_acceptability.scatter(velocity, depth, color='#71004b', s=10, label='Data')
+        marker_size = 10 * (self.resize_factor ** 2)  # Adjust marker size based on resize factor
+        # self.plot_axis_acceptability.scatter(velocity, depth, color='#71004b', s=marker_size, label='Data')
+        self.plot_axis_acceptability.scatter(velocity, depth, color='#003478', s=marker_size, label='Data')        
+        self.plot_axis_acceptability.set_facecolor('#e6e6e6')
+
+        # self.plot_axis_acceptability.plot([0, 3.2], [100, 100], color='black', linewidth=1, linestyle='--')
+        # self.plot_axis_acceptability.plot([0, 3.2], [1200, 1200], color='black', linewidth=1, linestyle='--')
+        # self.plot_axis_acceptability.plot([0.2, 0.3], [100, 1200], color='black', linewidth=1, linestyle='--')
+        # self.plot_axis_acceptability.plot([2, 3], [100, 1200], color='black', linewidth=1, linestyle='--')
+
+        line_width = 1 * self.resize_factor  # Adjust line width based on resize factor
+        self.plot_axis_acceptability.plot([0, 3.2], [100, 100], color='black', linewidth=line_width, linestyle='--')
+        self.plot_axis_acceptability.plot([0, 3.2], [1200, 1200], color='black', linewidth=line_width, linestyle='--')
+        self.plot_axis_acceptability.plot([0.2, 0.3], [100, 1200], color='black', linewidth=line_width, linestyle='--')
+        self.plot_axis_acceptability.plot([2, 3], [100, 1200], color='black', linewidth=line_width, linestyle='--')
 
         # Label regions
-        self.plot_axis_acceptability.text(0.5, 800, 'Acceptable range of\neffluent depths and\nvelocity for accurate\nmonitoring', ha='center')
-        self.plot_axis_acceptability.text(2.5, 400, 'Velocity too\nfast for\naccurate sensing', ha='center')
-        self.plot_axis_acceptability.text(0.5, 1400, 'Effluent depth too great for\nconventional single point velocity\nmeasurement', ha='center')
+        # self.plot_axis_acceptability.text(1.25, 600, 'Acceptable range of\neffluent depths and\nvelocity for accurate\nmonitoring', ha='center', fontsize=8)
+        # self.plot_axis_acceptability.text(2.8, 300, 'Velocity too\nfast for\naccurate sensing', ha='center', fontsize=8)
+        # self.plot_axis_acceptability.text(1.5, 1250, 'Effluent depth too great for\nconventional single point velocity\nmeasurement', ha='center', fontsize=8)
+        # self.plot_axis_acceptability.text(0.1, 200, 'Velocity too low for accurate sensing', ha='center', rotation=90, fontsize=8)
 
-        # Annotations for limits
-        self.plot_axis_acceptability.axhline(y=1200, color='grey', linestyle='--')
-        self.plot_axis_acceptability.axvline(x=2.25, color='grey', linestyle='--')
+        font_size = int(8 * self.resize_factor)  # Adjust font size based on resize factor
+        self.plot_axis_acceptability.text(1.25, 600, 'Acceptable range of\neffluent depths and\nvelocity for accurate\nmonitoring', ha='center', fontsize=font_size)
+        self.plot_axis_acceptability.text(2.8, 300, 'Velocity too\nfast for\naccurate sensing', ha='center', fontsize=font_size)
+        self.plot_axis_acceptability.text(1.5, 1250, 'Effluent depth too great for\nconventional single point velocity\nmeasurement', ha='center', fontsize=font_size)
+        self.plot_axis_acceptability.text(0.1, 200, 'Velocity too low for accurate sensing', ha='center', rotation=90, fontsize=font_size)        
 
-        self.plot_axis_acceptability.set_xlabel('Velocity (m/s)')
-        self.plot_axis_acceptability.set_ylabel('Effluent Depth (mm)')
-        self.plot_axis_acceptability.set_title('Effluent Depth vs. Velocity')
-        self.plot_axis_acceptability.legend()
-        
+        # self.plot_axis_acceptability.set_xlabel('Velocity (m/s)', fontsize=8, labelpad=-25)
+        # # self.plot_axis_acceptability.set_ylabel('Effluent Depth (mm)', fontsize=8)
+        # self.plot_axis_acceptability.set_ylabel('Effluent Depth (mm)', fontsize=8, rotation=0, ha='left', va='top')
+        # self.plot_axis_acceptability.yaxis.set_label_coords(0.01, 0.98)
+        # # self.plot_axis_acceptability.set_title('Effluent Depth vs. Velocity')
+
+        label_pad = int(-25 * self.resize_factor)
+        self.plot_axis_acceptability.set_xlabel('Velocity (m/s)', fontsize=font_size, labelpad = label_pad)
+        # self.plot_axis_acceptability.set_ylabel('Effluent Depth (mm)', fontsize=8)
+        self.plot_axis_acceptability.set_ylabel('Effluent Depth (mm)', fontsize=font_size, rotation=0, ha='left', va='top')
+        self.plot_axis_acceptability.yaxis.set_label_coords(0.01, 0.98)
+        # self.plot_axis_acceptability.set_title('Effluent Depth vs. Velocity')
+
+        # self.plot_axis_acceptability.tick_params(axis='both', labelsize=8)
+        self.plot_axis_acceptability.tick_params(axis='both', labelsize=font_size)
+        # self.plot_axis_acceptability.legend()
+
+        self.plot_axis_acceptability.set_xlim(0, 3.2)
+        self.plot_axis_acceptability.set_ylim(0, 1600)        
+
     def plot_equipment(self):
 
-        # Sample data for the table
-        data = [['365', '61', '69', '', '', '17'],
-                ['', '', '', '', '', ''],
-                ['', '', '', '', '', '']]
+        #rgb(113, 0, 75)
+        # column_colors = ['#71004b', '#e6e6e6']  # Example colors for the two columns
+        column_colors = ['#003478', '#e6e6e6']  # Example colors for the two columns
+        text_colors = ['#FFFFFF', '#000000']
+        line_color = 'white'  # Set line color to white
 
-        col_labels = ['Flow', 'Depth', 'Rainfall', 'Pump', 'Samplers', 'Quality']
-        row_labels = ['Installed', 'Relocated', 'Removed']
+        data = [['', 'Flow', 'Depth', 'Rainfall', 'Pump'],
+                ['Available:', 0, 0, 0, 0],
+                ['Installed:', 0, 0, 0, 0],
+                ['Total:', 0, 0, 0, 0]]
+                    
+        if self.fsm_project is not None:
+            for a_mon in self.fsm_project.dict_fsm_monitors.values():
+                if a_mon.monitor_type == 'Flow Monitor':
+                    data[3][1] = data[3][1] + 1
+                    if self.fsm_project.monitor_is_installed(a_mon.monitor_asset_id):
+                        data[2][1] = data[2][1] + 1
+                    else:
+                        data[1][1] = data[1][1] + 1
+                elif a_mon.monitor_type == 'Depth Monitor':
+                    data[3][2] = data[3][2] + 1
+                    if self.fsm_project.monitor_is_installed(a_mon.monitor_asset_id):
+                        data[2][2] = data[2][2] + 1
+                    else:
+                        data[1][2] = data[1][2] + 1
+                elif a_mon.monitor_type == 'Rain Gauge':
+                    data[3][3] = data[3][3] + 1
+                    if self.fsm_project.monitor_is_installed(a_mon.monitor_asset_id):
+                        data[2][3] = data[2][3] + 1
+                    else:
+                        data[1][3] = data[1][3] + 1
+                elif a_mon.monitor_type == 'Pump Logger':
+                    data[3][4] = data[3][4] + 1
+                    if self.fsm_project.monitor_is_installed(a_mon.monitor_asset_id):
+                        data[2][4] = data[2][4] + 1
+                    else:
+                        data[1][4] = data[1][4] + 1
 
-        # Hide axes
-        self.plot_axis_equipment.xaxis.set_visible(False)
-        self.plot_axis_equipment.yaxis.set_visible(False)
+
+        # col_labels = ['Flow', 'Depth', 'Rainfall', 'Pump']
+        # row_labels = ['Available', 'Installed', 'Total']
+
+        # Hide any grid or spines
+        self.plot_axis_equipment.axis("off")
 
         # Create the table
-        table = self.plot_axis_equipment.table(cellText=data, colLabels=col_labels, rowLabels=row_labels, cellLoc='center', loc='center')
+        table = self.plot_axis_equipment.table(
+            cellText=data, 
+            # rowLabels=row_labels, 
+            # colLabels=col_labels, 
+            cellLoc='center', 
+            loc='center'
+        )
+
+        # Adjust font size manually
+        table.auto_set_font_size(False)
+        # table.set_fontsize(12)  # Slightly larger for better readability
+        font_size = int(12 * self.resize_factor)
+        table.set_fontsize(font_size)        
+
+        # Adjust row heights for full height distribution
+        num_rows = len(data)
+        num_cols = len(data[0]) if data else 1  # Ensure at least one column exists
+        row_height = 1.0 / num_rows  # Normalized height (including Header)
+
+        for row in range(num_rows):
+            for col in range(num_cols):
+                table[(row, col)].set_height(row_height)
+                # Set the background color based on the column
+                if row == 0:
+                    if col > 0:
+                        table[(row, col)].set_facecolor(column_colors[0])
+                        table[(row, col)].set_text_props(color=text_colors[0])
+                else:
+                    if col == 0:
+                        table[(row, col)].set_facecolor(column_colors[0])
+                        table[(row, col)].set_text_props(color=text_colors[0])
+                    else:  # Second column
+                        table[(row, col)].set_facecolor(column_colors[1])
+                        table[(row, col)].set_text_props(color=text_colors[1])
+                
+                # Set the edge color to white
+                table[(row, col)].set_edgecolor(line_color)
+
+    def plot_suitability(self):
+
+        good_flow_text = """Good flow conditions:
+        Depth base exceeds 100 mm
+        Velocity base exceeds 0.2 m/s
+        No significant operational problems (silt, turbulence, ragging, debris)
+        No other detrimental factors (high level incoming, bend etc.)"""        
+
+        reasonable_flow_text = """Reasonable flow conditions:
+        Depth base exceeds 40 mm
+        Velocity base exceeds 0.1 m/s
+        No significant operational problems (silt, turbulence, ragging, debris)
+        No other detrimental factors (high level incoming, bend etc.)"""        
+
+        other_flow_text = """Best available / Storm: any of the below conditions apply
+        Depth base less than 40 mm
+        Velocity base less than 0.1 m/s
+        Operational problems (silt, turbulence, ragging, debris )
+        Other detrimental factors (high level incoming, bend etc.)"""
+
+        no_data_text = """No data recorded"""   
+
+        #rgb(113, 0, 75)
+        # rating_colors = {'Good': '#71004B', 'Reasonable': '#8E3A72', 'Other': '#AC7399', 'NoData': '#C9ADBF'}  # Example colors for the two columns
+        rating_colors = {'Good': '#003478', 'Reasonable': '#3E6496', 'Other': '#8198B6', 'NoData': '#BAC4D1'}  # Example colors for the two columns        
+        # column_colors = ['#71004b', '#e6e6e6']  # Example colors for the two columns
+        column_colors = ['#003478', '#e6e6e6']  # Example colors for the two columns
+        text_colors = ['#FFFFFF', '#000000']
+        line_color = 'white'  # Set line color to white
+
+        data = [[0, good_flow_text],
+                [0, reasonable_flow_text],
+                [0, other_flow_text],
+                [0, no_data_text]]
+
+        velocity = []
+        depth = []
+
+        if self.fsm_project is not None:
+            for a_inst in self.fsm_project.dict_fsm_installs.values():
+                if a_inst.install_type == 'Flow Monitor':
+                    a_raw = self.fsm_project.get_raw_data_by_install(a_inst.install_id)
+                    if a_raw is not None:
+                        if a_raw.vel_data is not None and a_raw.dep_data is not None:
+                            if (a_raw.vel_data['Value'].min() >= 0.2) and (a_raw.dep_data['Value'].min() * 1000 >= 100):
+                                data[0][0] = data[0][0] + 1
+                            elif (a_raw.vel_data['Value'].min() >= 0.1) and (a_raw.dep_data['Value'].min() * 1000 >= 40):
+                                data[1][0] = data[1][0] + 1
+                            else:
+                                data[2][0] = data[2][0] + 1
+                        else:
+                            data[3][0] = data[3][0] + 1
+                    else:
+                        data[3][0] = data[3][0] + 1
+
+        # Hide any grid or spines
+        self.plot_axis_suitability.axis("off")
+
+        # Create the table
+        table = self.plot_axis_suitability.table(
+            cellText=data, 
+            # rowLabels=row_labels, 
+            cellLoc='center', 
+            loc='center'
+        )
+
+        # Adjust font size manually
+        table.auto_set_font_size(False)
+        # table.set_fontsize(12)  # Slightly larger for better readability
+        font_size = int(12 * self.resize_factor)
+        table.set_fontsize(font_size)
+
+        # Adjust row heights for full height distribution
+        num_rows = len(data)
+        num_cols = len(data[0]) if data else 1  # Ensure at least one column exists
+        row_height = 1.0 / num_rows  # Normalized height
+        col_widths = [0.2, 0.8]
+
+        font_size = int(10 * self.resize_factor)
+        for row in range(num_rows):
+            for col in range(num_cols):
+                table[(row, col)].set_height(row_height)
+                table[(row, col)].set_width(col_widths[col])  # Set width manually
+                # Set the background color based on the column
+                if col == 0:  # First column
+                    # rating_colors = {'Good': '#71004b', 'Reasonable': '#ac7399', 'Other': '#e6e6e6', 'NoData': '#000000'}  # Example colors for the two columns
+                    if row == 0:
+                        table[(row, col)].set_facecolor(rating_colors['Good'])
+                        table[(row, col)].set_text_props(color=text_colors[0])
+                    elif row == 1:
+                        table[(row, col)].set_facecolor(rating_colors['Reasonable'])
+                        table[(row, col)].set_text_props(color=text_colors[0])
+                    elif row == 2:
+                        table[(row, col)].set_facecolor(rating_colors['Other'])
+                        table[(row, col)].set_text_props(color=text_colors[0])
+                    elif row == 3:
+                        table[(row, col)].set_facecolor(rating_colors['NoData'])
+                        table[(row, col)].set_text_props(color=text_colors[0], )
+                else:  # Second column
+                    table[(row, col)].set_facecolor(column_colors[1])
+                    table[(row, col)].set_text_props(color=text_colors[1], fontsize=font_size)
+                
+                # Set the edge color to white
+                table[(row, col)].set_edgecolor(line_color)
+
+
+
+        # # Define normalized row height
+        # num_rows = len(data)
+        # row_height = 1.0 / (num_rows + 1)  # Normalize including header row
+
+        # # Adjust height for table cells (data + row labels)
+        # for row in range(-1, num_rows):  # -1 for row labels
+        #     for col in range(num_cols):  # Start from 0, avoiding -1 for column headers
+        #         if (row, col) in table.get_celld():  # Ensure cell exists
+        #             table[(row, col)].set_height(row_height)
+
+        # # Adjust height for column headers manually (since they are not in table.get_celld())
+        # for col in range(num_cols):  # Column headers
+        #     table[(-1, col)].set_height(row_height)  # -1 row index for row labels
+
+
+
+        # # Adjust row heights for full height distribution
+        # num_rows = len(data)
+        # num_cols = len(data[0]) if data else 1  # Ensure at least one column exists
+        # row_height = 1.0 / (num_rows + 1)  # Normalized height (including Header)
+
+        # # Adjusting row height for the table (excluding the header)
+        # for row in range(num_rows):
+        #     for col in range(num_cols):
+        #         table[(row, col)].set_height(row_height)
+
+        # # Adjusting row height for header row
+        # table.auto_set_column_width(col=list(range(num_cols)))  # Adjust column width
+        # table.auto_set_font_size(False)  # Ensure manual font size adjustment
+        # table.set_fontsize(12)  # Slightly larger for better readability                
+
+    # def plot_equipment(self):
+
+
+    #     # velocity = []
+    #     # depth = []
+
+    #     # if self.fsm_project is not None:
+    #     #     for a_mon in self.fsm_project.dict_fsm_monitors.values():
+
+    #     #     for a_inst in self.fsm_project.dict_fsm_installs.values():
+
+    #     #         a_raw = self.fsm_project.get_raw_data_by_install(a_inst.install_id)
+    #     #         if a_raw is not None:
+    #     #             if a_raw.vel_data is not None and a_raw.dep_data is not None:
+    #     #                 # labels.append(a_inst.install_id)
+    #     #                 velocity.append(a_raw.vel_data['Value'].min())
+    #     #                 depth.append(a_raw.dep_data['Value'].min() * 1000)
+
+    #     data = [['365', '61', '69', '', '', '17'],
+    #             ['', '', '', '', '', ''],
+    #             ['', '', '', '', '', '']]
+
+    #     col_labels = ['Flow', 'Depth', 'Rainfall', 'Pump', 'Samplers', 'Quality']
+    #     row_labels = ['Installed', 'Relocated', 'Removed']
+
+    #     # Hide axes
+    #     self.plot_axis_equipment.xaxis.set_visible(False)
+    #     self.plot_axis_equipment.yaxis.set_visible(False)
+
+    #     # Create the table
+    #     table = self.plot_axis_equipment.table(cellText=data, colLabels=col_labels, rowLabels=row_labels, cellLoc='center', loc='center')
+
+    def createFMPlot(self):
+        a_linewidth = 1
+        if self.plot_raw:
+            # ... your axes creation ...
+            # Battery overlay
+            if self.overlay_existing_raw and self.overlay_existing_raw.bat_data is not None:
+                plot_axis_battery.plot(
+                    self.overlay_existing_raw.bat_data["Timestamp"],
+                    self.overlay_existing_raw.bat_data["Value"], linewidth=1, alpha=0.6
+                )
+            # Depth overlay
+            if self.overlay_existing_raw and self.overlay_existing_raw.dep_data is not None:
+                plot_axis_depth.plot(
+                    self.overlay_existing_raw.dep_data["Timestamp"],
+                    self.overlay_existing_raw.dep_data["Value"], linewidth=1, alpha=0.6
+                )
+            # Velocity overlay
+            if self.overlay_existing_raw and self.overlay_existing_raw.vel_data is not None:
+                plot_axis_velocity.plot(
+                    self.overlay_existing_raw.vel_data["Timestamp"],
+                    self.overlay_existing_raw.vel_data["Value"], linewidth=1, alpha=0.6
+                )
+
+            # Your “temp/raw” in color (as you already do) comes after overlays:
+            # ... your existing plotting code for self.plotted_raw ...
+
+            # Attach selector on bottom axis:
+            self._attach_span_selector(plot_axis_velocity)
+
+            # ... locators/tight_layout/draw as you have ...
+        else:
+            # unchanged
+            pass
+
+
+# # add at top of class
+# from matplotlib.widgets import SpanSelector
+
+# class graphFSMInstall:
+#     # ...
+#     def __init__(self, mw_pw: PlotWidget = None):
+#         # ...
+#         self._spans = []               # <-- track all span selectors
+#         self._selection_callback = None
+#         self._selection_band = []
+
+#     def set_selection_callback(self, cb):
+#         self._selection_callback = cb
+
+#     def _on_span(self, xmin, xmax):
+#         start = pd.Timestamp(mpl_dates.num2date(xmin)).tz_localize(None)
+#         end   = pd.Timestamp(mpl_dates.num2date(xmax)).tz_localize(None)
+#         self._shade_selection(start, end)
+#         if self._selection_callback:
+#             self._selection_callback(start, end)
+
+#     def _clear_spans(self):
+#         for sp in self._spans:
+#             try:
+#                 sp.disconnect_events()
+#             except Exception:
+#                 pass
+#         self._spans = []
+
+#     def _attach_span_selector(self, axes_list):
+#         """Attach a horizontal SpanSelector to each axes in axes_list."""
+#         self._clear_spans()
+#         for ax in axes_list:
+#             sp = SpanSelector(
+#                 ax, self._on_span, direction='horizontal',
+#                 useblit=True, props=dict(alpha=0.2), interactive=True
+#             )
+#             self._spans.append(sp)
+
+#     def _clear_shading(self):
+#         for band in self._selection_band:
+#             try:
+#                 band.remove()
+#             except Exception:
+#                 pass
+#         self._selection_band = []
+
+#     def _shade_selection(self, start, end):
+#         self._clear_shading()
+#         for ax in self.main_window_plot_widget.figure.axes:
+#             self._selection_band.append(ax.axvspan(start, end, alpha=0.15))
+#         self.main_window_plot_widget.figure.canvas.draw_idle()
+
 
 
 class graphFSMInstall:
@@ -8170,9 +9511,234 @@ class graphFSMInstall:
         self.plotted_install: fsmInstall = None
         self.plotted_raw: fsmRawData = None
         self.plot_raw = False
+        
+        self.overlay_temp_raw: Optional[fsmRawData] = None
+        # self._spans = []               # <-- track all span selectors
+        # self._selection_callback = None
+        # self._selection_band = []
+        # self._current_selection = (None, None)
+
+        # self._draw_cid = self.main_window_plot_widget.figure.canvas.mpl_connect("draw_event", self._on_draw)
+
         getBlankFigure(self.main_window_plot_widget)
         self.isBlank = True
         self.update_plot()
+
+
+    # def _channels_for_plot(self) -> list[str]:
+    #     """Return only the raw channels relevant to the CURRENT plot."""
+    #     if self.plotted_install is None:
+    #         return []
+    #     itype = self.plotted_install.install_type
+    #     if not self.plot_raw:
+    #         # Aggregated (processed) view uses self.plotted_install.data, not raw channels.
+    #         return []
+    #     if itype == "Flow Monitor":
+    #         return ["dep_data", "vel_data", "bat_data"]
+    #     if itype == "Depth Monitor":
+    #         return ["dep_data", "bat_data"]
+    #     if itype == "Rain Gauge":
+    #         return ["rg_data"]
+    #     if itype == "Pump Logger":
+    #         return ["pl_data"]
+    #     return []
+
+    # def _sanitize_time_col(self, df: pd.DataFrame, ts_col: str) -> pd.Series:
+    #     """
+    #     Coerce to datetime, drop tz/NaT, and clamp to a sensible window to
+    #     avoid epoch/default timestamps pulling limits to 1970.
+    #     """
+    #     if df is None or len(df) == 0 or ts_col not in df.columns:
+    #         return pd.Series(dtype=np.datetime64[ns])
+
+    #     import pandas as pd
+    #     s = pd.to_datetime(df[ts_col], errors="coerce")
+
+    #     # strip timezone (make naive)
+    #     try:
+    #         s = s.dt.tz_convert(None)
+    #     except Exception:
+    #         try:
+    #             s = s.dt.tz_localize(None)
+    #         except Exception:
+    #             pass
+
+    #     s = s.dropna()
+
+    #     # clamp out obviously bogus dates (tweak if you need a wider window)
+    #     lo = pd.Timestamp("2000-01-01")
+    #     hi = pd.Timestamp("2100-01-01")
+    #     s = s[(s >= lo) & (s <= hi)]
+    #     return s
+
+    # def _format_range(self, raw: fsmRawData) -> str:
+    #     """
+    #     Return a human-readable range string for the relevant datasets
+    #     inside an fsmRawData object (dep/vel/bat/rg/pl), based on the
+    #     current plot type.
+    #     """
+    #     if raw is None:
+    #         return "—"
+
+    #     mins, maxs = [], []
+    #     for attr in self._channels_for_plot():  # only channels relevant to current install type
+    #         df = getattr(raw, attr, None)
+    #         s = self._sanitize_time_col(df, "Timestamp")
+    #         if not s.empty:
+    #             mins.append(s.min())
+    #             maxs.append(s.max())
+
+    #     if not mins:
+    #         return "—"
+
+    #     return f"{min(mins):%Y-%m-%d %H:%M} → {max(maxs):%Y-%m-%d %H:%M}"
+
+    # def _guess_bounds_from_raw(self, raw: fsmRawData) -> tuple:
+    #     """
+    #     Only look at relevant channels for the current plot, sanitize timestamps,
+    #     and return (xmin, xmax) or (None, None).
+    #     """
+    #     mins, maxs = [], []
+    #     for attr in self._channels_for_plot():
+    #         df = getattr(raw, attr, None)
+    #         s = self._sanitize_time_col(df, "Timestamp")
+    #         if not s.empty:
+    #             mins.append(s.min())
+    #             maxs.append(s.max())
+
+    #     if not mins:
+    #         return (None, None)
+
+    #     xmin, xmax = min(mins), max(maxs)
+
+    #     # (Optional) if the span is ridiculously huge, tighten with central quantiles
+    #     if (xmax - xmin).days > 365 * 5:
+    #         qs = []
+    #         for attr in self._channels_for_plot():
+    #             df = getattr(raw, attr, None)
+    #             s = self._sanitize_time_col(df, "Timestamp")
+    #             if not s.empty:
+    #                 qs.append((s.quantile(0.05), s.quantile(0.95)))
+    #         if qs:
+    #             qmin = max(q[0] for q in qs)
+    #             qmax = min(q[1] for q in qs)
+    #             if qmin < qmax:
+    #                 xmin, xmax = qmin, qmax
+
+    #     return (xmin, xmax)
+
+    # def get_current_bounds(self) -> tuple:
+    #     """
+    #     PUBLIC: best-guess (xmin, xmax) for the CURRENT graph configuration.
+    #     - If plot_raw: infer from relevant raw channels of self.plotted_raw (+ overlay if you like).
+    #     - Else: infer from self.plotted_install.data (aggregated).
+    #     """
+
+    # def _dt(self, num):
+    #     try:
+    #         return mpl_dates.num2date(num)
+    #     except Exception:
+    #         return num
+
+    # # def _log_axes(self, tag):
+    # #     print(f"[{tag}]")
+    # #     for i, ax in enumerate(self.main_window_plot_widget.figure.axes):
+    # #         lo, hi = ax.get_xlim()
+    # #         print(f"  ax{i}: {self._dt(lo)} -> {self._dt(hi)}")
+
+    # # def _on_draw(self, event):
+    # #     fig = event.canvas.figure
+    # #     self._log_axes("draw_event")
+
+    # # def _on_xlim_changed(self, ax):
+    # #     lo, hi = ax.get_xlim()
+    # #     print(f"[xlim_changed] {self._dt(lo)} -> {self._dt(hi)}")
+    # #     print("".join(traceback.format_stack(limit=6)))
+
+    # # def _attach_xlim_logger(self):
+    # #     for ax in self.main_window_plot_widget.figure.axes:
+    # #         ax.callbacks.connect("xlim_changed", self._on_xlim_changed)
+
+
+    # def set_selection_callback(self, cb):
+    #     self._selection_callback = cb
+
+    # # def _on_span(self, xmin, xmax):
+    # #     start = pd.Timestamp(mpl_dates.num2date(xmin)).tz_localize(None)
+    # #     end   = pd.Timestamp(mpl_dates.num2date(xmax)).tz_localize(None)
+    # #     self._shade_selection(start, end)
+    # #     if self._selection_callback:
+    # #         self._selection_callback(start, end)
+
+    # def _clear_spans(self):
+    #     for sp in self._spans:
+    #         try:
+    #             sp.disconnect_events()
+    #         except Exception:
+    #             pass
+    #     self._spans = []
+
+    # # def _attach_span_selector(self, axes_list):
+    # #     """Attach a horizontal SpanSelector to each axes in axes_list."""
+    # #     self._clear_spans()
+    # #     for ax in axes_list:
+    # #         sp = SpanSelector(
+    # #             ax, self._on_span, direction='horizontal',
+    # #             useblit=True, props=dict(alpha=0.2), interactive=True
+    # #         )
+    # #         self._spans.append(sp)
+
+    # def _attach_span_selector(self, axes_list):
+    #     """Attach an 'invisible' SpanSelector to each axes; we draw the shading ourselves."""
+    #     self._clear_spans()
+    #     for ax in axes_list:
+    #         sp = SpanSelector(
+    #             ax,
+    #             self._on_span,
+    #             direction='horizontal',
+    #             useblit=True,
+    #             interactive=False,                  # <- no handles
+    #             props=dict(alpha=0.0, linewidth=0)  # <- invisible selector band
+    #             # NOTE: on older Matplotlib, `props` may not include linewidth; alpha=0 is enough
+    #         )
+    #         self._spans.append(sp)
+
+    # def _clear_shading(self):
+    #     for band in self._selection_band:
+    #         try:
+    #             band.remove()
+    #         except Exception:
+    #             pass
+    #     self._selection_band = []
+
+    # # def _shade_selection(self, start, end):
+    # #     self._clear_shading()
+    # #     for ax in self.main_window_plot_widget.figure.axes:
+    # #         self._selection_band.append(ax.axvspan(start, end, alpha=0.15))
+    # #     self.main_window_plot_widget.figure.canvas.draw_idle()
+
+    # def _on_span(self, xmin, xmax):
+    #     start = pd.Timestamp(mpl_dates.num2date(xmin)).tz_localize(None)
+    #     end   = pd.Timestamp(mpl_dates.num2date(xmax)).tz_localize(None)
+
+    #     # normalize order just in case
+    #     if end < start:
+    #         start, end = end, start
+
+    #     self._current_selection = (start, end)
+    #     self._shade_selection(start, end)
+
+    #     if self._selection_callback:
+    #         self._selection_callback(start, end)
+
+    # def _shade_selection(self, start, end):
+    #     self._clear_shading()
+    #     if start is None or end is None:
+    #         self.main_window_plot_widget.figure.canvas.draw_idle()
+    #         return
+    #     for ax in self.main_window_plot_widget.figure.axes:
+    #         self._selection_band.append(ax.axvspan(start, end, alpha=0.15))
+    #     self.main_window_plot_widget.figure.canvas.draw_idle()
 
     def update_plot(self, plot_raw: bool = False, plot_adjustments: bool = False):
         self.main_window_plot_widget.figure.clear()
@@ -8190,6 +9756,9 @@ class graphFSMInstall:
         else:
             getBlankFigure(self.main_window_plot_widget)
             self.isBlank = True
+
+        # self._attach_xlim_logger()
+        # self._log_axes("after update_plot")            
 
         self.updateCanvas()
 
@@ -8217,6 +9786,13 @@ class graphFSMInstall:
             # plot_axis_battery.set_ylabel("Voltage (V)")
             # plot_axis_battery.set_title("Battery", loc="left", fontsize=16)
 
+            if self.overlay_temp_raw and self.overlay_temp_raw.rg_data is not None:
+                plot_axis_intensity.stem(
+                    self.overlay_temp_raw.rg_data["Timestamp"],
+                    [1] * len(self.overlay_temp_raw.rg_data),
+                    linefmt="C7-", markerfmt="C7o", basefmt=" "  # light grey-ish
+                )            
+
             if self.plotted_raw is not None and self.plotted_raw.rg_data is not None:
                 plot_axis_intensity.stem(
                     self.plotted_raw.rg_data["Timestamp"],
@@ -8235,6 +9811,20 @@ class graphFSMInstall:
             formatter = ConciseDateFormatter(locator)
             plot_axis_intensity.xaxis.set_major_locator(locator)
             plot_axis_intensity.xaxis.set_major_formatter(formatter)
+
+            # if self.overlay_temp_raw:
+            #     # # self._attach_span_selector(plot_axis_intensity)
+            #     # self._attach_span_selector([plot_axis_intensity])
+
+            #     # after plotting, axes creation, locators, etc.
+            #     if hasattr(self, "_attach_span_selector"):
+            #         self._attach_span_selector(self.main_window_plot_widget.figure.axes)
+
+            #     # reapply existing selection (if user selected earlier)
+            #     sel_start, sel_end = self._current_selection
+            #     if sel_start is not None and sel_end is not None:
+            #         self._shade_selection(sel_start, sel_end)
+
 
             self.main_window_plot_widget.figure.tight_layout()
             # Adjust layout
@@ -8413,6 +10003,26 @@ class graphFSMInstall:
                 plot_axis_velocity.set_ylabel("Velocity (m/sec)")
                 plot_axis_velocity.set_title("Velocity", loc="left", fontsize=16)
 
+
+                # Battery overlay
+                if self.overlay_temp_raw and self.overlay_temp_raw.bat_data is not None:
+                    plot_axis_battery.plot(
+                        self.overlay_temp_raw.bat_data["Timestamp"],
+                        self.overlay_temp_raw.bat_data["Value"], linewidth=1, alpha=0.6
+                    )
+                # Depth overlay
+                if self.overlay_temp_raw and self.overlay_temp_raw.dep_data is not None:
+                    plot_axis_depth.plot(
+                        self.overlay_temp_raw.dep_data["Timestamp"],
+                        self.overlay_temp_raw.dep_data["Value"], linewidth=1, alpha=0.6
+                    )
+                # Velocity overlay
+                if self.overlay_temp_raw and self.overlay_temp_raw.vel_data is not None:
+                    plot_axis_velocity.plot(
+                        self.overlay_temp_raw.vel_data["Timestamp"],
+                        self.overlay_temp_raw.vel_data["Value"], linewidth=1, alpha=0.6
+                    )
+
                 if self.plot_adjustments:
                     calculator = MonitorDataFlowCalculator(self.plotted_raw)
 
@@ -8490,6 +10100,17 @@ class graphFSMInstall:
             formatter = ConciseDateFormatter(locator)
             plot_axis_velocity.xaxis.set_major_locator(locator)
             plot_axis_velocity.xaxis.set_major_formatter(formatter)
+
+            # if self.overlay_temp_raw:
+            #     # self._attach_span_selector(plot_axis_velocity)
+            #     # self._attach_span_selector([plot_axis_battery, plot_axis_depth, plot_axis_velocity])
+            #     if hasattr(self, "_attach_span_selector"):
+            #         self._attach_span_selector(self.main_window_plot_widget.figure.axes)
+
+            #     # reapply existing selection (if user selected earlier)
+            #     sel_start, sel_end = self._current_selection
+            #     if sel_start is not None and sel_end is not None:
+            #         self._shade_selection(sel_start, sel_end)                
 
             # self.main_window_plot_widget.figure.subplots_adjust(
             #     left=0.15, right=0.85, bottom=0.15, top=0.85)
@@ -8628,12 +10249,111 @@ class graphFSMInstall:
             minutes = ((seconds % 3600) / 60)
             return f"{days} days {hours} hours {minutes:.2f} minutes"
 
+
+    # def createPLPlot(self):
+    #     a_linewidth = 1
+
+    #     # one axis
+    #     plot_axis_onoff = self.main_window_plot_widget.figure.subplots(
+    #         nrows=1, sharex=True, gridspec_kw={"height_ratios": [1]}
+    #     )
+
+    #     # --- RAW MODE: overlay existing vs temp ---
+    #     if self.plot_raw:
+    #         # 1) overlay existing, if present (draw first so it sits "behind")
+    #         if getattr(self, "overlay_existing_raw", None) and \
+    #         getattr(self.overlay_existing_raw, "pl_data", None) is not None and \
+    #         not self.overlay_existing_raw.pl_data.empty:
+
+    #             df_exist = self.overlay_existing_raw.pl_data.copy()
+    #             # make sure timestamps are datetime-naive and values are 0/1
+    #             if not pd.api.types.is_datetime64_any_dtype(df_exist["Timestamp"]):
+    #                 df_exist["Timestamp"] = pd.to_datetime(df_exist["Timestamp"])
+    #             df_exist["Timestamp"] = df_exist["Timestamp"].dt.tz_localize(None)
+    #             df_exist["Value"] = (df_exist["Value"] > 0).astype(int)
+
+    #             plot_axis_onoff.step(
+    #                 df_exist["Timestamp"], df_exist["Value"],
+    #                 where='post',
+    #                 linewidth=1,
+    #                 alpha=0.6,
+    #                 linestyle='--',   # secondary style
+    #                 # no explicit color to keep your default palette free; or set a fixed one if you prefer
+    #                 zorder=1
+    #             )
+
+    #         # 2) plot the new/temp data (your current style)
+    #         if self.plotted_raw is not None and self.plotted_raw.pl_data is not None:
+    #             df_temp = self.plotted_raw.pl_data.copy()
+    #             if not pd.api.types.is_datetime64_any_dtype(df_temp["Timestamp"]):
+    #                 df_temp["Timestamp"] = pd.to_datetime(df_temp["Timestamp"])
+    #             df_temp["Timestamp"] = df_temp["Timestamp"].dt.tz_localize(None)
+    #             df_temp["Value"] = (df_temp["Value"] > 0).astype(int)
+
+    #             plot_axis_onoff.step(
+    #                 df_temp["Timestamp"], df_temp["Value"],
+    #                 where='post',
+    #                 linewidth=a_linewidth,
+    #                 color="blue",
+    #                 zorder=2
+    #             )
+
+    #             # stats are computed on the **plotted** (temp) series
+    #             measured_data = df_temp
+    #             time_key = "Timestamp"
+    #             value_key = "Value"
+    #         else:
+    #             # nothing to show
+    #             ax = plot_axis_onoff
+    #             ax.text(0.5, 0.5, 'No pump data found', ha='center', va='center', fontsize=16)
+    #             ax.set_axis_off()
+    #             return
+
+    #     # --- AGGREGATED MODE (non-raw) ---
+    #     else:
+    #         if self.plotted_install.data is not None:
+    #             df_filtered = self.plotted_install.data.copy()
+    #             # assume Date is already datetime-naive; if not, coerce:
+    #             if not pd.api.types.is_datetime64_any_dtype(df_filtered["Date"]):
+    #                 df_filtered["Date"] = pd.to_datetime(df_filtered["Date"])
+    #             df_filtered["Date"] = df_filtered["Date"].dt.tz_localize(None)
+    #             df_filtered["OnOffData"] = (df_filtered["OnOffData"] > 0).astype(int)
+
+    #             plot_axis_onoff.step(
+    #                 df_filtered["Date"], df_filtered["OnOffData"],
+    #                 where='post',
+    #                 linewidth=a_linewidth,
+    #                 color="blue",
+    #             )
+    #             measured_data = df_filtered
+    #             time_key = "Date"
+    #             value_key = "OnOffData"
+    #         else:
+    #             return
+
+    #     # Labels / title / ticks
+    #     plot_axis_onoff.set_ylabel("On/Off")
+    #     plot_axis_onoff.set_title("Pump Logger", loc="left", fontsize=16)
+    #     locator = AutoDateLocator(minticks=6, maxticks=15)
+    #     formatter = ConciseDateFormatter
+
     def createPLPlot(self):
         a_linewidth = 1
         if self.plot_raw:
             plot_axis_onoff = self.main_window_plot_widget.figure.subplots(
                 nrows=1, sharex=True, gridspec_kw={"height_ratios": [1]}
             )
+
+            if self.overlay_temp_raw and self.overlay_temp_raw.pl_data is not None:
+                plot_axis_onoff.step(
+                    self.overlay_temp_raw.pl_data["Timestamp"],
+                    self.overlay_temp_raw.pl_data["Value"],
+                    where='post',  # Change to 'pre' or 'mid' if preferred
+                    color="blue",
+                    linewidth=a_linewidth,
+                    alpha=0.6
+                )
+
             if self.plotted_raw.pl_data is not None:
                 # Use a step plot so that the line remains flat between transitions
                 plot_axis_onoff.step(
@@ -8675,6 +10395,16 @@ class graphFSMInstall:
         formatter = ConciseDateFormatter(locator)
         plot_axis_onoff.xaxis.set_major_locator(locator)
         plot_axis_onoff.xaxis.set_major_formatter(formatter)
+
+        # if self.overlay_temp_raw:
+        #     # self._attach_span_selector([plot_axis_onoff])
+        #     if hasattr(self, "_attach_span_selector"):
+        #         self._attach_span_selector(self.main_window_plot_widget.figure.axes)
+
+        #     # reapply existing selection (if user selected earlier)
+        #     sel_start, sel_end = self._current_selection
+        #     if sel_start is not None and sel_end is not None:
+        #         self._shade_selection(sel_start, sel_end)            
 
         # Create a statistics text box in the top left (in axis coordinates)
         stats_box = plot_axis_onoff.text(
@@ -8781,7 +10511,7 @@ class graphFSMInstall:
         # Adjust layout and redraw the figure
         self.main_window_plot_widget.figure.tight_layout()
         self.main_window_plot_widget.figure.subplots_adjust(left=0.075, right=0.95, bottom=0.05, top=0.95)
-        self.main_window_plot_widget.figure.canvas.draw()    
+        self.main_window_plot_widget.figure.canvas.draw()
 
 class graphWQGraph:
 
@@ -9621,7 +11351,8 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
         plotAxisTable,
         [["Difference"]],
         [0, 0, 0.125, 0.1875],
-        [["#71004b"]],
+        # [["#71004b"]],
+        [["#003478"]],
         fs,
         "w",
         "bold",
@@ -9630,7 +11361,8 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
         plotAxisTable,
         [["Predicted"]],
         [0, 0.1875, 0.125, 0.1875],
-        [["#71004b"]],
+        # [["#71004b"]],
+        [["#003478"]],
         fs,
         "w",
         "bold",
@@ -9639,7 +11371,8 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
         plotAxisTable,
         [["Observed"]],
         [0, 0.375, 0.125, 0.1875],
-        [["#71004b"]],
+        # [["#71004b"]],
+        [["#003478"]],
         fs,
         "w",
         "bold",
@@ -9649,7 +11382,8 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
         plotAxisTable,
         [["Min\n(m)", "Max\n(m)"]],
         [0.125, 0.5625, 0.25, 0.25],
-        [["#71004b", "#71004b"]],
+        # [["#71004b", "#71004b"]],
+        [["#003478", "#003478"]],
         fs,
         "w",
         "bold",
@@ -9658,7 +11392,8 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
         plotAxisTable,
         [["Depth"]],
         [0.125, 0.8125, 0.25, 0.1875],
-        [["#71004b"]],
+        # [["#71004b"]],
+        [["#003478"]],
         fs,
         "w",
         "bold",
@@ -9667,7 +11402,8 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
         plotAxisTable,
         [["Min\n(m3/s)", "Max\n(m3/s)", "Volume\n(m3)"]],
         [0.375, 0.5625, 0.375, 0.25],
-        [["#71004b", "#71004b", "#71004b"]],
+        # [["#71004b", "#71004b", "#71004b"]],
+        [["#003478", "#003478", "#003478"]],
         fs,
         "w",
         "bold",
@@ -9676,7 +11412,8 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
         plotAxisTable,
         [["Flow"]],
         [0.375, 0.8125, 0.375, 0.1875],
-        [["#71004b"]],
+        # [["#71004b"]],
+        [["#003478"]],
         fs,
         "w",
         "bold",
@@ -9685,7 +11422,8 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
         plotAxisTable,
         [["Min\n(m/s)", "Max\n(m/s)"]],
         [0.75, 0.5625, 0.25, 0.25],
-        [["#71004b", "#71004b"]],
+        # [["#71004b", "#71004b"]],
+        [["#003478", "#003478"]],
         fs,
         "w",
         "bold",
@@ -9694,7 +11432,8 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
         plotAxisTable,
         [["Velocity"]],
         [0.75, 0.8125, 0.25, 0.1875],
-        [["#71004b"]],
+        # [["#71004b"]],
+        [["#003478"]],
         fs,
         "w",
         "bold",
@@ -9777,7 +11516,8 @@ def createEventSuitabilityEventSummaryTablePlot(se: surveyEvent):
         ]
     )
 
-    hexRPS = "#71004b"
+    # hexRPS = "#71004b"
+    hexRPS = "#003478"
     myBbx1 = [0, 0, 1, 1]
     column_headers = table_data[0]
     col_colours = np.full(len(column_headers), hexRPS)
@@ -9818,7 +11558,8 @@ def createEventSuitabilityRaingaugeDetailsTablePlot(table_data):
 
     plotAxisTable = myFig.subplots()
 
-    hexRPS = "#71004b"
+    # hexRPS = "#71004b"
+    hexRPS = "#003478"
     myBbx1 = [0, 0, 1, 1]
     column_headers = table_data[0]
     col_colours = np.full(len(column_headers), hexRPS)
@@ -9961,7 +11702,8 @@ def createVerificationDetailUDGTablePlot(tr: icmTrace, aLoc: icmTraceLocation):
     ]
 
     cell_colours = [
-        ["#71004b", "#71004b"],
+        # ["#71004b", "#71004b"],
+        ["#003478", "#003478"],
         [
             "#ffffff",
             (
@@ -10023,7 +11765,8 @@ def createVerificationDetailUDGTablePlot(tr: icmTrace, aLoc: icmTraceLocation):
         ]
 
         cell_colours = [
-            ["#71004b", "#71004b", "#71004b"],
+            # ["#71004b", "#71004b", "#71004b"],
+            ["#003478", "#003478", "#003478"],
             ["#ffffff", "#ffffff", hexGreen if (aLoc.flowNSE > 0.5) else hexRed],
             [
                 "#ffffff",
@@ -10064,7 +11807,8 @@ def createVerificationDetailUDGTablePlot(tr: icmTrace, aLoc: icmTraceLocation):
         ]
 
         cell_colours = [
-            ["#71004b", "#71004b", "#71004b"],
+            # ["#71004b", "#71004b", "#71004b"],
+            ["#003478", "#003478", "#003478"],
             ["#ffffff", "#ffffff", hexGreen if (aLoc.flowNSE > 0.5) else hexRed],
             [
                 "#ffffff",
@@ -10128,7 +11872,8 @@ def createVerificationDetailUDGTablePlot(tr: icmTrace, aLoc: icmTraceLocation):
             ]
 
             cell_colours = [
-                ["#71004b", "#71004b", "#71004b"],
+                # ["#71004b", "#71004b", "#71004b"],
+                ["#003478", "#003478", "#003478"],
                 [
                     "#ffffff",
                     "#ffffff",
@@ -10157,7 +11902,8 @@ def createVerificationDetailUDGTablePlot(tr: icmTrace, aLoc: icmTraceLocation):
             ]
 
             cell_colours = [
-                ["#71004b", "#71004b", "#71004b"],
+                # ["#71004b", "#71004b", "#71004b"],
+                ["#003478", "#003478", "#003478"],
                 [
                     "#ffffff",
                     "#ffffff",
@@ -10191,7 +11937,8 @@ def createVerificationDetailUDGTablePlot(tr: icmTrace, aLoc: icmTraceLocation):
             ]
 
             cell_colours = [
-                ["#71004b", "#71004b", "#71004b"],
+                # ["#71004b", "#71004b", "#71004b"],
+                ["#003478", "#003478", "#003478"],
                 [
                     "#ffffff",
                     "#ffffff",
@@ -10225,7 +11972,8 @@ def createVerificationDetailUDGTablePlot(tr: icmTrace, aLoc: icmTraceLocation):
             ]
 
             cell_colours = [
-                ["#71004b", "#71004b", "#71004b"],
+                # ["#71004b", "#71004b", "#71004b"],
+                ["#003478", "#003478", "#003478"],
                 [
                     "#ffffff",
                     "#ffffff",
@@ -10324,7 +12072,8 @@ def create_fsm_data_classification_plot(table_data):
 
     plotAxisTable = myFig.subplots()
 
-    hexRPS = "#71004b"
+    # hexRPS = "#71004b"
+    hexRPS = "#003478"
     myBbx1 = [0, 0, 1, 1]
     column_headers = table_data[0]
     col_colours = np.full(len(column_headers), hexRPS)

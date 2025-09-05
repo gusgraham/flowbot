@@ -16,6 +16,8 @@ from flowbot_helper import (getNashSutcliffe, serialize_list, deserialize_list, 
                             deserialize_timestamp_list)
 from flowbot_database import Tables
 # from contextlib import closing
+from flowbot_logging import get_logger
+logger = get_logger('flowbot_logger')
 
 class icmTraceLocation(object):
 
@@ -811,12 +813,15 @@ class icmTraces():
                 #     tl.write_to_database(conn)
             conn.commit()
             result = True
+            logger.debug("icmTraces.write_to_database Completed")
 
         except sqlite3.Error as e:
-            print(f"Database error: {e}")
+            logger.error(f"icmTraces.write_to_database: Database error: {e}")
+            # print(f"Database error: {e}")
             conn.rollback()
         except Exception as e:
-            print(f"Exception in _query: {e}")
+            logger.error(f"icmTraces.write_to_database: Exception in _query: {e}")
+            # print(f"Exception in _query: {e}")
             conn.rollback()
         finally:
             return result

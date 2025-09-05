@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1034</width>
-    <height>850</height>
+    <width>1063</width>
+    <height>862</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -47,7 +47,7 @@
    <property name="acceptDrops">
     <bool>true</bool>
    </property>
-   <layout class="QHBoxLayout" name="horizontalLayout_3">
+   <layout class="QVBoxLayout" name="verticalLayout_28">
     <item>
      <widget class="QSplitter" name="splitterMainWindow">
       <property name="orientation">
@@ -83,8 +83,8 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>534</width>
-             <height>654</height>
+             <width>549</width>
+             <height>666</height>
             </rect>
            </property>
            <attribute name="label">
@@ -96,8 +96,8 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>534</width>
-             <height>654</height>
+             <width>549</width>
+             <height>666</height>
             </rect>
            </property>
            <attribute name="label">
@@ -299,8 +299,8 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>534</width>
-             <height>654</height>
+             <width>549</width>
+             <height>666</height>
             </rect>
            </property>
            <attribute name="label">
@@ -344,7 +344,7 @@
                 <property name="maximumSize">
                  <size>
                   <width>16777215</width>
-                  <height>350</height>
+                  <height>365</height>
                  </size>
                 </property>
                 <property name="styleSheet">
@@ -358,7 +358,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
+                   <width>537</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -530,7 +530,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
+                   <width>262</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -729,7 +729,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
+                   <width>262</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -961,7 +961,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
+                   <width>117</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -1189,7 +1189,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
+                   <width>262</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -1406,7 +1406,7 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>505</width>
+                   <width>272</width>
                    <height>170</height>
                   </rect>
                  </property>
@@ -1415,6 +1415,12 @@
                    <horstretch>0</horstretch>
                    <verstretch>0</verstretch>
                   </sizepolicy>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>170</height>
+                  </size>
                  </property>
                  <property name="maximumSize">
                   <size>
@@ -1426,6 +1432,18 @@
                   <string>DWF Analysis</string>
                  </attribute>
                  <layout class="QVBoxLayout" name="verticalLayout_2">
+                  <property name="leftMargin">
+                   <number>6</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>6</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
                   <item>
                    <widget class="QLabel" name="label_8">
                     <property name="sizePolicy">
@@ -1469,7 +1487,7 @@
                     <property name="minimumSize">
                      <size>
                       <width>250</width>
-                      <height>145</height>
+                      <height>80</height>
                      </size>
                     </property>
                     <property name="maximumSize">
@@ -1537,6 +1555,383 @@
                      </property>
                     </item>
                    </widget>
+                  </item>
+                  <item>
+                   <layout class="QHBoxLayout" name="horizontalLayout_17">
+                    <item>
+                     <widget class="QCheckBox" name="chk_DWF_Analysis_SG_Filter">
+                      <property name="text">
+                       <string>S-G Filter</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="lbl_DWF_Analysis_SG_Filter_Window">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="text">
+                       <string>Window:</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QSpinBox" name="spn_DWF_Analysis_SG_Filter_Window">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Fixed" vsizetype="Maximum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimum">
+                       <number>1</number>
+                      </property>
+                      <property name="maximum">
+                       <number>21</number>
+                      </property>
+                      <property name="singleStep">
+                       <number>2</number>
+                      </property>
+                      <property name="value">
+                       <number>11</number>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="lbl_DWF_Analysis_SG_Filter_PolyOrder">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="text">
+                       <string>Poly. Order:</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QSpinBox" name="spn_DWF_Analysis_SG_Filter_PolyOrder">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimum">
+                       <number>1</number>
+                      </property>
+                      <property name="maximum">
+                       <number>4</number>
+                      </property>
+                      <property name="value">
+                       <number>3</number>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <spacer name="horizontalSpacer_16">
+                      <property name="orientation">
+                       <enum>Qt::Horizontal</enum>
+                      </property>
+                      <property name="sizeHint" stdset="0">
+                       <size>
+                        <width>40</width>
+                        <height>20</height>
+                       </size>
+                      </property>
+                     </spacer>
+                    </item>
+                   </layout>
+                  </item>
+                 </layout>
+                </widget>
+                <widget class="QWidget" name="pageMergeData">
+                 <property name="geometry">
+                  <rect>
+                   <x>0</x>
+                   <y>0</y>
+                   <width>537</width>
+                   <height>170</height>
+                  </rect>
+                 </property>
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>170</height>
+                  </size>
+                 </property>
+                 <property name="maximumSize">
+                  <size>
+                   <width>16777215</width>
+                   <height>170</height>
+                  </size>
+                 </property>
+                 <attribute name="label">
+                  <string>Merge Data</string>
+                 </attribute>
+                 <layout class="QVBoxLayout" name="verticalLayout_29">
+                  <property name="leftMargin">
+                   <number>6</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>6</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                  <item>
+                   <widget class="QLabel" name="label_10">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                      <horstretch>0</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>0</width>
+                      <height>13</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16777215</width>
+                      <height>13</height>
+                     </size>
+                    </property>
+                    <property name="font">
+                     <font>
+                      <weight>75</weight>
+                      <bold>true</bold>
+                      <underline>true</underline>
+                     </font>
+                    </property>
+                    <property name="text">
+                     <string>Plotted Data:</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QTreeWidget" name="trw_Merge_Data">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                      <horstretch>0</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>250</width>
+                      <height>80</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16777215</width>
+                      <height>140</height>
+                     </size>
+                    </property>
+                    <property name="contextMenuPolicy">
+                     <enum>Qt::CustomContextMenu</enum>
+                    </property>
+                    <property name="acceptDrops">
+                     <bool>true</bool>
+                    </property>
+                    <property name="dragDropMode">
+                     <enum>QAbstractItemView::DropOnly</enum>
+                    </property>
+                    <property name="defaultDropAction">
+                     <enum>Qt::LinkAction</enum>
+                    </property>
+                    <property name="itemsExpandable">
+                     <bool>true</bool>
+                    </property>
+                    <column>
+                     <property name="text">
+                      <string>Plotted:</string>
+                     </property>
+                     <property name="font">
+                      <font>
+                       <weight>75</weight>
+                       <bold>true</bold>
+                      </font>
+                     </property>
+                    </column>
+                    <item>
+                     <property name="text">
+                      <string>Target Object</string>
+                     </property>
+                     <property name="font">
+                      <font>
+                       <family>MS Shell Dlg 2</family>
+                       <pointsize>8</pointsize>
+                       <weight>75</weight>
+                       <bold>true</bold>
+                      </font>
+                     </property>
+                     <property name="flags">
+                      <set>ItemIsDropEnabled|ItemIsEnabled</set>
+                     </property>
+                    </item>
+                    <item>
+                     <property name="text">
+                      <string>Donor Object</string>
+                     </property>
+                     <property name="font">
+                      <font>
+                       <family>MS Shell Dlg 2</family>
+                       <pointsize>8</pointsize>
+                       <weight>75</weight>
+                       <bold>true</bold>
+                      </font>
+                     </property>
+                     <property name="flags">
+                      <set>ItemIsDropEnabled|ItemIsEnabled</set>
+                     </property>
+                    </item>
+                   </widget>
+                  </item>
+                  <item>
+                   <layout class="QHBoxLayout" name="horizontalLayout_3">
+                    <item>
+                     <spacer name="horizontalSpacer_18">
+                      <property name="orientation">
+                       <enum>Qt::Horizontal</enum>
+                      </property>
+                      <property name="sizeHint" stdset="0">
+                       <size>
+                        <width>40</width>
+                        <height>20</height>
+                       </size>
+                      </property>
+                     </spacer>
+                    </item>
+                    <item>
+                     <widget class="QPushButton" name="btnDataMerge">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimumSize">
+                       <size>
+                        <width>90</width>
+                        <height>23</height>
+                       </size>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>90</width>
+                        <height>23</height>
+                       </size>
+                      </property>
+                      <property name="text">
+                       <string>Merge Data</string>
+                      </property>
+                      <property name="checkable">
+                       <bool>true</bool>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <spacer name="horizontalSpacer_19">
+                      <property name="orientation">
+                       <enum>Qt::Horizontal</enum>
+                      </property>
+                      <property name="sizeHint" stdset="0">
+                       <size>
+                        <width>40</width>
+                        <height>20</height>
+                       </size>
+                      </property>
+                     </spacer>
+                    </item>
+                   </layout>
+                  </item>
+                  <item>
+                   <layout class="QHBoxLayout" name="horizontalLayout_18">
+                    <item>
+                     <widget class="QCheckBox" name="chkFlowIntensity">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="text">
+                       <string>Flow</string>
+                      </property>
+                      <property name="checked">
+                       <bool>true</bool>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QCheckBox" name="chkDepth">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="text">
+                       <string>Depth</string>
+                      </property>
+                      <property name="checked">
+                       <bool>true</bool>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QCheckBox" name="chkVelocity">
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="text">
+                       <string>Velocity</string>
+                      </property>
+                      <property name="checked">
+                       <bool>true</bool>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <spacer name="horizontalSpacer_17">
+                      <property name="orientation">
+                       <enum>Qt::Horizontal</enum>
+                      </property>
+                      <property name="sizeHint" stdset="0">
+                       <size>
+                        <width>40</width>
+                        <height>20</height>
+                       </size>
+                      </property>
+                     </spacer>
+                    </item>
+                   </layout>
                   </item>
                  </layout>
                 </widget>
@@ -1963,7 +2358,7 @@
                       </item>
                       <item>
                        <property name="text">
-                        <string>DWF</string>
+                        <string>Dry Day</string>
                        </property>
                        <property name="font">
                         <font>
@@ -1975,6 +2370,19 @@
                        </property>
                        <property name="flags">
                         <set>ItemIsDropEnabled|ItemIsEnabled</set>
+                       </property>
+                      </item>
+                      <item>
+                       <property name="text">
+                        <string>Dry Period</string>
+                       </property>
+                       <property name="font">
+                        <font>
+                         <family>MS Shell Dlg 2</family>
+                         <pointsize>8</pointsize>
+                         <weight>75</weight>
+                         <bold>true</bold>
+                        </font>
                        </property>
                       </item>
                      </widget>
@@ -2080,8 +2488,8 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>534</width>
-             <height>654</height>
+             <width>549</width>
+             <height>666</height>
             </rect>
            </property>
            <attribute name="label">
@@ -2139,8 +2547,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>522</width>
-                   <height>295</height>
+                   <width>537</width>
+                   <height>301</height>
                   </rect>
                  </property>
                  <property name="sizePolicy">
@@ -2406,8 +2814,8 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>534</width>
-             <height>654</height>
+             <width>549</width>
+             <height>666</height>
             </rect>
            </property>
            <attribute name="label">
@@ -2690,7 +3098,7 @@
            <enum>QTabWidget::South</enum>
           </property>
           <property name="currentIndex">
-           <number>2</number>
+           <number>0</number>
           </property>
           <widget class="QWidget" name="tabGraphs">
            <attribute name="title">
@@ -2896,7 +3304,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1034</width>
+     <width>1063</width>
      <height>21</height>
     </rect>
    </property>
@@ -2907,12 +3315,21 @@
     <property name="title">
      <string>File</string>
     </property>
+    <widget class="QMenu" name="menuLogging">
+     <property name="title">
+      <string>Logging</string>
+     </property>
+     <addaction name="actionLoggingDebug"/>
+     <addaction name="actionLoggingAll"/>
+     <addaction name="actionLoggingNone"/>
+    </widget>
     <addaction name="actionNew_Project"/>
     <addaction name="actionLoad_Project"/>
     <addaction name="actionSave_Project"/>
     <addaction name="actionSave_Project_As"/>
     <addaction name="separator"/>
     <addaction name="actionHelp"/>
+    <addaction name="menuLogging"/>
     <addaction name="actionInfo"/>
     <addaction name="separator"/>
     <addaction name="actionClose"/>
@@ -3041,8 +3458,8 @@
       <addaction name="action_fsm_export_data_processed"/>
      </widget>
      <addaction name="menuImport"/>
-     <addaction name="menuExport"/>
      <addaction name="action_fsm_process_raw_data"/>
+     <addaction name="menuExport"/>
     </widget>
     <addaction name="menuJob"/>
     <addaction name="action_fsm_import_data_pmac"/>
@@ -3372,6 +3789,33 @@
   <action name="actionInterpolateData">
    <property name="text">
     <string>Interpolate Data</string>
+   </property>
+  </action>
+  <action name="actionLoggingNone">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>None</string>
+   </property>
+  </action>
+  <action name="actionLoggingDebug">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Debug</string>
+   </property>
+  </action>
+  <action name="actionLoggingAll">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>All</string>
    </property>
   </action>
  </widget>

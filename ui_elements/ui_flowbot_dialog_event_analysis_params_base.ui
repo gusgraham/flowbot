@@ -75,6 +75,9 @@
           </item>
           <item>
            <widget class="QLineEdit" name="edtConsecZeros">
+            <property name="toolTip">
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600; text-decoration: underline;&quot;&gt;Consecutive Zeros (Dry Gap)&lt;/span&gt;&lt;/p&gt;&lt;p&gt;Number of zero-rainfall timesteps required to close an event.&lt;/p&gt;&lt;p&gt;The actual dry period is this value × the timestep (e.g. 5 zeros × 2-min timestep = 10-min dry gap).&lt;/p&gt;&lt;p&gt;Larger values merge nearby showers into one event; smaller values split them apart.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            </property>
             <property name="text">
              <string>5</string>
             </property>
@@ -114,6 +117,9 @@
           </item>
           <item>
            <widget class="QLineEdit" name="edtReqDepth">
+            <property name="toolTip">
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600; text-decoration: underline;&quot;&gt;Required Depth&lt;/span&gt;&lt;/p&gt;&lt;p&gt;Minimum total rainfall depth (all rain during the event) needed for it to qualify as an event.&lt;/p&gt;&lt;p&gt;Even if the intensity conditions are met, events with less than this depth will not pass.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            </property>
             <property name="text">
              <string>5</string>
             </property>
@@ -153,6 +159,9 @@
           </item>
           <item>
            <widget class="QLineEdit" name="edtReqIntensity">
+            <property name="toolTip">
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600; text-decoration: underline;&quot;&gt;Required Intensity&lt;/span&gt;&lt;/p&gt;&lt;p&gt;This is the intensity threshold that must be exceeded for at least the &lt;span style=&quot; font-weight:600; font-style:italic;&quot;&gt;&amp;quot;Required Intensity Duration&amp;quot;&lt;/span&gt; for an event to qualify.&lt;/p&gt;&lt;p&gt;All rainfall contributes to event depth; this setting only verifies that the event includes a period of heavy rain.&lt;/p&gt;&lt;p&gt;If &lt;span style=&quot; font-weight:600; font-style:italic;&quot;&gt;&amp;quot;Consecutive Intensities&amp;quot;&lt;/span&gt; is checked, the duration above threshold must be continuous; if unchecked, it can be accumulated.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            </property>
             <property name="text">
              <string>6</string>
             </property>
@@ -192,6 +201,9 @@
           </item>
           <item>
            <widget class="QLineEdit" name="edtReqIntensityDuration">
+            <property name="toolTip">
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600; text-decoration: underline;&quot;&gt;Required Intensity Duration&lt;/span&gt;&lt;/p&gt;&lt;p&gt;Minimum time that rainfall must stay above the &lt;span style=&quot; font-weight:600; font-style:italic;&quot;&gt;&amp;quot;Required Intensity&amp;quot;&lt;/span&gt; for an event to qualify.&lt;/p&gt;&lt;p&gt;If &lt;span style=&quot; font-weight:600;&quot;&gt;&amp;quot;Consecutive Intensities&amp;quot;&lt;/span&gt; is checked, this period must be continuous; if unchecked, the duration can be built up from multiple shorter bursts.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            </property>
             <property name="text">
              <string>4</string>
             </property>
@@ -222,7 +234,7 @@
              </size>
             </property>
             <property name="text">
-             <string>Partial Event Threshold (%) &gt;= :</string>
+             <string>Partial Event Margin (%) &gt;= :</string>
             </property>
             <property name="alignment">
              <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -231,6 +243,9 @@
           </item>
           <item>
            <widget class="QLineEdit" name="edtPartialEventThreshold">
+            <property name="toolTip">
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600; text-decoration: underline;&quot;&gt;Partial Event Margin&lt;/span&gt;&lt;/p&gt;&lt;p&gt;Percentage margin for identifying &amp;quot;near-miss&amp;quot; events.&lt;/p&gt;&lt;p&gt;Applies to &lt;span style=&quot; font-weight:600; font-style:italic;&quot;&gt;&amp;quot;Required Depth&amp;quot;&lt;/span&gt;, &lt;span style=&quot; font-weight:600; font-style:italic;&quot;&gt;&amp;quot;Required Intensity&amp;quot;&lt;/span&gt;, and &lt;span style=&quot; font-weight:600;&quot;&gt;&amp;quot;Required Intensity Duration&amp;quot;&lt;/span&gt;.&lt;/p&gt;&lt;p&gt;With the default margin of 20%, an event reaching at least 80% of the required depth and lasting at least 80% of the required duration above 80% of the required intensity will be flagged as a partial event (instead of being discarded).&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            </property>
             <property name="text">
              <string>20</string>
             </property>
@@ -240,6 +255,9 @@
         </item>
         <item row="2" column="1">
          <widget class="QCheckBox" name="chkConsecIntensities">
+          <property name="toolTip">
+           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600; text-decoration: underline;&quot;&gt;Consecutive Intensities&lt;/span&gt;&lt;/p&gt;&lt;p&gt;When checked, the &lt;span style=&quot; font-weight:600; font-style:italic;&quot;&gt;&amp;quot;Required Intensity&amp;quot;&lt;/span&gt; must be exceeded continuously for the full &lt;span style=&quot; font-weight:600; font-style:italic;&quot;&gt;&amp;quot;Required Intensity Duration&amp;quot;&lt;/span&gt;.&lt;/p&gt;&lt;p&gt;When unchecked, the duration can be built up from multiple shorter bursts above the threshold.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          </property>
           <property name="layoutDirection">
            <enum>Qt::RightToLeft</enum>
           </property>
@@ -294,6 +312,9 @@
         </item>
         <item>
          <widget class="QLineEdit" name="edtRainfallDepthTolerance">
+          <property name="toolTip">
+           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600; text-decoration: underline;&quot;&gt;Rainfall Depth Tolerance&lt;/span&gt;&lt;/p&gt;&lt;p&gt;Maximum daily rainfall (mm) that still counts as a &amp;quot;zero-rainfall day&amp;quot;.&lt;/p&gt;&lt;p&gt;For example, with a tolerance of 0.2 mm, any day with ≤ 0.2 mm rainfall is treated as a &amp;quot;zero-rainfall day&amp;quot;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          </property>
           <property name="text">
            <string>0</string>
           </property>
@@ -333,6 +354,9 @@
         </item>
         <item>
          <widget class="QLineEdit" name="edtPrecedingDryDays">
+          <property name="toolTip">
+           <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600; text-decoration: underline;&quot;&gt;Preceding Dry Days&lt;/span&gt;&lt;/p&gt;&lt;p&gt;Number of consecutive &amp;quot;zero-rainfall days&amp;quot; (days with rainfall ≤ &lt;span style=&quot; font-weight:600; font-style:italic;&quot;&gt;&amp;quot;Rainfall Depth Tolerance&amp;quot;&lt;/span&gt;) required before a it can qualify as a &amp;quot;dry day&amp;quot;.&lt;/p&gt;&lt;p&gt;For example, if set to the default of 4, only the &amp;quot;zero-rainfall days&amp;quot; following at least 4 consecutive &amp;quot;zero-rainfall days&amp;quot; will be considered &amp;quot;dry days&amp;quot;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          </property>
           <property name="text">
            <string>4</string>
           </property>

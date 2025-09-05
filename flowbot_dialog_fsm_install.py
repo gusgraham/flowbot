@@ -194,7 +194,7 @@ class flowbot_dialog_fsm_install(QtWidgets.QDialog, Ui_Dialog):
 
     def add_fsm_site(self) -> bool:
 
-        dlg_add_site = flowbot_dialog_fsm_add_site(self)
+        dlg_add_site = flowbot_dialog_fsm_add_site(parent=self)
         dlg_add_site.setWindowTitle('Add Site')
         if self.a_mon is not None:
             dlg_add_site.cboSiteType.setCurrentText(self.a_mon.monitor_type)
@@ -232,7 +232,7 @@ class flowbot_dialog_fsm_install(QtWidgets.QDialog, Ui_Dialog):
 
     def add_fsm_monitor(self) -> bool:
 
-        dlg_add_monitor = flowbot_dialog_fsm_add_monitor(self)
+        dlg_add_monitor = flowbot_dialog_fsm_add_monitor(editing=False, parent=self)
         dlg_add_monitor.setWindowTitle('Add Monitor')
         if self.a_site is not None:
             # dlg_add_monitor.cbo_monitor_type.setCurrentText(
@@ -319,7 +319,7 @@ class flowbot_dialog_fsm_install(QtWidgets.QDialog, Ui_Dialog):
 
     def create_new_site(self):
 
-        dlg_add_site = flowbot_dialog_fsm_add_site(self)
+        dlg_add_site = flowbot_dialog_fsm_add_site(parent=self)
         dlg_add_site.setWindowTitle('Add Site')
         if self.a_mon is not None:
             dlg_add_site.cboSiteType.setCurrentText(self.a_mon.monitor_type)
@@ -348,7 +348,7 @@ class flowbot_dialog_fsm_install(QtWidgets.QDialog, Ui_Dialog):
 
     def create_new_monitor(self):
 
-        dlg_add_monitor = flowbot_dialog_fsm_add_monitor(self)
+        dlg_add_monitor = flowbot_dialog_fsm_add_monitor(parent=self)
         dlg_add_monitor.setWindowTitle('Add Monitor')
         if self.a_site is not None:
             dlg_add_monitor.cbo_monitor_type.setCurrentText(

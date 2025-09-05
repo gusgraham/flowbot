@@ -111,12 +111,17 @@
           </property>
           <item>
            <property name="text">
-            <string>DWF</string>
+            <string>Storm</string>
            </property>
           </item>
           <item>
            <property name="text">
-            <string>Storm</string>
+            <string>Dry Day</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Dry Period</string>
            </property>
           </item>
          </widget>

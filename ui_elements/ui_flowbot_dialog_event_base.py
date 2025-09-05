@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'c:\Users\Fergus.Graham\OneDrive - Tetra Tech, Inc\vscode\Tt_Flowbot\FlowBot\ui_flowbot_dialog_event_base.ui'
+# Form implementation generated from reading ui file 'd:\vscode\_qgis_bundled_apps\flowbot_v4_qgis\ui_elements\ui_flowbot_dialog_event_base.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.9
 #
@@ -63,6 +63,7 @@ class Ui_Dialog(object):
         self.cboEventType.setObjectName("cboEventType")
         self.cboEventType.addItem("")
         self.cboEventType.addItem("")
+        self.cboEventType.addItem("")
         self.horizontalLayout_2.addWidget(self.cboEventType)
         self.verticalLayout.addLayout(self.horizontalLayout_2)
         self.horizontalLayout_3 = QtWidgets.QHBoxLayout()
@@ -123,8 +124,9 @@ class Ui_Dialog(object):
         self.grpBoxEventData.setTitle(_translate("Dialog", "Event Details:"))
         self.label.setText(_translate("Dialog", "Event ID: "))
         self.label_2.setText(_translate("Dialog", "Event Type: "))
-        self.cboEventType.setItemText(0, _translate("Dialog", "DWF"))
-        self.cboEventType.setItemText(1, _translate("Dialog", "Storm"))
+        self.cboEventType.setItemText(0, _translate("Dialog", "Storm"))
+        self.cboEventType.setItemText(1, _translate("Dialog", "Dry Day"))
+        self.cboEventType.setItemText(2, _translate("Dialog", "Dry Period"))
         self.label_3.setText(_translate("Dialog", "Event Start: "))
         self.label_4.setText(_translate("Dialog", "Event End: "))
         self.btnOK.setText(_translate("Dialog", "OK"))
