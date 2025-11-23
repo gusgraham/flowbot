@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api import projects, installs, dashboard, qa, analysis, verification
+from api import projects, installs, dashboard, qa, analysis, verification, wq
 
 app = FastAPI(title="FlowBot Hub")
 
@@ -9,6 +9,7 @@ app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
 app.include_router(qa.router, prefix="/api", tags=["qa"])
 app.include_router(analysis.router, prefix="/api", tags=["analysis"])
 app.include_router(verification.router, prefix="/api", tags=["verification"])
+app.include_router(wq.router, prefix="/api", tags=["wq"])
 
 @app.get("/")
 def read_root():
