@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt
 from passlib.context import CryptContext
-from ..domain.auth import User
+from domain.auth import User
 
 # Configuration (should be in env vars later)
 SECRET_KEY = "CHANGE_THIS_TO_A_SECURE_SECRET_KEY"

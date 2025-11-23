@@ -1,11 +1,11 @@
-from sqlmodel import SQLModel, create_engine, Session
-from .domain import project, monitor
+from sqlmodel import create_engine, SQLModel, Session
+from domain import project, monitor, events, auth, visit, qa
 
-sqlite_file_name = "flowbot.db"
-sqlite_url = f"sqlite:///{sqlite_file_name}"
+# SQLite database URL
+DATABASE_URL = "sqlite:///./flowbot.db"
 
-connect_args = {"check_same_thread": False}
-engine = create_engine(sqlite_url, echo=True, connect_args=connect_args)
+# Create engine
+engine = create_engine(DATABASE_URL, echo=True, connect_args={"check_same_thread": False})
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)

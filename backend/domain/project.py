@@ -1,8 +1,9 @@
 from typing import Optional, List
 from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship
-
 # Forward references
+if False:
+    from .visit import Visit
 class Monitor(SQLModel, table=False):
     pass
 
@@ -69,3 +70,26 @@ class Install(InstallBase, table=True):
     project: Optional[Project] = Relationship(back_populates="installs")
     site: Optional[Site] = Relationship(back_populates="installs")
     monitor: Optional["Monitor"] = Relationship(back_populates="installs")
+    visits: List["Visit"] = Relationship(back_populates="install")
+
+# DTOs / Schemas
+class ProjectCreate(ProjectBase):
+    pass
+
+class ProjectRead(ProjectBase):
+    id: int
+
+class SiteCreate(SiteBase):
+    project_id: Optional[int] = None
+
+class SiteRead(SiteBase):
+    id: int
+
+class InstallCreate(InstallBase):
+    project_id: int
+    site_id: int
+    monitor_id: int
+
+class InstallRead(InstallBase):
+    id: int
+

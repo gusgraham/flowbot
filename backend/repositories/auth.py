@@ -1,7 +1,7 @@
 from typing import Optional
 from sqlmodel import Session, select
-from ..domain.auth import User
-from .base import BaseRepository
+from domain.auth import User
+from repositories.base import BaseRepository
 
 class UserRepository(BaseRepository[User]):
     def __init__(self, session: Session):

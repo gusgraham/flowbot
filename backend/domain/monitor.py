@@ -14,3 +14,10 @@ class Monitor(MonitorBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     
     installs: List["Install"] = Relationship(back_populates="monitor")
+
+class MonitorCreate(MonitorBase):
+    pass
+
+class MonitorRead(MonitorBase):
+    id: int
+
