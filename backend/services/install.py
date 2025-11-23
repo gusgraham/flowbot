@@ -30,6 +30,6 @@ class InstallService:
         # For simplicity, we'll instantiate it
         from services.timeseries import TimeSeriesService
         ts_service = TimeSeriesService(self.session)
-        ts_service.process_upload(install_id, file_path, filename)
+        ts_service.process_upload(file_path=file_path, original_filename=filename, install_id=install_id)
         
         return file_path

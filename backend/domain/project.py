@@ -71,6 +71,7 @@ class Install(InstallBase, table=True):
     site: Optional[Site] = Relationship(back_populates="installs")
     monitor: Optional["Monitor"] = Relationship(back_populates="installs")
     visits: List["Visit"] = Relationship(back_populates="install")
+    timeseries: List["TimeSeries"] = Relationship(back_populates="install")
 
 # DTOs / Schemas
 class ProjectCreate(ProjectBase):

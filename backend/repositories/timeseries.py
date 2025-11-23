@@ -10,3 +10,7 @@ class TimeSeriesRepository(BaseRepository[TimeSeries]):
     def list_by_install(self, install_id: int) -> List[TimeSeries]:
         statement = select(TimeSeries).where(TimeSeries.install_id == install_id)
         return self.session.exec(statement).all()
+
+    def list_by_monitor(self, monitor_id: int) -> List[TimeSeries]:
+        statement = select(TimeSeries).where(TimeSeries.monitor_id == monitor_id)
+        return self.session.exec(statement).all()

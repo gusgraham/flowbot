@@ -13,11 +13,14 @@ class TimeSeriesService:
         self.repo = TimeSeriesRepository(session)
         self.storage = StorageService()
 
-    def process_upload(self, install_id: int, file_path: str, original_filename: str) -> List[TimeSeries]:
+    def process_upload(self, file_path: str, original_filename: str, install_id: Optional[int] = None, monitor_id: Optional[int] = None, data_type: str = "Raw") -> List[TimeSeries]:
         """
         Parses a CSV file, converts to Parquet, and creates TimeSeries records.
         Assumes CSV format: Date, Flow, Depth, Velocity
         """
+        if not install_id and not monitor_id:
+            raise ValueError("Must provide either install_id or monitor_id")
+
         # 1. Read CSV
         # In a real app, we'd need robust CSV parsing (skip rows, flexible columns)
         # For now, we assume a clean standard format
@@ -43,6 +46,9 @@ class TimeSeriesService:
             
             created_records = []
             
+            # Subfolder for storage
+            subfolder_id = f"installs/{install_id}" if install_id else f"monitors/{monitor_id}"
+            
             # 2. Process each variable (Flow, Depth, Velocity)
             for col in ['Flow', 'Depth', 'Velocity']:
                 if col in df.columns:
@@ -62,14 +68,15 @@ class TimeSeriesService:
                     saved_path = self.storage.save_file(
                         buf.getvalue(), 
                         parquet_filename, 
-                        subfolder=f"timeseries/{install_id}"
+                        subfolder=f"timeseries/{subfolder_id}"
                     )
                     
                     # 3. Create TimeSeries record
                     ts = TimeSeries(
                         install_id=install_id,
+                        monitor_id=monitor_id,
                         variable=col,
-                        data_type="Raw",
+                        data_type=data_type,
                         start_time=start_time,
                         end_time=end_time,
                         interval_minutes=interval,
@@ -85,3 +92,6 @@ class TimeSeriesService:
 
     def list_by_install(self, install_id: int) -> List[TimeSeries]:
         return self.repo.list_by_install(install_id)
+
+    def list_by_monitor(self, monitor_id: int) -> List[TimeSeries]:
+        return self.repo.list_by_monitor(monitor_id)
