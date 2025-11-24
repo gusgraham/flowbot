@@ -336,6 +336,21 @@ export const useDeleteAnalysisDataset = () => {
     });
 };
 
+export const useUpdateAnalysisDataset = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ datasetId, updates }: { datasetId: number; updates: Record<string, any> }) => {
+            const { data } = await api.patch(`/analysis/datasets/${datasetId}`, updates);
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['analysis_datasets'] });
+            queryClient.invalidateQueries({ queryKey: ['fdv_scatter', data.id] });
+        },
+    });
+};
+
+
 // Analysis - Rainfall Events
 export const useRainfallEvents = (datasetId: number) => {
     return useQuery({
@@ -349,12 +364,26 @@ export const useRainfallEvents = (datasetId: number) => {
 };
 
 // Analysis - Scatter Data
-export const useScatterData = (datasetId: number) => {
+export const useFDVScatter = (
+    datasetId: number,
+    plotMode: string = "velocity",
+    isoMin?: number,
+    isoMax?: number,
+    isoCount: number = 2
+) => {
     return useQuery({
-        queryKey: ['scatter', datasetId],
+        queryKey: ['fdv_scatter', datasetId, plotMode, isoMin, isoMax, isoCount],
         queryFn: async () => {
-            const { data } = await api.get<any>(`/analysis/scatter/${datasetId}`);
-            return data.points;
+            const params = new URLSearchParams({
+                plot_mode: plotMode,
+                iso_count: isoCount.toString()
+            });
+
+            if (isoMin !== undefined) params.append('iso_min', isoMin.toString());
+            if (isoMax !== undefined) params.append('iso_max', isoMax.toString());
+
+            const { data } = await api.get<any>(`/analysis/fdv/${datasetId}/scatter?${params}`);
+            return data;
         },
         enabled: !!datasetId,
     });

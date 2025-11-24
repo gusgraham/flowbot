@@ -137,6 +137,361 @@ class FDVService:
         except:
             return []
 
+    def get_scatter_graph_data(
+        self, 
+        dataset_id: int, 
+        plot_mode: str = "velocity",
+        iso_min: float = None,
+        iso_max: float = None,
+        iso_count: int = 2
+    ) -> Dict[str, Any]:
+        dataset = self.get_dataset(dataset_id)
+        if not dataset:
+            return {}
+
+        try:
+            data = import_fdv_file(dataset.file_path)
+            
+            # Extract pipe parameters from dataset metadata, falling back to data file or defaults
+            import json
+            try:
+                metadata = json.loads(dataset.metadata_json)
+            except:
+                metadata = {}
+            
+            # Default params if not found
+            pipe_params = {
+                "diameter": metadata.get("pipe_diameter") or data.get("pipe_diameter", 300), # mm
+                "shape": metadata.get("pipe_shape") or data.get("pipe_shape", "CIRC"),
+                "roughness": metadata.get("roughness") or data.get("roughness", 1.5), # mm
+                "gradient": metadata.get("gradient") or data.get("gradient", 0.01), # m/m
+                "length": metadata.get("pipe_length") or data.get("length", 100), # m
+                "us_invert": metadata.get("us_invert") or data.get("us_invert", 0),
+                "ds_invert": metadata.get("ds_invert") or data.get("ds_invert", 0),
+                "height": metadata.get("pipe_height") or data.get("pipe_height", 300), # mm
+                "width": metadata.get("pipe_width") or data.get("pipe_width", 300) # mm
+            }
+            
+            # Calculate gradient if inverts are available
+            if pipe_params["us_invert"] > 0 and pipe_params["ds_invert"] > 0 and pipe_params["length"] > 0:
+                pipe_params["gradient"] = max((pipe_params["us_invert"] - pipe_params["ds_invert"]) / pipe_params["length"], 0.00001)
+
+            # 1. Scatter Data
+            df = pd.DataFrame(data['data'])
+            
+            # Downsample if too many points
+            target_points = 3000
+            if len(df) > target_points:
+                scatter_data = self._downsample_scatter_data(df, target_points)
+            else:
+                scatter_data = df[['depth', 'velocity', 'flow']].to_dict('records')
+
+            # 2. Colebrook-White Curve
+            cbw_curve = self._calculate_cbw_curve(pipe_params)
+
+            # 3. Iso-curves based on plot mode
+            if plot_mode == "velocity":
+                # Depth vs Velocity: Iso-Q curves (constant flow)
+                iso_curves = self._calculate_iso_q_curves(pipe_params, iso_min, iso_max, iso_count, df)
+                iso_type = "flow"
+            else:
+                # Depth vs Flow: Iso-V curves (constant velocity)
+                iso_curves = self._calculate_iso_v_curves(pipe_params, iso_min, iso_max, iso_count, df)
+                iso_type = "velocity"
+
+            return {
+                "scatter_data": scatter_data,
+                "cbw_curve": cbw_curve,
+                "iso_curves": iso_curves,
+                "iso_type": iso_type,
+                "pipe_params": pipe_params,
+                "plot_mode": plot_mode
+            }
+        except Exception as e:
+            print(f"Error generating scatter graph data: {e}")
+            return {}
+
+    def _downsample_scatter_data(self, df: pd.DataFrame, target_points: int) -> List[Dict[str, Any]]:
+        """
+        Downsample scatter data using a grid-based approach to preserve the visual envelope.
+        """
+        try:
+            # Calculate grid size based on target points (approx sqrt)
+            # We want roughly target_points bins. 
+            # Aspect ratio of V vs D is roughly 2:1 or 3:2 usually, but let's assume square grid for simplicity
+            # or fixed grid size.
+            
+            # Let's try a fixed grid size that yields approx target_points
+            # If we have 100k points, we want to reduce to 3k.
+            
+            # Determine bounds
+            v_min, v_max = df['velocity'].min(), df['velocity'].max()
+            d_min, d_max = df['depth'].min(), df['depth'].max()
+            
+            if v_min == v_max or d_min == d_max:
+                return df[['depth', 'velocity', 'flow']].head(target_points).to_dict('records')
+
+            # Create bins
+            # We want approx target_points filled bins.
+            # Let's try a 60x50 grid (3000 cells)
+            v_bins = 60
+            d_bins = 50
+            
+            df['v_bin'] = pd.cut(df['velocity'], bins=v_bins, labels=False)
+            df['d_bin'] = pd.cut(df['depth'], bins=d_bins, labels=False)
+            
+            # Group by bins and keep the point with max flow (or just first, or max depth?)
+            # Keeping max flow might be interesting, or maybe just random/first to show density.
+            # Actually, to show the "envelope", we want points on the edges.
+            # A simple way is to take the max flow in each bin, which usually correlates with max velocity/depth in that bin.
+            # Or we can take the first point.
+            # Let's take the point with the maximum Flow in each bin to prioritize high-flow events?
+            # Or maybe just the first one is faster and sufficient for "density".
+            # Let's try max flow.
+            
+            downsampled = df.loc[df.groupby(['v_bin', 'd_bin'])['flow'].idxmax()].dropna()
+            
+            return downsampled[['depth', 'velocity', 'flow']].to_dict('records')
+            
+        except Exception as e:
+            print(f"Downsampling error: {e}")
+            return df[['depth', 'velocity', 'flow']].head(target_points).to_dict('records')
+
+    def _calculate_cbw_curve(self, params: Dict[str, Any]) -> List[Dict[str, float]]:
+        import math
+        
+        diameter_mm = params["diameter"]
+        roughness_mm = params["roughness"]
+        gradient = params["gradient"]
+        
+        if diameter_mm <= 0 or gradient <= 0:
+            return []
+
+        diameter_m = diameter_mm / 1000.0
+        roughness_m = roughness_mm / 1000.0
+        g = 9.807
+        nu = 1.004e-6  # Kinematic viscosity m^2/s
+
+        depth_proportions = [
+            0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 
+            0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 
+            0.75, 0.8, 0.85, 0.9, 0.95, 0.96, 0.97, 0.98, 0.99, 1.0
+        ]
+
+        curve = [{"depth": 0, "velocity": 0, "flow": 0}]  # Start at zero
+        
+        for ratio in depth_proportions:
+            depth_m = diameter_m * ratio
+            
+            # Calculate theta (angle subtended by water surface)
+            try:
+                theta = 2 * math.acos(1 - 2 * ratio)
+            except ValueError:
+                curve.append({"depth": depth_m * 1000, "velocity": 0, "flow": 0})
+                continue
+
+            # Flow Area and Wetted Perimeter  
+            # For circular segment: A = (D²/8) * (θ - sin(θ))
+            area = (diameter_m**2 / 8) * (theta - math.sin(theta))
+            # For circular segment: P = D * θ / 2
+            perimeter = diameter_m * theta / 2
+
+            if area <= 0 or perimeter <= 0:
+                curve.append({"depth": depth_m * 1000, "velocity": 0, "flow": 0})
+                continue
+
+            # Hydraulic Radius and Hydraulic Diameter
+            R = area / perimeter
+            Dh = 4.0 * R
+
+            # Iterative friction factor calculation
+            tol = 1e-6
+            max_iters = 50
+            omega = 0.5  # Under-relaxation factor
+            f = 0.02  # Initial guess
+
+            for _ in range(max_iters):
+                # Calculate velocity with current friction factor
+                V = math.sqrt(8.0 * g * R * gradient / f) if f > 0 else 0.0
+                
+                # Reynolds number
+                Re = (V * Dh) / nu
+                
+                # New friction factor
+                if Re < 2300:  # Laminar
+                    f_new = 64.0 / max(Re, 1e-12)
+                else:  # Turbulent - Swamee-Jain
+                    term = (roughness_m / (3.7 * Dh)) + (5.74 / (Re ** 0.9))
+                    f_new = 0.25 / (math.log10(term)) ** 2
+                
+                # Under-relaxation
+                f_u = (1 - omega) * f + omega * f_new
+                
+                # Check convergence
+                if abs(f_u - f) / max(f, 1e-12) < tol:
+                    f = f_u
+                    break
+                f = f_u
+
+            # Final velocity and flow with converged friction factor
+            V = math.sqrt(8.0 * g * R * gradient / f) if f > 0 else 0.0
+            Q = area * V
+
+            curve.append({
+                "depth": depth_m * 1000,  # mm
+                "velocity": V,  # m/s
+                "flow": Q * 1000  # L/s
+            })
+            
+        return curve
+
+
+    def _calculate_iso_q_curves(
+        self, 
+        params: Dict[str, Any],
+        iso_min: float = None,
+        iso_max: float = None,
+        iso_count: int = 2,
+        df: pd.DataFrame = None
+    ) -> List[Dict[str, Any]]:
+        # Generate curves for constant Flow (Q)
+        import math
+        diameter_mm = params["diameter"]
+        if diameter_mm <= 0:
+            return []
+            
+        diameter_m = diameter_mm / 1000.0
+        
+        # Determine Q values based on data if not provided
+        if iso_min is None or iso_max is None:
+            if df is not None and 'flow' in df.columns:
+                flow_data = df[df['flow'] > 0]['flow']
+                if not flow_data.empty:
+                    if iso_min is None:
+                        iso_min = float(flow_data.min())
+                    if iso_max is None:
+                        iso_max = float(flow_data.max())
+        
+        # Defaults if still None
+        if iso_min is None:
+            iso_min = 10
+        if iso_max is None:
+            iso_max = 100
+            
+        # Generate Q values
+        if iso_count <= 1:
+            q_values = [iso_max]
+        else:
+            q_values = [iso_min + (iso_max - iso_min) * i / (iso_count - 1) for i in range(iso_count)]
+        
+        curves = []
+        depth_proportions = [
+            0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 
+            0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0
+        ]
+        
+        for q_val in q_values:
+            points = []
+            q_m3s = q_val / 1000.0
+            
+            for ratio in depth_proportions:
+                try:
+                    theta = 2 * math.acos(1 - 2 * ratio)
+                    area = (diameter_m**2 / 8) * (theta - math.sin(theta))
+                    
+                    if area > 0:
+                        velocity = q_m3s / area
+                        points.append({
+                            "depth": ratio * diameter_mm,
+                            "velocity": velocity,
+                            "flow": q_val
+                        })
+                except:
+                    continue
+            
+            if points:
+                curves.append({
+                    "value": q_val,
+                    "points": points
+                })
+                
+        return curves
+    
+    def _calculate_iso_v_curves(
+        self,
+        params: Dict[str, Any],
+        iso_min: float = None,
+        iso_max: float = None,
+        iso_count: int = 2,
+        df: pd.DataFrame = None
+    ) -> List[Dict[str, Any]]:
+        # Generate curves for constant Velocity (V)
+        # For Depth vs Flow plot, we show constant velocity lines
+        import math
+        diameter_mm = params["diameter"]
+        if diameter_mm <= 0:
+            return []
+            
+        diameter_m = diameter_mm / 1000.0
+        
+        # Determine V values based on data if not provided
+        if iso_min is None or iso_max is None:
+            if df is not None and 'velocity' in df.columns:
+                velocity_data = df[df['velocity'] > 0]['velocity']
+                if not velocity_data.empty:
+                    if iso_min is None:
+                        iso_min = float(velocity_data.min())
+                    if iso_max is None:
+                        iso_max = float(velocity_data.max())
+        
+        # Defaults if still None
+        if iso_min is None:
+            iso_min = 0.1
+        if iso_max is None:
+            iso_max = 1.0
+            
+        # Generate V values
+        if iso_count <= 1:
+            v_values = [iso_max]
+        else:
+            v_values = [iso_min + (iso_max - iso_min) * i / (iso_count - 1) for i in range(iso_count)]
+        
+        curves = []
+        depth_proportions = [
+            0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 
+            0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0
+        ]
+        
+        for v_val in v_values:
+            points = []
+            
+            for ratio in depth_proportions:
+                try:
+                    theta = 2 * math.acos(1 - 2 * ratio)
+                    area = (diameter_m**2 / 8) * (theta - math.sin(theta))
+                    
+                    if area > 0:
+                        # Q = A * V
+                        flow_m3s = area * v_val
+                        flow_ls = flow_m3s * 1000
+                        
+                        points.append({
+                            "depth": ratio * diameter_mm,
+                            "flow": flow_ls,
+                            "velocity": v_val
+                        })
+                except:
+                    continue
+            
+            if points:
+                curves.append({
+                    "value": v_val,
+                    "points": points
+                })
+                
+        return curves
+
+
 class SpatialService:
     def __init__(self, session: Session):
         self.session = session

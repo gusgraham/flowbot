@@ -1290,32 +1290,6 @@ class scatterGraphConfig:
 
 class graphScatter:
 
-    # depthProportion = [
-    #     0.01,
-    #     0.02,
-    #     0.03,
-    #     0.04,
-    #     0.05,
-    #     0.1,
-    #     0.15,
-    #     0.2,
-    #     0.25,
-    #     0.3,
-    #     0.35,
-    #     0.4,
-    #     0.45,
-    #     0.5,
-    #     0.55,
-    #     0.6,
-    #     0.65,
-    #     0.7,
-    #     0.75,
-    #     0.8,
-    #     0.85,
-    #     0.9,
-    #     0.95,
-    #     1,
-    # ]
     xBufferFactor: float = 1.25
     yBufferFactor: float = 1.5
     pipeExag: float = 0.1
@@ -1329,25 +1303,10 @@ class graphScatter:
         getBlankFigure(self.main_window_plot_widget)
         self.isBlank: bool = True
 
-        # self.__plotFM: flowMonitor = None
-        # self.plotAxisScatter: axes.Axes = None
-        # self.plot_axis_cbw: axes.Axes = None
-        # self.plotAxisIsoQ: axes.Axes = None
-        # self.plot_axis_pipe_profile: axes.Axes = None
-        # self.plottedEvents: plottedSurveyEvents = None
         self.CBW_depth: list[float] = []
         self.CBW_flow: list[float] = []
         self.CBW_velocity: list[float] = []
-        # self.pipeProfileX: list[float] = []
-        # self.pipeProfileY: list[float] = []
-        # self.pipeProfileDepthProp: list[float] = []
-        # self.xAxisMin: float = 0
-        # self.xAxisMax: float = 0
-        # self.yAxisMin: float = 0
-        # self.yAxisMax: float = 0
-        # self.plotXMin: float = 0
-        # self.plotXMax: float = 0
-        # self.pipeInStation: float = 0
+
         self.pipeOutStation: float = 0
         self.axisRatio: float = 1
 
@@ -1404,20 +1363,6 @@ class graphScatter:
         self.noOfIsoQLines: float = 2
         self.isoQLBound: float = 1
         self.isoQUBound: float = 10
-
-        # self.plot_options = {
-        #     "plot_fp_data": True,
-        #     "ignore_data_above_soffit": False,
-        #     "ignore_zeros": False,
-        #     "label_on_hover": False,
-        #     "plot_model_data": False,
-        #     "show_pipe_profile": True,
-        #     "plot_cbw_line": True,
-        #     "plot_iso_q_lines": True,
-        #     "iso_q_lines_count": 2,
-        #     "iso_q_lower_bound": 1,
-        #     "iso_q_upper_bound": 10
-        # }
 
     @property
     def plot_flow_monitor(self) -> flowMonitor:
@@ -1687,33 +1632,6 @@ class graphScatter:
             pipeInStation = self.axis_limits['x_min']
             self.pipeOutStation = self.axis_limits['x_max']
 
-            # self.pipeProfileDepthProp = [
-            #     0,
-            #     1 / 24,
-            #     2 / 24,
-            #     3 / 24,
-            #     4 / 24,
-            #     5 / 24,
-            #     6 / 24,
-            #     7 / 24,
-            #     8 / 24,
-            #     9 / 24,
-            #     10 / 24,
-            #     11 / 24,
-            #     12 / 24,
-            #     13 / 24,
-            #     14 / 24,
-            #     15 / 24,
-            #     16 / 24,
-            #     17 / 24,
-            #     18 / 24,
-            #     19 / 24,
-            #     20 / 24,
-            #     21 / 24,
-            #     22 / 24,
-            #     23 / 24,
-            #     24 / 24,
-            # ]
             pipeProfileX = []
             pipeProfileY = []
 

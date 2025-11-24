@@ -161,6 +161,33 @@ def delete_analysis_dataset(
     
     return {"message": "Dataset deleted successfully", "dataset_id": dataset_id}
 
+@router.patch("/analysis/datasets/{dataset_id}", response_model=AnalysisDatasetRead)
+def update_analysis_dataset(
+    dataset_id: int,
+    updates: Dict[str, Any],
+    session: Session = Depends(get_session)
+):
+    """Update dataset metadata (e.g., pipe parameters)"""
+    dataset = session.get(AnalysisDataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    # Merge updates into existing metadata
+    try:
+        existing_metadata = json.loads(dataset.metadata_json)
+    except:
+        existing_metadata = {}
+    
+    existing_metadata.update(updates)
+    dataset.metadata_json = json.dumps(existing_metadata)
+    
+    session.add(dataset)
+    session.commit()
+    session.refresh(dataset)
+    
+    return dataset
+
+
 def get_rainfall_service(session: Session = Depends(get_session)) -> RainfallService:
     return RainfallService(session)
 
@@ -237,6 +264,18 @@ def get_fdv_timeseries(
             "velocity": point.get('velocity', 0)
         })
     return {"dataset_id": dataset_id, "data": timeseries, "count": len(timeseries)}
+
+@router.get("/analysis/fdv/{dataset_id}/scatter")
+def get_fdv_scatter(
+    dataset_id: int,
+    plot_mode: str = Query("velocity"),
+    iso_min: Optional[float] = Query(None),
+    iso_max: Optional[float] = Query(None),
+    iso_count: int = Query(2),
+    service: Any = Depends(get_fdv_service)
+) -> Dict[str, Any]:
+    """Get scatter graph data including CBW and iso curves"""
+    return service.get_scatter_graph_data(dataset_id, plot_mode, iso_min, iso_max, iso_count)
 
 def get_spatial_service(session: Session = Depends(get_session)) -> Any:
     from services.analysis import SpatialService

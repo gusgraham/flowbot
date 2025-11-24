@@ -5,6 +5,8 @@ import { ArrowLeft, CloudRain, Activity, Droplets, Loader2, Upload, FileText, Tr
 import { cn } from '../../lib/utils';
 import UploadDatasetModal from './UploadDatasetModal';
 import FDVChart from './FDVChart';
+import DataEditor from './DataEditor';
+import ScatterChart from './ScatterChart';
 
 const RainfallTab = ({ datasetId }: { datasetId: number }) => {
     const { data: events, isLoading } = useRainfallEvents(datasetId);
@@ -51,12 +53,6 @@ const RainfallTab = ({ datasetId }: { datasetId: number }) => {
     );
 };
 
-const ScatterTab = ({ datasetId }: { datasetId: number }) => (
-    <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-        <p className="text-gray-500">Scatter Graph Visualization Coming Soon</p>
-    </div>
-);
-
 const DWFTab = ({ datasetId }: { datasetId: number }) => (
     <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg border border-dashed border-gray-300">
         <p className="text-gray-500">Dry Weather Flow Analysis Coming Soon</p>
@@ -73,7 +69,7 @@ const AnalysisWorkbench: React.FC = () => {
 
     // State for selection
     const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
-    const [activeTab, setActiveTab] = useState<'rainfall' | 'timeseries' | 'scatter' | 'dwf'>('rainfall');
+    const [activeTab, setActiveTab] = useState<'rainfall' | 'data-editor' | 'timeseries' | 'scatter' | 'dwf'>('rainfall');
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [rainfallExpanded, setRainfallExpanded] = useState(true);
     const [flowExpanded, setFlowExpanded] = useState(true);
@@ -314,6 +310,17 @@ const AnalysisWorkbench: React.FC = () => {
                                     {isFlow && (
                                         <>
                                             <button
+                                                onClick={() => setActiveTab('data-editor')}
+                                                className={cn(
+                                                    "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
+                                                    activeTab === 'data-editor'
+                                                        ? "border-blue-500 text-blue-600"
+                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                )}
+                                            >
+                                                <FileText size={18} /> Data Editor
+                                            </button>
+                                            <button
                                                 onClick={() => setActiveTab('timeseries')}
                                                 className={cn(
                                                     "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
@@ -353,8 +360,14 @@ const AnalysisWorkbench: React.FC = () => {
 
                             <div className="p-6 flex-1 overflow-y-auto">
                                 {isRainfall && activeTab === 'rainfall' && <RainfallTab datasetId={selectedDatasetId} />}
+                                {isFlow && activeTab === 'data-editor' && (
+                                    <DataEditor
+                                        datasetId={selectedDatasetId}
+                                        currentMetadata={JSON.parse(datasets?.find(d => d.id === selectedDatasetId)?.metadata_json || '{}')}
+                                    />
+                                )}
                                 {isFlow && activeTab === 'timeseries' && <FDVChart datasetId={selectedDatasetId} />}
-                                {isFlow && activeTab === 'scatter' && <ScatterTab datasetId={selectedDatasetId} />}
+                                {isFlow && activeTab === 'scatter' && <ScatterChart datasetId={selectedDatasetId} />}
                                 {isFlow && activeTab === 'dwf' && <DWFTab datasetId={selectedDatasetId} />}
 
                                 {/* Fallback if tab doesn't match dataset type */}
