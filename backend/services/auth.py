@@ -9,7 +9,7 @@ SECRET_KEY = "CHANGE_THIS_TO_A_SECURE_SECRET_KEY"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 class AuthService:
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:

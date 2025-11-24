@@ -1,10 +1,42 @@
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
-from sqlmodel import Session
+from sqlmodel import Session, select
 from database import get_session
 from services.wq import WQService
+from domain.wq import WaterQualityProject, WaterQualityProjectCreate, WaterQualityProjectRead
 
 router = APIRouter()
+
+# Water Quality Projects
+@router.post("/wq/projects", response_model=WaterQualityProjectRead)
+def create_wq_project(
+    project: WaterQualityProjectCreate, 
+    session: Session = Depends(get_session)
+):
+    db_project = WaterQualityProject.from_orm(project)
+    session.add(db_project)
+    session.commit()
+    session.refresh(db_project)
+    return db_project
+
+@router.get("/wq/projects", response_model=List[WaterQualityProjectRead])
+def list_wq_projects(
+    offset: int = 0, 
+    limit: int = 100, 
+    session: Session = Depends(get_session)
+):
+    projects = session.exec(select(WaterQualityProject).offset(offset).limit(limit)).all()
+    return projects
+
+@router.get("/wq/projects/{project_id}", response_model=WaterQualityProjectRead)
+def get_wq_project(
+    project_id: int, 
+    session: Session = Depends(get_session)
+):
+    project = session.get(WaterQualityProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Water Quality Project not found")
+    return project
 
 def get_service(session: Session = Depends(get_session)) -> WQService:
     return WQService(session)
