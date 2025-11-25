@@ -4,8 +4,7 @@
 **UNITS:                    3,L/S,MM,M/S
 **FORMAT:                   3,2I5,F5,[5]
 **RECORD_LENGTH:            I2,75
-**CONSTANTS:                7,HEIGHT,MIN_VEL,MANHOLE_NO,LOGGER_TYPE
-*+START,END,INTERVAL
+**CONSTANTS:                7,HEIGHT,MIN_VEL,MANHOLE_NO,LOGGER_TYPE,START,END,INTERVAL
 **C_UNITS:                  7,MM,M/S,,,GMT,GMT,MIN
 **C_FORMAT:                 12,I5,1X,F5,1X,A20,1X,A3/D12,1X,D12,1X,I2
 *CSTART

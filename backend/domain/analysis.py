@@ -34,3 +34,14 @@ class AnalysisDataset(AnalysisDatasetBase, table=True):
 class AnalysisDatasetRead(AnalysisDatasetBase):
     id: int
     metadata_json: str
+
+class AnalysisTimeSeriesBase(SQLModel):
+    dataset_id: int = Field(foreign_key="analysisdataset.id", index=True)
+    timestamp: datetime = Field(index=True)
+    value: float  # rainfall (mm/hr), flow (L/s), depth (mm), velocity (m/s)
+
+class AnalysisTimeSeries(AnalysisTimeSeriesBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+class AnalysisTimeSeriesRead(AnalysisTimeSeriesBase):
+    id: int

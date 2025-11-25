@@ -231,7 +231,12 @@ def parse_date(date_str: str) -> datetime:
         
     date_str = date_str.strip()
     if len(date_str) == 10:
-        return datetime.strptime(date_str, "%y%m%d%H%M")
+        # Try 4-digit year + hour (no minutes) first: YYYYMMDDHH
+        try:
+            return datetime.strptime(date_str, "%Y%m%d%H")
+        except ValueError:
+            # Fall back to 2-digit year + hour + minute: yyMMDDHHMM
+            return datetime.strptime(date_str, "%y%m%d%H%M")
     elif len(date_str) == 12:
         return datetime.strptime(date_str, "%Y%m%d%H%M")
     else:

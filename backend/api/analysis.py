@@ -67,6 +67,10 @@ async def upload_analysis_dataset(
     variable_type = "Unknown"
     metadata = {}
     
+    
+    # Initialize variables
+    parsed_data = None
+    
     try:
         if filename.endswith('.r'):
             # .R files are always rainfall
@@ -78,6 +82,7 @@ async def upload_analysis_dataset(
                 "start": data["start_time"].isoformat(),
                 "end": data["end_time"].isoformat()
             }
+            parsed_data = data
         elif filename.endswith('.fdv'):
             # .FDV files are always flow/depth
             data = import_fdv_file(file_path)
@@ -89,6 +94,7 @@ async def upload_analysis_dataset(
                 "end": data["end_time"].isoformat(),
                 "units": data["units"]
             }
+            parsed_data = data
         elif filename.endswith('.std'):
             # .STD files require user to specify type
             if dataset_type == "Rainfall":
@@ -100,6 +106,7 @@ async def upload_analysis_dataset(
                     "start": data["start_time"].isoformat(),
                     "end": data["end_time"].isoformat()
                 }
+                parsed_data = data
             elif dataset_type == "Flow/Depth":
                 data = import_fdv_file(file_path)
                 variable_type = "Flow/Depth"
@@ -110,6 +117,7 @@ async def upload_analysis_dataset(
                     "end": data["end_time"].isoformat(),
                     "units": data["units"]
                 }
+                parsed_data = data
             else:
                 os.remove(file_path)
                 raise HTTPException(status_code=400, detail="For .STD files, please specify dataset_type as 'Rainfall' or 'Flow/Depth'")
@@ -119,6 +127,7 @@ async def upload_analysis_dataset(
         os.remove(file_path)
         raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
 
+    # Create dataset record
     dataset = AnalysisDataset(
         project_id=project_id,
         name=file.filename,
@@ -129,6 +138,66 @@ async def upload_analysis_dataset(
     session.add(dataset)
     session.commit()
     session.refresh(dataset)
+    
+    # Store timeseries data in database for fast queries
+    from domain.analysis import AnalysisTimeSeries
+    if parsed_data and 'data' in parsed_data:
+        try:
+            timeseries_records = []
+            data_dict = parsed_data['data']
+            
+            # Handle columnar data structure (time and value are separate lists)
+            if isinstance(data_dict, dict):
+                # Get time and value arrays
+                times = data_dict.get('time', [])
+                
+                # Determine which field contains the values based on variable type
+                if variable_type == "Rainfall":
+                    values = data_dict.get('rainfall', [])
+                elif variable_type == "Flow/Depth":
+                    # For FDV files, try 'flow' first, then 'depth'
+                    values = data_dict.get('flow', data_dict.get('depth', []))
+                else:
+                    values = data_dict.get('value', [])
+                
+                # Zip times and values together
+                for timestamp, value in zip(times, values):
+                    timeseries_records.append(
+                        AnalysisTimeSeries(
+                            dataset_id=dataset.id,
+                            timestamp=timestamp,
+                            value=float(value)
+                        )
+                    )
+            else:
+                # Handle row-based data structure (legacy format)
+                for point in data_dict:
+                    if variable_type == "Rainfall":
+                        value = point.get('rainfall', 0.0)
+                    elif variable_type == "Flow/Depth":
+                        value = point.get('flow', point.get('depth', 0.0))
+                    else:
+                        value = point.get('value', 0.0)
+                    
+                    timeseries_records.append(
+                        AnalysisTimeSeries(
+                            dataset_id=dataset.id,
+                            timestamp=point['time'],
+                            value=float(value)
+                        )
+                    )
+            
+            # Bulk insert for performance
+            if timeseries_records:
+                session.bulk_save_objects(timeseries_records)
+                session.commit()
+                print(f"✓ Stored {len(timeseries_records)} timeseries records for dataset {dataset.id} ({file.filename})")
+        except Exception as e:
+            # Log error but don't fail the upload - we can still fall back to file parsing
+            import traceback
+            print(f"✗ Warning: Failed to store timeseries data for dataset {dataset.id}: {e}")
+            traceback.print_exc()
+    
     return dataset
 
 @router.get("/analysis/projects/{project_id}/datasets", response_model=List[AnalysisDatasetRead])

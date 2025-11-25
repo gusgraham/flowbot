@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import pandas as pd
+import numpy as np
 from sqlmodel import Session
 from services.importers import import_fdv_file, import_r_file
 from domain.analysis import AnalysisDataset
@@ -37,42 +38,115 @@ class RainfallService:
         if not dataset:
             return {"dataset_id": dataset_id, "data": []}
         
-        # Extract needed info before file I/O
-        file_path = dataset.file_path
         dataset_name = dataset.name
         
-        # Now do file I/O (session can be released by FastAPI)
+        # Try to query timeseries from database (fast!)
+        from domain.analysis import AnalysisTimeSeries
+        from sqlmodel import select
+        
+        try:
+            # Query timeseries data from database
+            stmt = select(AnalysisTimeSeries).where(
+                AnalysisTimeSeries.dataset_id == dataset_id
+            ).order_by(AnalysisTimeSeries.timestamp)
+            
+            timeseries = self.session.exec(stmt).all()
+            
+            if not timeseries or len(timeseries) == 0:
+                # Fall back to file parsing if no data in database
+                print(f"No timeseries data in database for dataset {dataset_id}, falling back to file parsing")
+                return self._get_cumulative_depth_from_file(dataset_id, dataset.file_path, dataset_name)
+            
+            # Convert to numpy arrays for vectorized calculation
+            times = np.array([ts.timestamp for ts in timeseries])
+            values = np.array([ts.value for ts in timeseries])
+            
+            # Calculate cumulative depth using vectorized operations
+            # Convert timestamps to numpy datetime64
+            times_dt = times.astype('datetime64[ns]')
+            
+            # Calculate time deltas in hours (vectorized)
+            time_deltas = np.diff(times_dt).astype('timedelta64[s]').astype(float) / 3600.0
+            
+            # Calculate average intensities (vectorized)
+            avg_intensities = (values[1:] + values[:-1]) / 2.0
+            
+            # Calculate incremental depths (vectorized)
+            inc_depths = avg_intensities * time_deltas
+            
+            # Calculate cumulative sum
+            cumulative_depths = np.concatenate([[0.0], np.cumsum(inc_depths)])
+            
+            # Build response
+            result = []
+            for i in range(len(timeseries)):
+                result.append({
+                    "time": timeseries[i].timestamp.isoformat(),
+                    "cumulative_depth": round(float(cumulative_depths[i]), 3)
+                })
+
+            # Downsample data if too many points (e.g., > 500)
+            max_points = 500
+            if len(result) > max_points:
+                step = max(1, len(result) // max_points)
+                downsampled = [result[i] for i in range(0, len(result), step)]
+                # Ensure the last point is included
+                if downsampled[-1] != result[-1]:
+                    downsampled.append(result[-1])
+                result = downsampled
+            
+            return {
+                "dataset_id": dataset_id,
+                "dataset_name": dataset_name,
+                "data": result
+            }
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # Fall back to file parsing on error
+            print(f"Error querying database: {e}, falling back to file parsing")
+            return self._get_cumulative_depth_from_file(dataset_id, dataset.file_path, dataset_name)
+    
+    def _get_cumulative_depth_from_file(self, dataset_id: int, file_path: str, dataset_name: str) -> Dict[str, Any]:
+        """Fallback method to calculate cumulative depth from file parsing"""
         try:
             data = import_r_file(file_path)
             df = pd.DataFrame(data['data'])
             df['time'] = pd.to_datetime(df['time'])
             df = df.sort_values('time')
             
-            # Calculate cumulative depth using trapezoidal integration
-            # cum_depth[i] = cum_depth[i-1] + avg_intensity * time_delta
-            cumulative_depths = []
-            cum_depth = 0.0
+            # Calculate cumulative depth using vectorized operations
+            times = df['time'].values
+            rainfall = df['rainfall'].values
             
-            for i in range(len(df)):
-                if i == 0:
-                    cumulative_depths.append(0.0)
-                else:
-                    # Time delta in hours
-                    time_delta = (df.iloc[i]['time'] - df.iloc[i-1]['time']).total_seconds() / 3600.0
-                    # Average intensity (mm/hr)
-                    avg_intensity = (df.iloc[i]['rainfall'] + df.iloc[i-1]['rainfall']) / 2.0
-                    # Incremental depth (mm)
-                    inc_depth = avg_intensity * time_delta
-                    cum_depth += inc_depth
-                    cumulative_depths.append(cum_depth)
+            # Calculate time deltas in hours (vectorized)
+            time_deltas = np.diff(times).astype('timedelta64[s]').astype(float) / 3600.0
+            
+            # Calculate average intensities (vectorized)
+            avg_intensities = (rainfall[1:] + rainfall[:-1]) / 2.0
+            
+            # Calculate incremental depths (vectorized)
+            inc_depths = avg_intensities * time_deltas
+            
+            # Calculate cumulative sum
+            cumulative_depths = np.concatenate([[0.0], np.cumsum(inc_depths)])
             
             # Build response
             result = []
             for i in range(len(df)):
                 result.append({
                     "time": df.iloc[i]['time'].isoformat(),
-                    "cumulative_depth": round(cumulative_depths[i], 3)
+                    "cumulative_depth": round(float(cumulative_depths[i]), 3)
                 })
+
+            # Downsample data if too many points
+            max_points = 500
+            if len(result) > max_points:
+                step = max(1, len(result) // max_points)
+                downsampled = [result[i] for i in range(0, len(result), step)]
+                if downsampled[-1] != result[-1]:
+                    downsampled.append(result[-1])
+                result = downsampled
             
             return {
                 "dataset_id": dataset_id,

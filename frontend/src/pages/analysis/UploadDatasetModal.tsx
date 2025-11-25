@@ -9,7 +9,7 @@ interface UploadDatasetModalProps {
 }
 
 const UploadDatasetModal: React.FC<UploadDatasetModalProps> = ({ isOpen, onClose, projectId }) => {
-    const [file, setFile] = useState<File | null>(null);
+    const [files, setFiles] = useState<File[]>([]);
     const [datasetType, setDatasetType] = useState<'Rainfall' | 'Flow/Depth'>('Rainfall');
     const [error, setError] = useState<string | null>(null);
 
@@ -18,28 +18,36 @@ const UploadDatasetModal: React.FC<UploadDatasetModalProps> = ({ isOpen, onClose
     if (!isOpen) return null;
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setFile(e.target.files[0]);
+        if (e.target.files && e.target.files.length > 0) {
+            setFiles(Array.from(e.target.files));
             setError(null);
         }
     };
 
-    const isStdFile = file?.name.toLowerCase().endsWith('.std');
+    const hasStdFile = files.some(f => f.name.toLowerCase().endsWith('.std'));
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!file) {
-            setError('Please select a file.');
+        if (files.length === 0) {
+            setError('Please select at least one file.');
             return;
         }
 
         try {
-            await uploadMutation.mutateAsync({ projectId, file, datasetType: isStdFile ? datasetType : undefined });
+            // Upload files sequentially
+            for (const file of files) {
+                const isStdFile = file.name.toLowerCase().endsWith('.std');
+                await uploadMutation.mutateAsync({
+                    projectId,
+                    file,
+                    datasetType: isStdFile ? datasetType : undefined
+                });
+            }
             onClose();
-            setFile(null);
+            setFiles([]);
             setDatasetType('Rainfall');
         } catch (err) {
-            setError('Failed to upload file. Please check the format.');
+            setError('Failed to upload one or more files. Please check the format.');
         }
     };
 
@@ -64,26 +72,34 @@ const UploadDatasetModal: React.FC<UploadDatasetModalProps> = ({ isOpen, onClose
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-purple-500 transition-colors cursor-pointer relative">
                         <input
                             type="file"
+                            multiple
                             onChange={handleFileChange}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                             accept=".r,.std,.fdv"
                         />
-                        {file ? (
+                        {files.length > 0 ? (
                             <div className="flex flex-col items-center text-purple-600">
                                 <FileText size={48} className="mb-2" />
-                                <span className="font-medium">{file.name}</span>
-                                <span className="text-xs text-gray-500 mt-1">{(file.size / 1024).toFixed(1)} KB</span>
+                                <span className="font-medium">
+                                    {files.length === 1 ? files[0].name : `${files.length} files selected`}
+                                </span>
+                                <span className="text-xs text-gray-500 mt-1">
+                                    {files.length === 1
+                                        ? `${(files[0].size / 1024).toFixed(1)} KB`
+                                        : `Total: ${(files.reduce((sum, f) => sum + f.size, 0) / 1024).toFixed(1)} KB`
+                                    }
+                                </span>
                             </div>
                         ) : (
                             <div className="flex flex-col items-center text-gray-500">
                                 <Upload size={48} className="mb-2" />
                                 <span className="font-medium">Click to upload or drag and drop</span>
-                                <span className="text-xs mt-1">Supported: .R, .FDV, .STD</span>
+                                <span className="text-xs mt-1">Supported: .R, .FDV, .STD (multiple files allowed)</span>
                             </div>
                         )}
                     </div>
 
-                    {isStdFile && (
+                    {hasStdFile && (
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">
                                 Dataset Type
@@ -97,7 +113,7 @@ const UploadDatasetModal: React.FC<UploadDatasetModalProps> = ({ isOpen, onClose
                                 <option value="Flow/Depth">Flow/Depth Monitor</option>
                             </select>
                             <p className="text-xs text-gray-500">
-                                .STD files can contain either rainfall or flow data. Please specify the type.
+                                .STD files can contain either rainfall or flow data. This type will be applied to all .STD files.
                             </p>
                         </div>
                     )}
@@ -112,13 +128,13 @@ const UploadDatasetModal: React.FC<UploadDatasetModalProps> = ({ isOpen, onClose
                         </button>
                         <button
                             type="submit"
-                            disabled={!file || uploadMutation.isPending}
+                            disabled={files.length === 0 || uploadMutation.isPending}
                             className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center"
                         >
                             {uploadMutation.isPending ? (
                                 <>
                                     <Loader2 className="animate-spin mr-2" size={18} />
-                                    Uploading...
+                                    Uploading {files.length} file{files.length > 1 ? 's' : ''}...
                                 </>
                             ) : (
                                 'Upload'
