@@ -277,6 +277,16 @@ def get_fdv_scatter(
     """Get scatter graph data including CBW and iso curves"""
     return service.get_scatter_graph_data(dataset_id, plot_mode, iso_min, iso_max, iso_count)
 
+def get_rainfall_service(session: Session = Depends(get_session)) -> RainfallService:
+    return RainfallService(session)
+
+@router.get("/analysis/rainfall/{dataset_id}/cumulative-depth")
+def get_cumulative_depth(
+    dataset_id: int, 
+    service: RainfallService = Depends(get_rainfall_service)
+):
+    return service.get_cumulative_depth(dataset_id)
+
 def get_spatial_service(session: Session = Depends(get_session)) -> Any:
     from services.analysis import SpatialService
     return SpatialService(session)

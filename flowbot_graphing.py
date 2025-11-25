@@ -3774,102 +3774,6 @@ class graphCumulativeDepth:
         self.main_window_plot_widget.showToolbar(not self.isBlank)
         self.main_window_plot_widget.toolbar.lockNavigation(self.has_plot_event())
 
-    # def _format_xy(self, sel, xunit=None, yunit=None, x_is_datetime=False, formatter=None):
-    #     if formatter:
-    #         return formatter(sel)
-    #     x, y = sel.target
-    #     x_txt = mpl_dates.num2date(x).strftime("%Y-%m-%d %H:%M:%S") if x_is_datetime else f"{x:,.3f}"
-    #     y_txt = f"{y:,.3f}"
-    #     if xunit: x_txt += f" {xunit}"
-    #     if yunit: y_txt += f" {yunit}"
-    #     label = getattr(sel.artist, "get_label", lambda: "")()
-    #     if label and label != "_nolegend_":
-    #         return f"{label}\nx: {x_txt}\ny: {y_txt}"
-    #     return f"x: {x_txt}\ny: {y_txt}"
-
-    # def attach_styled_cursor(self, ax, artists=None, x_is_datetime=False,
-    #                          xunit=None, yunit=None, highlight=True, formatter=None):
-    #     target = artists if artists else ax
-    #     if artists:
-    #         for art in artists:
-    #             if hasattr(art, "set_picker"): art.set_picker(True)
-    #             if hasattr(art, "set_pickradius"): art.set_pickradius(6)
-
-    #     cursor = mplcursors.cursor(
-    #         target,
-    #         hover=2,                 # transient
-    #         multiple=False,
-    #         highlight=True,
-    #         annotation_kwargs=dict(
-    #             va="bottom", ha="left",
-    #             fontsize=9, fontfamily="monospace",
-    #             bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#444", alpha=0.9),
-    #             # no xytext/textcoords here
-    #         ),
-    #     )
-
-    #     def _on_add(sel):
-    #         ann = sel.annotation
-
-    #         # Text
-    #         ann.set_text(self._format_xy(sel, xunit, yunit, x_is_datetime, formatter))
-
-    #         # Anchor at the datapoint, offset the label by a few points
-    #         ann.xy = sel.target                   # (x, y) in data coords
-    #         ann.xycoords = "data"
-    #         ann.set_position((8, 12))             # like xytext
-    #         if hasattr(ann, "set_textcoords"):    # Matplotlib API guard
-    #             ann.set_textcoords("offset points")
-
-    #         # Optional cosmetics for highlighted marker(s)
-    #         for ex in getattr(sel, "extras", []):
-    #             try:
-    #                 ex.set_markersize(7)
-    #                 ex.set_markeredgewidth(1.0)
-    #                 ex.set_markeredgecolor("#222")
-    #                 ex.set_markerfacecolor("none")
-    #             except Exception:
-    #                 pass
-
-    #     cursor.connect("add", _on_add)
-
-    #     def disconnect():
-    #         try:
-    #             cursor.remove()    # tears down handlers + annotations
-    #             ax.figure.canvas.draw_idle()
-    #         except Exception:
-    #             pass
-        
-    #     return cursor, disconnect
-
-    # def _disconnect_cumdepth_cursor(self):
-    #     if self._cumdepth_cursor_disconnect:
-    #         try:
-    #             self._cumdepth_cursor_disconnect()
-    #         finally:
-    #             self._cumdepth_cursor_disconnect = None
-    #     self._cumdepth_cursor = None
-
-    # def updateCanvas(self):
-    #     if self.plotAxisCumDepth is not None:
-    #         # remove any existing cursor cleanly
-    #         self._disconnect_cumdepth_cursor()
-
-    #         lines = getattr(self, "cumdepth_lines", None)  # or self.c_depth_lines if that's the name
-    #         cursor, disconnect = self.attach_styled_cursor(
-    #             self.plotAxisCumDepth,
-    #             artists=lines or None,
-    #             x_is_datetime=True,
-    #             yunit="mm",
-    #             highlight=True,
-    #         )
-    #         # keep both: the object (prevents GC) and the callable (cleanup)
-    #         self._cumdepth_cursor = cursor
-    #         self._cumdepth_cursor_disconnect = disconnect
-
-    #     self.main_window_plot_widget.showToolbar(not self.isBlank)
-    #     self.main_window_plot_widget.toolbar.lockNavigation(self.has_plot_event())
-
     def updateCumulativeDepthLines(self):
         # X = []
         # Y = []
@@ -3964,11 +3868,6 @@ class graphCumulativeDepth:
         self.plotAxisCumDepth.grid(True)
         self.plotAxisCumDepth.tick_params(axis="y", which="major", labelsize=8)
 
-        # major_tick_format = DateFormatter("%d/%m/%Y %H:%M")
-        # self.plotAxisCumDepth.xaxis.set_major_locator(MaxNLocator(integer=False))
-        # self.plotAxisCumDepth.xaxis.set_major_formatter(
-        #     FuncFormatter(major_tick_format)
-        # )
         locator = AutoDateLocator(minticks=6, maxticks=15)
         formatter = ConciseDateFormatter(locator)
         self.plotAxisCumDepth.xaxis.set_major_locator(locator)

@@ -27,6 +27,63 @@ class RainfallService:
         except:
             return {"completeness": 0.0}
 
+    def get_cumulative_depth(self, dataset_id: int) -> Dict[str, Any]:
+        """
+        Calculate cumulative rainfall depth over time.
+        Matches legacy graphCumulativeDepth implementation.
+        """
+        # Get dataset info from DB first
+        dataset = self.get_dataset(dataset_id)
+        if not dataset:
+            return {"dataset_id": dataset_id, "data": []}
+        
+        # Extract needed info before file I/O
+        file_path = dataset.file_path
+        dataset_name = dataset.name
+        
+        # Now do file I/O (session can be released by FastAPI)
+        try:
+            data = import_r_file(file_path)
+            df = pd.DataFrame(data['data'])
+            df['time'] = pd.to_datetime(df['time'])
+            df = df.sort_values('time')
+            
+            # Calculate cumulative depth using trapezoidal integration
+            # cum_depth[i] = cum_depth[i-1] + avg_intensity * time_delta
+            cumulative_depths = []
+            cum_depth = 0.0
+            
+            for i in range(len(df)):
+                if i == 0:
+                    cumulative_depths.append(0.0)
+                else:
+                    # Time delta in hours
+                    time_delta = (df.iloc[i]['time'] - df.iloc[i-1]['time']).total_seconds() / 3600.0
+                    # Average intensity (mm/hr)
+                    avg_intensity = (df.iloc[i]['rainfall'] + df.iloc[i-1]['rainfall']) / 2.0
+                    # Incremental depth (mm)
+                    inc_depth = avg_intensity * time_delta
+                    cum_depth += inc_depth
+                    cumulative_depths.append(cum_depth)
+            
+            # Build response
+            result = []
+            for i in range(len(df)):
+                result.append({
+                    "time": df.iloc[i]['time'].isoformat(),
+                    "cumulative_depth": round(cumulative_depths[i], 3)
+                })
+            
+            return {
+                "dataset_id": dataset_id,
+                "dataset_name": dataset_name,
+                "data": result
+            }
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"dataset_id": dataset_id, "data": [], "error": str(e)}
+
 class EventService:
     def __init__(self, session: Session):
         self.session = session

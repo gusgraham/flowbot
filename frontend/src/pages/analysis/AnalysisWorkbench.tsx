@@ -7,6 +7,7 @@ import UploadDatasetModal from './UploadDatasetModal';
 import FDVChart from './FDVChart';
 import DataEditor from './DataEditor';
 import ScatterChart from './ScatterChart';
+import { CumulativeDepthChart } from './CumulativeDepthChart';
 
 const RainfallTab = ({ datasetId }: { datasetId: number }) => {
     const { data: events, isLoading } = useRainfallEvents(datasetId);
@@ -68,8 +69,8 @@ const AnalysisWorkbench: React.FC = () => {
     const deleteDataset = useDeleteAnalysisDataset();
 
     // State for selection
-    const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
-    const [activeTab, setActiveTab] = useState<'rainfall' | 'data-editor' | 'timeseries' | 'scatter' | 'dwf'>('rainfall');
+    const [selectedDatasetIds, setSelectedDatasetIds] = useState<number[]>([]);
+    const [activeTab, setActiveTab] = useState<'rainfall' | 'data-editor' | 'timeseries' | 'scatter' | 'dwf' | 'cumulative-depth'>('rainfall');
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [rainfallExpanded, setRainfallExpanded] = useState(true);
     const [flowExpanded, setFlowExpanded] = useState(true);
@@ -78,10 +79,10 @@ const AnalysisWorkbench: React.FC = () => {
     const rainfallDatasets = datasets?.filter(d => d.variable === 'Rainfall') || [];
     const flowDatasets = datasets?.filter(d => d.variable === 'Flow/Depth' || d.variable === 'Flow') || [];
 
-    // Auto-select first dataset if available
+    // Auto-select first dataset if available and none selected
     React.useEffect(() => {
-        if (datasets && datasets.length > 0 && !selectedDatasetId) {
-            setSelectedDatasetId(datasets[0].id);
+        if (datasets && datasets.length > 0 && selectedDatasetIds.length === 0) {
+            setSelectedDatasetIds([datasets[0].id]);
         }
     }, [datasets]);
 
@@ -90,19 +91,28 @@ const AnalysisWorkbench: React.FC = () => {
         if (window.confirm(`Are  you sure you want to delete "${datasetName}"? This action cannot be undone.`)) {
             deleteDataset.mutate(datasetId, {
                 onSuccess: () => {
-                    // If the deleted dataset was selected, clear selection
-                    if (selectedDatasetId === datasetId) {
-                        setSelectedDatasetId(null);
-                    }
+                    // Remove from selection if selected
+                    setSelectedDatasetIds(prev => prev.filter(id => id !== datasetId));
                 }
             });
         }
     };
 
+    // Toggle dataset selection
+    const toggleDatasetSelection = (datasetId: number) => {
+        setSelectedDatasetIds(prev => {
+            if (prev.includes(datasetId)) {
+                return prev.filter(id => id !== datasetId);
+            } else {
+                return [...prev, datasetId];
+            }
+        });
+    };
+
     // Determine available tabs based on dataset type
-    const selectedDataset = datasets?.find(d => d.id === selectedDatasetId);
-    const isRainfall = selectedDataset?.variable === 'Rainfall';
-    const isFlow = selectedDataset?.variable === 'Flow/Depth' || selectedDataset?.variable === 'Flow';
+    const selectedDatasets = datasets?.filter(d => selectedDatasetIds.includes(d.id)) || [];
+    const hasRainfall = selectedDatasets.some(d => d.variable === 'Rainfall');
+    const hasFlow = selectedDatasets.some(d => d.variable === 'Flow/Depth' || d.variable === 'Flow');
 
     if (!project) return <div className="p-8"><Loader2 className="animate-spin" /></div>;
 
@@ -173,14 +183,22 @@ const AnalysisWorkbench: React.FC = () => {
                                                         key={dataset.id}
                                                         className={cn(
                                                             "text-left p-3 rounded-lg border transition-all flex items-start gap-3 group",
-                                                            selectedDatasetId === dataset.id
+                                                            selectedDatasetIds.includes(dataset.id)
                                                                 ? "bg-purple-50 border-purple-200 shadow-sm"
                                                                 : "bg-white border-transparent hover:bg-gray-50 hover:border-gray-200"
                                                         )}
                                                     >
+                                                        <div className="pt-1">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedDatasetIds.includes(dataset.id)}
+                                                                onChange={() => toggleDatasetSelection(dataset.id)}
+                                                                className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded cursor-pointer"
+                                                            />
+                                                        </div>
                                                         <button
-                                                            onClick={() => setSelectedDatasetId(dataset.id)}
-                                                            className="flex items-start gap-3 flex-1 min-w-0"
+                                                            onClick={() => toggleDatasetSelection(dataset.id)}
+                                                            className="flex items-start gap-3 flex-1 min-w-0 text-left"
                                                         >
                                                             <div className="p-2 rounded-md flex-shrink-0 bg-blue-100 text-blue-600">
                                                                 <CloudRain size={16} />
@@ -188,7 +206,7 @@ const AnalysisWorkbench: React.FC = () => {
                                                             <div className="flex-1 min-w-0">
                                                                 <p className={cn(
                                                                     "font-medium truncate text-sm",
-                                                                    selectedDatasetId === dataset.id ? "text-purple-900" : "text-gray-900"
+                                                                    selectedDatasetIds.includes(dataset.id) ? "text-purple-900" : "text-gray-900"
                                                                 )}>
                                                                     {dataset.name}
                                                                 </p>
@@ -243,14 +261,22 @@ const AnalysisWorkbench: React.FC = () => {
                                                         key={dataset.id}
                                                         className={cn(
                                                             "text-left p-3 rounded-lg border transition-all flex items-start gap-3 group",
-                                                            selectedDatasetId === dataset.id
+                                                            selectedDatasetIds.includes(dataset.id)
                                                                 ? "bg-purple-50 border-purple-200 shadow-sm"
                                                                 : "bg-white border-transparent hover:bg-gray-50 hover:border-gray-200"
                                                         )}
                                                     >
+                                                        <div className="pt-1">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedDatasetIds.includes(dataset.id)}
+                                                                onChange={() => toggleDatasetSelection(dataset.id)}
+                                                                className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded cursor-pointer"
+                                                            />
+                                                        </div>
                                                         <button
-                                                            onClick={() => setSelectedDatasetId(dataset.id)}
-                                                            className="flex items-start gap-3 flex-1 min-w-0"
+                                                            onClick={() => toggleDatasetSelection(dataset.id)}
+                                                            className="flex items-start gap-3 flex-1 min-w-0 text-left"
                                                         >
                                                             <div className="p-2 rounded-md flex-shrink-0 bg-green-100 text-green-600">
                                                                 <Activity size={16} />
@@ -258,7 +284,7 @@ const AnalysisWorkbench: React.FC = () => {
                                                             <div className="flex-1 min-w-0">
                                                                 <p className={cn(
                                                                     "font-medium truncate text-sm",
-                                                                    selectedDatasetId === dataset.id ? "text-purple-900" : "text-gray-900"
+                                                                    selectedDatasetIds.includes(dataset.id) ? "text-purple-900" : "text-gray-900"
                                                                 )}>
                                                                     {dataset.name}
                                                                 </p>
@@ -290,24 +316,37 @@ const AnalysisWorkbench: React.FC = () => {
 
                 {/* Main Content: Tabs */}
                 <div className="flex-1 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden">
-                    {selectedDatasetId ? (
+                    {selectedDatasetIds.length > 0 ? (
                         <>
                             <div className="border-b border-gray-200">
                                 <nav className="flex -mb-px">
-                                    {isRainfall && (
-                                        <button
-                                            onClick={() => setActiveTab('rainfall')}
-                                            className={cn(
-                                                "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
-                                                activeTab === 'rainfall'
-                                                    ? "border-blue-500 text-blue-600"
-                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                            )}
-                                        >
-                                            <CloudRain size={18} /> Rainfall Analysis
-                                        </button>
+                                    {hasRainfall && (
+                                        <>
+                                            <button
+                                                onClick={() => setActiveTab('rainfall')}
+                                                className={cn(
+                                                    "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
+                                                    activeTab === 'rainfall'
+                                                        ? "border-blue-500 text-blue-600"
+                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                )}
+                                            >
+                                                <CloudRain size={18} /> Rainfall Analysis
+                                            </button>
+                                            <button
+                                                onClick={() => setActiveTab('cumulative-depth')}
+                                                className={cn(
+                                                    "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
+                                                    activeTab === 'cumulative-depth'
+                                                        ? "border-blue-500 text-blue-600"
+                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                )}
+                                            >
+                                                <LineChartIcon size={18} /> Cumulative Depth
+                                            </button>
+                                        </>
                                     )}
-                                    {isFlow && (
+                                    {hasFlow && (
                                         <>
                                             <button
                                                 onClick={() => setActiveTab('data-editor')}
@@ -359,19 +398,28 @@ const AnalysisWorkbench: React.FC = () => {
                             </div>
 
                             <div className="p-6 flex-1 overflow-y-auto">
-                                {isRainfall && activeTab === 'rainfall' && <RainfallTab datasetId={selectedDatasetId} />}
-                                {isFlow && activeTab === 'data-editor' && (
-                                    <DataEditor
-                                        datasetId={selectedDatasetId}
-                                        currentMetadata={JSON.parse(datasets?.find(d => d.id === selectedDatasetId)?.metadata_json || '{}')}
+                                {hasRainfall && activeTab === 'rainfall' && <RainfallTab datasetId={selectedDatasetIds[0]} />}
+                                {hasRainfall && activeTab === 'cumulative-depth' && (
+                                    <CumulativeDepthChart
+                                        datasetIds={selectedDatasetIds.filter(id => {
+                                            const d = datasets?.find(ds => ds.id === id);
+                                            return d?.variable === 'Rainfall';
+                                        })}
+                                        datasets={datasets || []}
                                     />
                                 )}
-                                {isFlow && activeTab === 'timeseries' && <FDVChart datasetId={selectedDatasetId} />}
-                                {isFlow && activeTab === 'scatter' && <ScatterChart datasetId={selectedDatasetId} />}
-                                {isFlow && activeTab === 'dwf' && <DWFTab datasetId={selectedDatasetId} />}
+                                {hasFlow && activeTab === 'data-editor' && (
+                                    <DataEditor
+                                        datasetId={selectedDatasetIds[0]}
+                                        currentMetadata={JSON.parse(datasets?.find(d => d.id === selectedDatasetIds[0])?.metadata_json || '{}')}
+                                    />
+                                )}
+                                {hasFlow && activeTab === 'timeseries' && <FDVChart datasetId={selectedDatasetIds[0]} />}
+                                {hasFlow && activeTab === 'scatter' && <ScatterChart datasetId={selectedDatasetIds[0]} />}
+                                {hasFlow && activeTab === 'dwf' && <DWFTab datasetId={selectedDatasetIds[0]} />}
 
                                 {/* Fallback if tab doesn't match dataset type */}
-                                {((isRainfall && activeTab !== 'rainfall') || (isFlow && activeTab === 'rainfall')) && (
+                                {((hasRainfall && activeTab !== 'rainfall' && activeTab !== 'cumulative-depth') || (hasFlow && activeTab === 'rainfall')) && !hasFlow && !hasRainfall && (
                                     <div className="flex items-center justify-center h-full text-gray-500">
                                         Select a valid tab for this dataset type.
                                     </div>
