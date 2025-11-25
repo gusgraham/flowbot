@@ -155,8 +155,28 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
     const xRange = maxX - minX;
     const yRange = maxY - minY;
 
-    const xDomain = [minX < 0 ? minX - 0.1 * xRange : 0, maxX + 0.1 * xRange];
+    // Calculate initial domain from data
+    let xDomain = [minX < 0 ? minX - 0.1 * xRange : 0, maxX + 0.1 * xRange];
     const yDomain = [0, maxY + 0.1 * yRange];
+
+    // Expand X domain to include pipe profile if present
+    if (pipe_profile && pipe_profile.length > 0) {
+        const allPipeX: number[] = [];
+        pipe_profile.forEach((line: any) => {
+            line.forEach((point: any) => {
+                if (point.x !== undefined) {
+                    allPipeX.push(point.x);
+                }
+            });
+        });
+
+        if (allPipeX.length > 0) {
+            const pipeMinX = Math.min(...allPipeX);
+            const pipeMaxX = Math.max(...allPipeX);
+            xDomain = [Math.min(xDomain[0], pipeMinX), Math.max(xDomain[1], pipeMaxX)];
+        }
+    }
+
 
     // -----------------------------------------------------------------------
     // Tooltip – shows depth, velocity, flow

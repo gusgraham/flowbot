@@ -549,7 +549,7 @@ class FDVService:
         pipe_out_station = data_x_max
         
         # Pipe exaggeration factor
-        pipe_exag = 0.3
+        pipe_exag = 0.1
         
         # Pipe "half width" in X-axis units (adjusted by axis ratio)
         char_half_width_base = diameter_mm / 2.0
