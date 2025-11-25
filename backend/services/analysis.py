@@ -200,7 +200,7 @@ class FDVService:
                 iso_type = "velocity"
 
             # 4. Pipe Profile
-            pipe_profile = self._calculate_pipe_profile(pipe_params, scatter_data, cbw_curve)
+            pipe_profile = self._calculate_pipe_profile(pipe_params, scatter_data, cbw_curve, plot_mode)
 
             return {
                 "scatter_data": scatter_data,
@@ -499,7 +499,8 @@ class FDVService:
         self,
         params: Dict[str, Any],
         scatter_data: List[Dict[str, Any]],
-        cbw_curve: List[Dict[str, Any]]
+        cbw_curve: List[Dict[str, Any]],
+        plot_mode: str = "velocity"
     ) -> List[List[Dict[str, float]]]:
         """
         Generate pipe profile lines matching the legacy Python implementation.
@@ -513,18 +514,21 @@ class FDVService:
         if diameter_mm <= 0 or shape != "CIRC":
             return []
         
+        # Determine X variable based on plot mode
+        x_var = "velocity" if plot_mode == "velocity" else "flow"
+        
         # Calculate data extents (scatter ∪ CBW)
         all_x = []
         all_y = []
         
         for point in scatter_data:
-            if 'velocity' in point and 'depth' in point:
-                all_x.append(point['velocity'])
+            if x_var in point and 'depth' in point:
+                all_x.append(point[x_var])
                 all_y.append(point['depth'])
         
         for point in cbw_curve:
-            if 'velocity' in point and 'depth' in point:
-                all_x.append(point['velocity'])
+            if x_var in point and 'depth' in point:
+                all_x.append(point[x_var])
                 all_y.append(point['depth'])
         
         if not all_x or not all_y:

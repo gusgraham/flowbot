@@ -340,9 +340,10 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                             type="number"
                             dataKey="x"
                             name={plotMode === "velocity" ? "Velocity (m/s)" : "Flow (L/s)"}
-                            label={{ value: plotMode === "velocity" ? "Velocity (m/s)" : "Flow (L/s)", position: "bottom", offset: 0 }}
+                            label={{ value: plotMode === "velocity" ? "Velocity (m/s)" : "Flow (L/s)", position: "insideBottom", offset: -5 }}
                             domain={xDomain}
                             allowDataOverflow={true}
+                            tickFormatter={(value) => value.toFixed(2)}
                         />
                         <YAxis
                             type="number"
@@ -354,7 +355,7 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                             allowDataOverflow={true}
                         />
                         <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: "3 3" }} />
-                        <Legend />
+                        <Legend verticalAlign="top" height={36} />
 
                         {/* Reference line for pipe soffit – depth equals pipe diameter */}
                         {pipe_params?.diameter && (
@@ -384,6 +385,7 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                                 dataKey="y"
                                 stroke="#000000"
                                 strokeWidth={2}
+                                strokeDasharray="5 5"
                                 dot={false}
                                 activeDot={false}
                                 isAnimationActive={false}
