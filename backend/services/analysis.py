@@ -199,12 +199,16 @@ class FDVService:
                 iso_curves = self._calculate_iso_v_curves(pipe_params, iso_min, iso_max, iso_count, df)
                 iso_type = "velocity"
 
+            # 4. Pipe Profile
+            pipe_profile = self._calculate_pipe_profile(pipe_params, scatter_data, cbw_curve)
+
             return {
                 "scatter_data": scatter_data,
                 "cbw_curve": cbw_curve,
-                "iso_curves": iso_curves,
+                "iso_curves":iso_curves,
                 "iso_type": iso_type,
                 "pipe_params": pipe_params,
+                "pipe_profile": pipe_profile,
                 "plot_mode": plot_mode
             }
         except Exception as e:
@@ -490,6 +494,116 @@ class FDVService:
                 })
                 
         return curves
+    
+    def _calculate_pipe_profile(
+        self,
+        params: Dict[str, Any],
+        scatter_data: List[Dict[str, Any]],
+        cbw_curve: List[Dict[str, Any]]
+    ) -> List[List[Dict[str, float]]]:
+        """
+        Generate pipe profile lines matching the legacy Python implementation.
+        Returns a list of line segments, where each segment is a list of {x, y} points.
+        """
+        import math
+        
+        diameter_mm = params.get("diameter", 0)
+        shape = params.get("shape", "CIRC")
+        
+        if diameter_mm <= 0 or shape != "CIRC":
+            return []
+        
+        # Calculate data extents (scatter ∪ CBW)
+        all_x = []
+        all_y = []
+        
+        for point in scatter_data:
+            if 'velocity' in point and 'depth' in point:
+                all_x.append(point['velocity'])
+                all_y.append(point['depth'])
+        
+        for point in cbw_curve:
+            if 'velocity' in point and 'depth' in point:
+                all_x.append(point['velocity'])
+                all_y.append(point['depth'])
+        
+        if not all_x or not all_y:
+            return []
+        
+        data_x_min = min(all_x)
+        data_x_max = max(all_x)
+        data_y_min = min(all_y + [0.0])  # Include 0
+        data_y_max = max(all_y + [diameter_mm])  # Include pipe diameter
+        
+        # Calculate axis ratio (prevents distortion)
+        # Matches legacy: axisRatio = ((y_max - y_min) / (x_max - x_min)) / fig_aspect
+        x_rng = max(1e-12, data_x_max - data_x_min)
+        y_rng = max(1e-12, data_y_max - data_y_min)
+        
+        # Assume figure aspect ratio (height/width) ~ 500/800 = 0.625
+        fig_aspect = 0.625
+        axis_ratio = max((y_rng / x_rng) / fig_aspect, 1e-12)
+        
+        # Pipe anchors span the data window
+        pipe_in_station = data_x_min
+        pipe_out_station = data_x_max
+        
+        # Pipe exaggeration factor
+        pipe_exag = 0.3
+        
+        # Pipe "half width" in X-axis units (adjusted by axis ratio)
+        char_half_width_base = diameter_mm / 2.0
+        char_half_width = (char_half_width_base / axis_ratio) * pipe_exag
+        
+        # Generate depth proportions
+        pipe_profile_depth_prop = [i / 50.0 for i in range(51)]
+        
+        # Generate circular pipe profile lines
+        lines = []
+        
+        # Back outline (connects outlet to inlet)
+        back_outline = []
+        for prop in pipe_profile_depth_prop:
+            angle = (prop * 360 + 180) * math.pi / 180
+            x_offset = math.sin(angle) * char_half_width
+            back_outline.append({"x": x_offset + pipe_out_station, "y": prop * diameter_mm})
+        
+        for prop in reversed(pipe_profile_depth_prop):
+            angle = (prop * 360 + 180) * math.pi / 180
+            x_offset = math.sin(angle) * char_half_width
+            back_outline.append({"x": x_offset + pipe_in_station, "y": prop * diameter_mm})
+        
+        back_outline.append({"x": pipe_out_station, "y": 0})
+        lines.append(back_outline)
+        
+        # Front top half (outlet)
+        front_top = []
+        for i in range(len(pipe_profile_depth_prop) // 2 + 1):
+            prop = pipe_profile_depth_prop[i]
+            angle = prop * 360 * math.pi / 180
+            x_offset = math.sin(angle) * char_half_width
+            front_top.append({"x": x_offset + pipe_out_station, "y": prop * diameter_mm})
+        lines.append(front_top)
+        
+        # Front bottom half (inlet)
+        front_bottom = []
+        for i in range(len(pipe_profile_depth_prop) - 1, len(pipe_profile_depth_prop) // 2 - 1, -1):
+            prop = pipe_profile_depth_prop[i]
+            angle = prop * 360 * math.pi / 180
+            x_offset = math.sin(angle) * char_half_width
+            front_bottom.append({"x": x_offset + pipe_in_station, "y": prop * diameter_mm})
+        lines.append(front_bottom)
+        
+        # Inlet cap (end view)
+        inlet_cap = []
+        for prop in pipe_profile_depth_prop:
+            angle = (prop * 180 + 180) * math.pi / 180
+            x_offset = char_half_width * math.sin(angle)
+            y_offset = char_half_width + (char_half_width * math.cos(angle))
+            inlet_cap.append({"x": x_offset + pipe_in_station, "y": y_offset})
+        lines.append(inlet_cap)
+        
+        return lines
 
 
 class SpatialService:

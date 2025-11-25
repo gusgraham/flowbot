@@ -124,7 +124,6 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
         iso_curves = [],
         iso_type = "flow",
         pipe_params = {},
-        pipe_profile = [],
     } = response;
 
     // -----------------------------------------------------------------------
@@ -159,6 +158,14 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
     const yDomain = [0, maxY + 0.1 * yRange];
 
     // -----------------------------------------------------------------------
+    // Simple pipe‑profile SVG overlay (cross‑section view)
+    // -----------------------------------------------------------------------
+    const pipeDiameter = pipe_params.diameter ?? 0; // mm
+    const pipeLength = pipe_params.length ?? 200; // arbitrary visual length in px
+    const svgHeight = Math.max(pipeDiameter, 100); // ensure visible
+    const svgWidth = pipeLength;
+
+    // -----------------------------------------------------------------------
     // Tooltip – shows depth, velocity, flow
     // -----------------------------------------------------------------------
     const CustomTooltip = ({ active, payload }: any) => {
@@ -188,8 +195,8 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                     <button
                         onClick={() => setPlotMode("velocity")}
                         className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${plotMode === "velocity"
-                            ? "bg-white text-purple-600 shadow"
-                            : "text-gray-600 hover:text-gray-900"
+                                ? "bg-white text-purple-600 shadow"
+                                : "text-gray-600 hover:text-gray-900"
                             }`}
                     >
                         Depth vs Velocity
@@ -197,8 +204,8 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                     <button
                         onClick={() => setPlotMode("flow")}
                         className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${plotMode === "flow"
-                            ? "bg-white text-purple-600 shadow"
-                            : "text-gray-600 hover:text-gray-900"
+                                ? "bg-white text-purple-600 shadow"
+                                : "text-gray-600 hover:text-gray-900"
                             }`}
                     >
                         Depth vs Flow
@@ -311,6 +318,39 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                 )}
             </div>
 
+            {/* Pipe profile visualisation – simple cross‑section */}
+            {pipeDiameter > 0 && (
+                <div className="flex justify-center my-4">
+                    <svg
+                        width={svgWidth}
+                        height={svgHeight}
+                        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+                        className="border"
+                    >
+                        {/* Pipe outline */}
+                        <rect
+                            x={0}
+                            y={(svgHeight - pipeDiameter) / 2}
+                            width={svgWidth}
+                            height={pipeDiameter}
+                            fill="none"
+                            stroke="black"
+                            strokeWidth={2}
+                        />
+                        {/* Diameter label */}
+                        <text
+                            x={svgWidth / 2}
+                            y={(svgHeight - pipeDiameter) / 2 - 5}
+                            textAnchor="middle"
+                            fontSize={12}
+                            fill="black"
+                        >
+                            {pipeDiameter} mm
+                        </text>
+                    </svg>
+                </div>
+            )}
+
             {/* Chart */}
             <div className="bg-white border border-gray-200 rounded-lg p-4 relative">
                 <ResponsiveContainer width="100%" height={500}>
@@ -386,23 +426,6 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                                     isAnimationActive={false}
                                 />
                             ))}
-
-                        {/* Pipe profile lines (from backend) */}
-                        {pipe_profile && pipe_profile.map((lineData: any, idx: number) => (
-                            <Line
-                                key={`pipe-profile-${idx}`}
-                                name={idx === 0 ? "Pipe Profile" : undefined}
-                                data={lineData}
-                                type="monotone"
-                                dataKey="y"
-                                stroke="#000000"
-                                strokeWidth={1.5}
-                                dot={false}
-                                activeDot={false}
-                                isAnimationActive={false}
-                                legendType={idx === 0 ? "line" : "none"}
-                            />
-                        ))}
                     </RechartsScatter>
                 </ResponsiveContainer>
             </div>
