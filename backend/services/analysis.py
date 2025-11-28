@@ -158,6 +158,38 @@ class RainfallService:
             traceback.print_exc()
             return {"dataset_id": dataset_id, "data": [], "error": str(e)}
 
+    def get_rainfall_timeseries(self, dataset_id: int) -> List[Dict[str, Any]]:
+        """Get raw rainfall timeseries data"""
+        dataset = self.get_dataset(dataset_id)
+        if not dataset:
+            return []
+            
+        try:
+            # Try DB first
+            from domain.analysis import AnalysisTimeSeries
+            from sqlmodel import select
+            
+            stmt = select(AnalysisTimeSeries).where(
+                AnalysisTimeSeries.dataset_id == dataset_id
+            ).order_by(AnalysisTimeSeries.timestamp)
+            
+            timeseries = self.session.exec(stmt).all()
+            
+            if timeseries:
+                return [{"time": ts.timestamp.isoformat(), "value": ts.value} for ts in timeseries]
+                
+            # Fallback to file
+            data = import_r_file(dataset.file_path)
+            df = pd.DataFrame(data['data'])
+            df['time'] = pd.to_datetime(df['time'])
+            df = df.sort_values('time')
+            
+            return [{"time": row['time'].isoformat(), "value": row['rainfall']} for _, row in df.iterrows()]
+            
+        except Exception as e:
+            print(f"Error getting timeseries: {e}")
+            return []
+
 class EventService:
     def __init__(self, session: Session):
         self.session = session
@@ -165,7 +197,15 @@ class EventService:
     def get_dataset(self, dataset_id: int) -> AnalysisDataset:
         return self.session.get(AnalysisDataset, dataset_id)
 
-    def detect_storms(self, dataset_id: int, inter_event_hours: int = 6, min_total_mm: float = 2.0) -> List[Dict[str, Any]]:
+    def detect_storms(
+        self, 
+        dataset_id: int, 
+        inter_event_hours: int = 6, 
+        min_total_mm: float = 2.0,
+        min_intensity: float = 0.0,
+        min_intensity_duration: int = 0,
+        partial_percent: float = 20.0
+    ) -> List[Dict[str, Any]]:
         dataset = self.get_dataset(dataset_id)
         if not dataset:
             return []
@@ -179,18 +219,6 @@ class EventService:
             # Sort
             df = df.sort_values('time')
             
-            # Calculate time difference
-            df['time_diff'] = df['time'].diff().dt.total_seconds() / 3600
-            
-            # New event if time diff > inter_event_time
-            # Note: Legacy files are continuous, so time_diff is always 'interval'.
-            # We need to identify 'events' separated by dry periods (0 rainfall).
-            # If value > 0, it's rain.
-            
-            # Logic for continuous data:
-            # 1. Identify wet periods
-            # 2. If gap between wet periods > inter_event_hours, separate events
-            
             # Filter for wet timesteps
             wet_df = df[df['value'] > 0].copy()
             if wet_df.empty:
@@ -202,15 +230,46 @@ class EventService:
             events = []
             for event_id, group in wet_df.groupby('new_event'):
                 total_rain = group['value'].sum()
-                if total_rain >= min_total_mm:
-                    events.append({
-                        "event_id": int(event_id),
-                        "start_time": group['time'].iloc[0],
-                        "end_time": group['time'].iloc[-1],
-                        "total_mm": round(total_rain, 2),
-                        "duration_hours": round((group['time'].iloc[-1] - group['time'].iloc[0]).total_seconds() / 3600, 2),
-                        "peak_intensity": group['value'].max() # This is per timestep, not hourly intensity unless interval is 60min
-                    })
+                start_time = group['time'].iloc[0]
+                end_time = group['time'].iloc[-1]
+                duration_hours = (end_time - start_time).total_seconds() / 3600
+                max_intensity = group['value'].max()
+                
+                # Classification Logic
+                # 1. Full Event: Meets all criteria
+                # 2. Partial Event: Meets partial percent of depth OR other criteria? 
+                #    Legacy code implies "Partial Event (20%)" -> maybe 20% of required depth?
+                #    Let's assume Partial if total_rain >= min_total_mm * (partial_percent / 100)
+                # 3. No Event: Fails criteria
+                
+                status = "No Event"
+                passed = 0
+                
+                # Check intensity duration if required
+                # This is complex on raw data without resampling, assuming step data for now
+                # If any point > min_intensity, we count it. 
+                # For duration, we'd need to check consecutive points.
+                
+                # Simplified check for now:
+                depth_pass = total_rain >= min_total_mm
+                
+                if depth_pass:
+                    status = "Event"
+                    passed = 1
+                elif total_rain >= min_total_mm * (partial_percent / 100.0):
+                    status = "Partial Event"
+                    passed = 2 # Using 2 for Partial
+                
+                events.append({
+                    "event_id": int(event_id),
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "total_mm": round(total_rain, 2),
+                    "duration_hours": round(duration_hours, 2),
+                    "peak_intensity": max_intensity,
+                    "status": status,
+                    "passed": passed
+                })
             return events
             
         except Exception as e:

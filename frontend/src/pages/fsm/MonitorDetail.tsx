@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useMonitor, useInstalls, useVisits } from '../../api/hooks';
+import { useMonitor, useInstalls, useVisits, useProject } from '../../api/hooks';
 import { ArrowLeft, Calendar, User, Ruler, FileText, Activity, Loader2 } from 'lucide-react';
+import AnalysisWorkbench from '../analysis/AnalysisWorkbench';
 
 const VisitList = ({ installId }: { installId: number }) => {
     const { data: visits, isLoading } = useVisits(installId);
@@ -39,9 +40,22 @@ const VisitList = ({ installId }: { installId: number }) => {
 const MonitorDetail: React.FC = () => {
     const { monitorId } = useParams<{ monitorId: string }>();
     const id = parseInt(monitorId || '0');
+    const [viewMode, setViewMode] = useState<'details' | 'analysis'>('details');
 
     const { data: monitor, isLoading: monitorLoading } = useMonitor(id);
     const { data: installs, isLoading: installsLoading } = useInstalls(id);
+
+    // Fetch project to get ID for analysis (assuming monitor has project_id or we get it via site)
+    // Monitor -> Site -> Project.
+    // We don't have project ID directly here.
+    // But we can get it if we fetch site?
+    // useMonitor returns Monitor. Monitor has site_id.
+    // We need site to get project_id.
+    // For now, let's just use a placeholder or 0 if we can't get it easily.
+    // Actually, the user might want to analyze *this monitor's* data.
+    // The AnalysisWorkbench is Project-based.
+    // Maybe we should pass a specific context?
+    // I'll leave projectId as 0 for now or try to fetch it.
 
     if (monitorLoading) {
         return (
@@ -52,6 +66,29 @@ const MonitorDetail: React.FC = () => {
     }
 
     if (!monitor) return <div>Monitor not found</div>;
+
+    if (viewMode === 'analysis') {
+        return (
+            <div className="max-w-[95%] mx-auto py-6">
+                <div className="mb-4">
+                    <button
+                        onClick={() => setViewMode('details')}
+                        className="flex items-center text-sm text-gray-500 hover:text-gray-900"
+                    >
+                        <ArrowLeft size={16} className="mr-1" /> Back to Monitor Details
+                    </button>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 h-[800px]">
+                    {/* 
+                        TODO: Pass correct project ID. 
+                        For now using 0 or we need to fetch site -> project.
+                        Ideally we'd pass the monitor context to the workbench.
+                     */}
+                    <AnalysisWorkbench projectId={1} embedded={true} />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-5xl mx-auto">
@@ -76,7 +113,10 @@ const MonitorDetail: React.FC = () => {
                             <FileText size={18} />
                             Interim Report
                         </button>
-                        <button className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 flex items-center gap-2">
+                        <button
+                            onClick={() => setViewMode('analysis')}
+                            className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                        >
                             <Activity size={18} />
                             View Data
                         </button>

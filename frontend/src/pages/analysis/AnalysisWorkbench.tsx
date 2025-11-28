@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAnalysisProject, useAnalysisDatasets, useRainfallEvents, useDeleteAnalysisDataset } from '../../api/hooks';
-import { ArrowLeft, CloudRain, Activity, Droplets, Loader2, Upload, FileText, Trash2, ChevronDown, LineChart as LineChartIcon } from 'lucide-react';
+import { ArrowLeft, CloudRain, Activity, Loader2, Upload, FileText, Trash2, ChevronDown, LineChart as LineChartIcon } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import UploadDatasetModal from './UploadDatasetModal';
 import FDVChart from './FDVChart';
 import DataEditor from './DataEditor';
 import ScatterChart from './ScatterChart';
 import { CumulativeDepthChart } from './CumulativeDepthChart';
+import RainfallEventsAnalysis from './RainfallEventsAnalysis';
 
 const RainfallTab = ({ datasetId }: { datasetId: number }) => {
     const { data: events, isLoading } = useRainfallEvents(datasetId);
@@ -54,15 +55,20 @@ const RainfallTab = ({ datasetId }: { datasetId: number }) => {
     );
 };
 
-const DWFTab = ({ datasetId }: { datasetId: number }) => (
+const DWFTab = ({ datasetId: _datasetId }: { datasetId: number }) => (
     <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg border border-dashed border-gray-300">
         <p className="text-gray-500">Dry Weather Flow Analysis Coming Soon</p>
     </div>
 );
 
-const AnalysisWorkbench: React.FC = () => {
-    const { projectId } = useParams<{ projectId: string }>();
-    const id = parseInt(projectId || '0');
+interface AnalysisWorkbenchProps {
+    projectId?: number;
+    embedded?: boolean;
+}
+
+const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propProjectId, embedded = false }) => {
+    const { projectId: paramProjectId } = useParams<{ projectId: string }>();
+    const id = propProjectId || parseInt(paramProjectId || '0');
 
     const { data: project } = useAnalysisProject(id);
     const { data: datasets } = useAnalysisDatasets(id);
@@ -70,7 +76,7 @@ const AnalysisWorkbench: React.FC = () => {
 
     // State for selection
     const [selectedDatasetIds, setSelectedDatasetIds] = useState<number[]>([]);
-    const [activeTab, setActiveTab] = useState<'rainfall' | 'data-editor' | 'timeseries' | 'scatter' | 'dwf' | 'cumulative-depth'>('rainfall');
+    const [activeTab, setActiveTab] = useState<'rainfall' | 'data-editor' | 'timeseries' | 'scatter' | 'dwf' | 'cumulative-depth' | 'event-analysis'>('rainfall');
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [rainfallExpanded, setRainfallExpanded] = useState(true);
     const [flowExpanded, setFlowExpanded] = useState(true);
@@ -114,25 +120,66 @@ const AnalysisWorkbench: React.FC = () => {
     const hasRainfall = selectedDatasets.some(d => d.variable === 'Rainfall');
     const hasFlow = selectedDatasets.some(d => d.variable === 'Flow/Depth' || d.variable === 'Flow');
 
+    // Auto-switch tab if current tab is not valid for selected dataset type
+    React.useEffect(() => {
+        if (selectedDatasetIds.length > 0) {
+            // Define which tabs are valid for which dataset types
+            const rainfallOnlyTabs = ['rainfall', 'event-analysis', 'cumulative-depth'];
+            const flowOnlyTabs = ['dwf'];
+            const universalTabs = ['timeseries', 'scatter', 'data-editor'];
+
+            // Check if current tab is valid
+            const isTabValid =
+                universalTabs.includes(activeTab) ||
+                (hasRainfall && rainfallOnlyTabs.includes(activeTab)) ||
+                (hasFlow && flowOnlyTabs.includes(activeTab));
+
+            // If tab is not valid, switch to an appropriate one
+            if (!isTabValid) {
+                if (hasRainfall) {
+                    setActiveTab('rainfall');
+                } else if (hasFlow) {
+                    setActiveTab('timeseries');
+                } else {
+                    setActiveTab('timeseries');
+                }
+            }
+        }
+    }, [selectedDatasetIds, hasRainfall, hasFlow]);
+
     if (!project) return <div className="p-8"><Loader2 className="animate-spin" /></div>;
 
     return (
-        <div className="h-[calc(100vh-8rem)] flex flex-col">
-            <div className="mb-6 flex justify-between items-start">
-                <div>
-                    <Link to="/analysis" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-900 mb-2">
-                        <ArrowLeft size={16} className="mr-1" /> Back to Projects
-                    </Link>
-                    <h1 className="text-2xl font-bold text-gray-900">{project.name} - Analysis Workbench</h1>
+        <div className={cn("flex flex-col", embedded ? "h-full" : "h-[calc(100vh-8rem)]")}>
+            {!embedded && (
+                <div className="mb-6 flex justify-between items-start">
+                    <div>
+                        <Link to="/analysis" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-900 mb-2">
+                            <ArrowLeft size={16} className="mr-1" /> Back to Projects
+                        </Link>
+                        <h1 className="text-2xl font-bold text-gray-900">{project.name} - Analysis Workbench</h1>
+                    </div>
+                    <button
+                        onClick={() => setIsUploadModalOpen(true)}
+                        className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center"
+                    >
+                        <Upload size={18} className="mr-2" />
+                        Upload Dataset
+                    </button>
                 </div>
-                <button
-                    onClick={() => setIsUploadModalOpen(true)}
-                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center"
-                >
-                    <Upload size={18} className="mr-2" />
-                    Upload Dataset
-                </button>
-            </div>
+            )}
+
+            {embedded && (
+                <div className="mb-4 flex justify-end">
+                    <button
+                        onClick={() => setIsUploadModalOpen(true)}
+                        className="bg-purple-600 text-white px-3 py-1.5 text-sm rounded-lg hover:bg-purple-700 transition-colors flex items-center"
+                    >
+                        <Upload size={16} className="mr-2" />
+                        Upload Dataset
+                    </button>
+                </div>
+            )}
 
             <div className="flex-1 flex gap-6 overflow-hidden">
                 {/* Sidebar: Datasets */}
@@ -233,6 +280,7 @@ const AnalysisWorkbench: React.FC = () => {
                                 )}
 
                                 {/* Flow/Depth Datasets Section */}
+                                {/* Flow/Depth Datasets Section */}
                                 {flowDatasets.length > 0 && (
                                     <div>
                                         <button
@@ -240,9 +288,9 @@ const AnalysisWorkbench: React.FC = () => {
                                             className="w-full flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
                                         >
                                             <div className="flex items-center gap-2">
-                                                <Activity size={16} className="text-green-600" />
-                                                <span>Flow Monitors</span>
-                                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                                                <Activity size={16} className="text-emerald-600" />
+                                                <span>Flow/Depth Monitors</span>
+                                                <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
                                                     {flowDatasets.length}
                                                 </span>
                                             </div>
@@ -278,7 +326,7 @@ const AnalysisWorkbench: React.FC = () => {
                                                             onClick={() => toggleDatasetSelection(dataset.id)}
                                                             className="flex items-start gap-3 flex-1 min-w-0 text-left"
                                                         >
-                                                            <div className="p-2 rounded-md flex-shrink-0 bg-green-100 text-green-600">
+                                                            <div className="p-2 rounded-md flex-shrink-0 bg-emerald-100 text-emerald-600">
                                                                 <Activity size={16} />
                                                             </div>
                                                             <div className="flex-1 min-w-0">
@@ -314,122 +362,144 @@ const AnalysisWorkbench: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Main Content: Tabs */}
+                {/* Main Content Area */}
                 <div className="flex-1 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden">
-                    {selectedDatasetIds.length > 0 ? (
+                    {selectedDatasetIds.length === 0 ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+                            <LineChartIcon size={48} className="mb-4 opacity-20" />
+                            <p className="text-lg font-medium">No datasets selected</p>
+                            <p className="text-sm">Select a dataset from the sidebar to view analysis.</p>
+                        </div>
+                    ) : (
                         <>
-                            <div className="border-b border-gray-200">
-                                <nav className="flex -mb-px">
-                                    {hasRainfall && (
-                                        <>
-                                            <button
-                                                onClick={() => setActiveTab('rainfall')}
-                                                className={cn(
-                                                    "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
-                                                    activeTab === 'rainfall'
-                                                        ? "border-blue-500 text-blue-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                <CloudRain size={18} /> Rainfall Analysis
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('cumulative-depth')}
-                                                className={cn(
-                                                    "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
-                                                    activeTab === 'cumulative-depth'
-                                                        ? "border-blue-500 text-blue-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                <LineChartIcon size={18} /> Cumulative Depth
-                                            </button>
-                                        </>
+                            {/* Tabs */}
+                            <div className="border-b border-gray-200 px-4 flex items-center gap-6 overflow-x-auto">
+                                {/* Rainfall-specific tabs */}
+                                {hasRainfall && (
+                                    <>
+                                        <button
+                                            onClick={() => setActiveTab('rainfall')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'rainfall'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Rainfall Events
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('event-analysis')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'event-analysis'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Event Analysis
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('cumulative-depth')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'cumulative-depth'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Cumulative Depth
+                                        </button>
+                                    </>
+                                )}
+
+                                {/* Flow-specific tabs */}
+                                {hasFlow && (
+                                    <>
+                                        <button
+                                            onClick={() => setActiveTab('dwf')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'dwf'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Dry Weather Flow
+                                        </button>
+                                    </>
+                                )}
+
+                                {/* Universal tabs - available for all dataset types */}
+                                <button
+                                    onClick={() => setActiveTab('timeseries')}
+                                    className={cn(
+                                        "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                        activeTab === 'timeseries'
+                                            ? "border-purple-600 text-purple-600"
+                                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                                     )}
-                                    {hasFlow && (
-                                        <>
-                                            <button
-                                                onClick={() => setActiveTab('data-editor')}
-                                                className={cn(
-                                                    "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
-                                                    activeTab === 'data-editor'
-                                                        ? "border-blue-500 text-blue-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                <FileText size={18} /> Data Editor
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('timeseries')}
-                                                className={cn(
-                                                    "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
-                                                    activeTab === 'timeseries'
-                                                        ? "border-blue-500 text-blue-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                <LineChartIcon size={18} /> Time Series
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('scatter')}
-                                                className={cn(
-                                                    "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
-                                                    activeTab === 'scatter'
-                                                        ? "border-blue-500 text-blue-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                <Activity size={18} /> Scatter Graph
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('dwf')}
-                                                className={cn(
-                                                    "flex-1 py-4 px-1 text-center border-b-2 font-medium text-sm flex items-center justify-center gap-2",
-                                                    activeTab === 'dwf'
-                                                        ? "border-blue-500 text-blue-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                <Droplets size={18} /> Dry Weather Flow
-                                            </button>
-                                        </>
+                                >
+                                    Time Series
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('scatter')}
+                                    className={cn(
+                                        "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                        activeTab === 'scatter'
+                                            ? "border-purple-600 text-purple-600"
+                                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                                     )}
-                                </nav>
+                                >
+                                    Scatter Plot
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('data-editor')}
+                                    className={cn(
+                                        "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                        activeTab === 'data-editor'
+                                            ? "border-purple-600 text-purple-600"
+                                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                    )}
+                                >
+                                    Data Editor
+                                </button>
                             </div>
 
-                            <div className="p-6 flex-1 overflow-y-auto">
-                                {hasRainfall && activeTab === 'rainfall' && <RainfallTab datasetId={selectedDatasetIds[0]} />}
-                                {hasRainfall && activeTab === 'cumulative-depth' && (
+                            {/* Content */}
+                            <div className="flex-1 overflow-y-auto p-6">
+                                {activeTab === 'rainfall' && (
+                                    <RainfallTab datasetId={selectedDatasetIds[0]} />
+                                )}
+                                {activeTab === 'event-analysis' && (
+                                    <RainfallEventsAnalysis
+                                        datasetId={selectedDatasetIds[0]}
+                                        datasetName={selectedDatasets[0]?.name || ''}
+                                    />
+                                )}
+                                {activeTab === 'timeseries' && (
+                                    <FDVChart datasetId={selectedDatasetIds[0]} />
+                                )}
+                                {activeTab === 'scatter' && (
+                                    <ScatterChart datasetId={selectedDatasetIds[0].toString()} />
+                                )}
+                                {activeTab === 'cumulative-depth' && (
                                     <CumulativeDepthChart
-                                        datasetIds={selectedDatasetIds.filter(id => {
-                                            const d = datasets?.find(ds => ds.id === id);
-                                            return d?.variable === 'Rainfall';
-                                        })}
+                                        datasetIds={selectedDatasetIds}
                                         datasets={datasets || []}
                                     />
                                 )}
-                                {hasFlow && activeTab === 'data-editor' && (
+                                {activeTab === 'data-editor' && (
                                     <DataEditor
                                         datasetId={selectedDatasetIds[0]}
-                                        currentMetadata={JSON.parse(datasets?.find(d => d.id === selectedDatasetIds[0])?.metadata_json || '{}')}
+                                        currentMetadata={selectedDatasets[0]?.metadata_json ? JSON.parse(selectedDatasets[0].metadata_json) : {}}
                                     />
                                 )}
-                                {hasFlow && activeTab === 'timeseries' && <FDVChart datasetId={selectedDatasetIds[0]} />}
-                                {hasFlow && activeTab === 'scatter' && <ScatterChart datasetId={selectedDatasetIds[0]} />}
-                                {hasFlow && activeTab === 'dwf' && <DWFTab datasetId={selectedDatasetIds[0]} />}
-
-                                {/* Fallback if tab doesn't match dataset type */}
-                                {((hasRainfall && activeTab !== 'rainfall' && activeTab !== 'cumulative-depth') || (hasFlow && activeTab === 'rainfall')) && !hasFlow && !hasRainfall && (
-                                    <div className="flex items-center justify-center h-full text-gray-500">
-                                        Select a valid tab for this dataset type.
-                                    </div>
+                                {activeTab === 'dwf' && (
+                                    <DWFTab datasetId={selectedDatasetIds[0]} />
                                 )}
                             </div>
                         </>
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-gray-500">
-                            Select a dataset to view analysis.
-                        </div>
                     )}
                 </div>
             </div>

@@ -4,6 +4,7 @@ from sqlmodel import SQLModel, Field, Relationship
 # Forward references
 if False:
     from .visit import Visit
+    from .fsm import Interim
 class Monitor(SQLModel, table=False):
     pass
 
@@ -21,10 +22,8 @@ class Project(ProjectBase, table=True):
     
     sites: List["Site"] = Relationship(back_populates="project")
     installs: List["Install"] = Relationship(back_populates="project")
-    # Monitors are usually global assets, but FSM Project has a list of "available" monitors?
-    # Or maybe monitors are just linked via Installs. 
-    # In legacy code, fsmProject has dict_fsm_monitors.
-    # We'll assume Monitors are independent assets but can be associated with a project context if needed.
+    interims: List["Interim"] = Relationship(back_populates="project")
+    monitors: List["Monitor"] = Relationship(back_populates="project")
 
 class SiteBase(SQLModel):
     site_id: str = Field(index=True) # User facing ID e.g. "MH123"
@@ -72,6 +71,10 @@ class Install(InstallBase, table=True):
     monitor: Optional["Monitor"] = Relationship(back_populates="installs")
     visits: List["Visit"] = Relationship(back_populates="install")
     timeseries: List["TimeSeries"] = Relationship(back_populates="install")
+    
+    # FSM Relationships
+    raw_data: Optional["RawData"] = Relationship(back_populates="install")
+    processed_data: List["ProcessedData"] = Relationship(back_populates="install")
 
 # DTOs / Schemas
 class ProjectCreate(ProjectBase):

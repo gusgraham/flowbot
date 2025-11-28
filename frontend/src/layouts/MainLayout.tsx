@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Database, Activity, CheckCircle, Droplets, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Database, Activity, CheckCircle, Droplets, LogOut, Menu, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const MainLayout: React.FC = () => {
     const location = useLocation();
+    const [isCollapsed, setIsCollapsed] = useState(false);
 
     const navItems = [
         { name: 'Hub', path: '/', icon: LayoutDashboard },
@@ -17,11 +18,26 @@ const MainLayout: React.FC = () => {
     return (
         <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
             {/* Sidebar */}
-            <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-                <div className="p-6 border-b border-gray-100">
-                    <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">
-                        FlowBot Hub
-                    </h1>
+            <aside className={cn(
+                "bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out",
+                isCollapsed ? "w-16" : "w-64"
+            )}>
+                <div className={cn(
+                    "p-6 border-b border-gray-100 flex items-center",
+                    isCollapsed ? "justify-center p-4" : "justify-between"
+                )}>
+                    {!isCollapsed && (
+                        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">
+                            FlowBot Hub
+                        </h1>
+                    )}
+                    <button
+                        onClick={() => setIsCollapsed(!isCollapsed)}
+                        className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                        title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                    >
+                        {isCollapsed ? <Menu size={20} /> : <X size={20} />}
+                    </button>
                 </div>
 
                 <nav className="flex-1 p-4 space-y-1">
@@ -37,20 +53,28 @@ const MainLayout: React.FC = () => {
                                     "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
                                     isActive
                                         ? "bg-blue-50 text-blue-700"
-                                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
+                                    isCollapsed && "justify-center"
                                 )}
+                                title={isCollapsed ? item.name : undefined}
                             >
                                 <Icon size={20} />
-                                {item.name}
+                                {!isCollapsed && item.name}
                             </Link>
                         );
                     })}
                 </nav>
 
                 <div className="p-4 border-t border-gray-100">
-                    <button className="flex items-center gap-3 px-4 py-3 w-full text-left text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-red-600 rounded-lg transition-colors">
+                    <button
+                        className={cn(
+                            "flex items-center gap-3 px-4 py-3 w-full text-left text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-red-600 rounded-lg transition-colors",
+                            isCollapsed && "justify-center"
+                        )}
+                        title={isCollapsed ? "Sign Out" : undefined}
+                    >
                         <LogOut size={20} />
-                        Sign Out
+                        {!isCollapsed && "Sign Out"}
                     </button>
                 </div>
             </aside>

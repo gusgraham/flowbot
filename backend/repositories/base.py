@@ -13,7 +13,7 @@ class BaseRepository(Generic[T]):
 
     def list(self, offset: int = 0, limit: int = 100) -> List[T]:
         statement = select(self.model).offset(offset).limit(limit)
-        return self.session.exec(statement).all()
+        return list(self.session.exec(statement).all())
 
     def create(self, obj: T) -> T:
         self.session.add(obj)

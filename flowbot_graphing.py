@@ -2956,46 +2956,6 @@ class graphRainfallAnalysis:
 
                         rain_block_df = pd.concat([rain_block_df_cleaned, event_record_cleaned], ignore_index=True)
 
-                        # rain_block_df = pd.concat(
-                        #     [rain_block_df, event_record], ignore_index=True
-                        # )
-
-                    # if event_status > 0:
-                    #     # Full or partial event processing
-                    #     event_start_index = state["potential_event_start_index"]
-                    #     event_end_index = i
-                    #     event_start = dates[event_start_index]
-                    #     event_end = dates[event_end_index]
-
-                    #     # Create date range for the event
-                    #     event_dates = pd.date_range(
-                    #         start=event_start, end=event_end, freq="2min"
-                    #     ).tolist()
-                    #     hist_dates.extend(event_dates)
-
-                    #     # Record event details
-                    #     event_record = pd.DataFrame(
-                    #         [
-                    #             {
-                    #                 "RG": gauge_name,
-                    #                 "Start": event_start,
-                    #                 "End": event_end,
-                    #                 "Depth": last_depth,
-                    #                 "Intensity_Count": state["intensity_count"],
-                    #                 "Passed": event_status,
-                    #             }
-                    #         ]
-                    #     )
-                    #     # Drop empty or all-NA columns from both DataFrames
-                    #     rain_block_df_cleaned = rain_block_df.dropna(axis=1, how='all')
-                    #     event_record_cleaned = event_record.dropna(axis=1, how='all')
-
-                    #     rain_block_df = pd.concat([rain_block_df_cleaned, event_record_cleaned], ignore_index=True)
-
-                    #     # rain_block_df = pd.concat(
-                    #     #     [rain_block_df, event_record], ignore_index=True
-                    #     # )
-
                 # Reset state for next potential event
                 state["potential_event_start_index"] = i
                 _reset_state()
@@ -3274,50 +3234,6 @@ class graphRainfallAnalysis:
             self.lstStormCountForHistogram = [
                 0 if math.isnan(x) else x for x in hist_count
             ]
-
-    # def developDWFPlotData(self, lstDryDays):
-
-    #     self.lstDWFCountForHistogram = []
-    #     self.lstDWFDatesForHistogram = []
-    #     self.hasDWFEvents = False
-
-    #     if len(lstDryDays) > 0:
-
-    #         self.hasDWFEvents = True
-
-    #         lstDryDays = sorted(lstDryDays)
-
-    #         DWF_whole_range_start = lstDryDays[0] - timedelta(days=1)
-    #         DWF_whole_range_end = lstDryDays[-1] + timedelta(days=1)
-
-    #         noOfPeriods = int(
-    #             ((DWF_whole_range_end - DWF_whole_range_start).total_seconds() / 120)+1)
-
-    #         DWF_whole_range_dates = pd.date_range(
-    #             start=DWF_whole_range_start, periods=noOfPeriods, freq='2min').tolist()
-
-    #         DWF_dates_df = pd.DataFrame({'rain_date': DWF_whole_range_dates})
-    #         DWF_count_df = pd.DataFrame({'rain_date': lstDryDays})
-    #         DWF_count_df['count'] = 0
-    #         DWF_count_df['count'] = DWF_count_df.groupby(
-    #             ['rain_date'])['count'].transform("count")
-    #         DWF_count_df.sort_values(by='rain_date', inplace=True)
-
-    #         DWF_dates_df['rain_date'] = pd.to_datetime(
-    #             DWF_dates_df['rain_date']).dt.date
-
-    #         DWF_hist_df = pd.merge(
-    #             DWF_dates_df, DWF_count_df, how='left', left_on='rain_date', right_on='rain_date')
-
-    #         DWF_hist_dates_timsestamp = DWF_hist_df['rain_date'].tolist()
-
-    #         self.lstDWFDatesForHistogram = mpl_dates.date2num(
-    #             DWF_hist_dates_timsestamp)
-
-    #         DWF_hist_count = DWF_hist_df['count'].tolist()
-
-    #         self.lstDWFCountForHistogram = [
-    #             0 if math.isnan(x) else x for x in DWF_hist_count]
 
     def developDWFPlotData(self, lstDryDays):
 

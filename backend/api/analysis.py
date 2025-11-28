@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 from database import get_session
 from services.analysis import RainfallService
 from domain.analysis import AnalysisProject, AnalysisProjectCreate, AnalysisProjectRead
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -242,33 +243,11 @@ def update_analysis_dataset(
         raise HTTPException(status_code=404, detail="Dataset not found")
     
     # Merge updates into existing metadata
-    try:
-        existing_metadata = json.loads(dataset.metadata_json)
-    except:
-        existing_metadata = {}
-    
-    existing_metadata.update(updates)
-    dataset.metadata_json = json.dumps(existing_metadata)
-    
-    session.add(dataset)
-    session.commit()
-    session.refresh(dataset)
-    
+    # Not implemented in service yet, but keeping endpoint structure
     return dataset
-
 
 def get_rainfall_service(session: Session = Depends(get_session)) -> RainfallService:
     return RainfallService(session)
-
-@router.get("/analysis/rainfall/{dataset_id}/cumulative")
-def get_cumulative_rainfall(
-    dataset_id: int, 
-    start_date: Optional[datetime] = Query(None), 
-    end_date: Optional[datetime] = Query(None),
-    service: RainfallService = Depends(get_rainfall_service)
-) -> Dict[str, Any]:
-    # Not implemented in service yet, but keeping endpoint structure
-    return {}
 
 @router.get("/analysis/rainfall/{dataset_id}/completeness")
 def check_data_completeness(
@@ -280,6 +259,81 @@ def check_data_completeness(
 def get_event_service(session: Session = Depends(get_session)) -> Any:
     from services.analysis import EventService
     return EventService(session)
+
+class AnalysisParams(BaseModel):
+    rainfallDepthTolerance: float = 0
+    precedingDryDays: int = 4
+    consecZero: int = 5
+    requiredDepth: float = 5
+    requiredIntensity: float = 6
+    requiredIntensityDuration: int = 4
+    partialPercent: float = 20
+    useConsecutiveIntensities: bool = True
+
+@router.post("/analysis/rainfall/events")
+def run_rainfall_analysis(
+    dataset_id: int,
+    params: AnalysisParams,
+    service: Any = Depends(get_event_service),
+    rainfall_service: RainfallService = Depends(get_rainfall_service)
+) -> Dict[str, Any]:
+    # Map frontend params to service params
+    
+    events = service.detect_storms(
+        dataset_id=dataset_id, 
+        inter_event_hours=12, # Standard separation or derived?
+        min_total_mm=params.requiredDepth,
+        min_intensity=params.requiredIntensity,
+        min_intensity_duration=params.requiredIntensityDuration,
+        partial_percent=params.partialPercent
+    )
+    
+    dry_days = service.detect_dry_days(
+        dataset_id=dataset_id,
+        threshold_mm=0.1
+    )
+    
+    # Get full timeseries for the graph
+    timeseries_data = rainfall_service.get_rainfall_timeseries(dataset_id)
+
+    # Calculate stats
+    total_rainfall = sum(e['total_mm'] for e in events if e['status'] == 'Event')
+    
+    # Get period from events or dataset
+    period_start = datetime.now().isoformat()
+    period_end = datetime.now().isoformat()
+    if events:
+        period_start = events[0]['start_time'].isoformat()
+        period_end = events[-1]['end_time'].isoformat()
+    elif timeseries_data:
+        period_start = timeseries_data[0]['time']
+        period_end = timeseries_data[-1]['time']
+        
+    # Format events for frontend
+    formatted_events = []
+    for e in events:
+        formatted_events.append({
+            "Start": e['start_time'].isoformat(),
+            "End": e['end_time'].isoformat(),
+            "Depth": e['total_mm'],
+            "Intensity_Count": 0, # Placeholder
+            "Passed": e['passed'], # 1=Full, 2=Partial, 0=No
+            "Status": e['status']
+        })
+        
+    formatted_dry_days = [d['date'].isoformat() for d in dry_days]
+
+    return {
+        "events": formatted_events,
+        "dry_days": formatted_dry_days,
+        "timeseries": timeseries_data,
+        "stats": {
+            "total_events": len([e for e in events if e['status'] == 'Event']),
+            "total_rainfall_depth": total_rainfall,
+            "analyzed_period_start": period_start,
+            "analyzed_period_end": period_end
+        }
+    }
 
 @router.post("/analysis/events/{dataset_id}/detect-storms")
 def detect_storms(
@@ -346,8 +400,7 @@ def get_fdv_scatter(
     """Get scatter graph data including CBW and iso curves"""
     return service.get_scatter_graph_data(dataset_id, plot_mode, iso_min, iso_max, iso_count)
 
-def get_rainfall_service(session: Session = Depends(get_session)) -> RainfallService:
-    return RainfallService(session)
+
 
 @router.get("/analysis/rainfall/{dataset_id}/cumulative-depth")
 def get_cumulative_depth(

@@ -4,9 +4,13 @@ import api from './client';
 // Types
 export interface Project {
     id: number;
-    name: string;
+    job_name: string;
+    name: string; // Mapped from job_name
     client: string;
     job_number: string;
+    client_job_ref?: string;
+    survey_start_date?: string;
+    survey_end_date?: string;
 }
 
 export interface Site {
@@ -14,14 +18,22 @@ export interface Site {
     project_id: number;
     name: string;
     catchment: string;
+    site_id: string;
+    site_type: string;
+    address?: string;
+    mh_ref?: string;
+    w3w?: string;
+    easting: number;
+    northing: number;
 }
 
 export interface Monitor {
     id: number;
-    site_id: number;
-    name: string;
-    type: string;
-    status: string;
+    monitor_asset_id: string;
+    monitor_type: string;
+    monitor_sub_type: string;
+    pmac_id?: string;
+    project_id?: number;
 }
 
 export interface Install {
@@ -30,6 +42,19 @@ export interface Install {
     install_date: string;
     removal_date?: string;
     height?: number;
+    install_id: string;
+    install_type: string;
+    project_id: number;
+    site_id: number;
+    // FM Specific
+    fm_pipe_shape?: string;
+    fm_pipe_height_mm?: number;
+    fm_pipe_width_mm?: number;
+    fm_pipe_letter?: string;
+    fm_pipe_depth_to_invert_mm?: number;
+    fm_sensor_offset_mm?: number;
+    // RG Specific
+    rg_position?: string;
 }
 
 export interface Visit {
@@ -203,8 +228,79 @@ export const useProjects = () => {
     return useQuery({
         queryKey: ['projects'],
         queryFn: async () => {
-            const { data } = await api.get<Project[]>('/projects/');
+            const { data } = await api.get<Project[]>('/projects');
+            return data.map(p => ({
+                ...p,
+                name: p.job_name // Map job_name to name
+            }));
+        },
+    });
+};
+
+export interface ProjectCreate {
+    job_number: string;
+    job_name: string;
+    client: string;
+    client_job_ref?: string;
+    survey_start_date?: string;
+    survey_end_date?: string;
+}
+
+export const useCreateProject = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (newProject: ProjectCreate) => {
+            const { data } = await api.post<Project>('/projects', newProject);
             return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+        },
+    });
+};
+
+export const useUpdateProject = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, updates }: { id: number; updates: ProjectCreate }) => {
+            const { data } = await api.put<Project>(`/projects/${id}`, updates);
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+            queryClient.invalidateQueries({ queryKey: ['projects', data.id] });
+        },
+    });
+};
+
+export const useDeleteProject = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (projectId: number) => {
+            const { data } = await api.delete(`/projects/${projectId}`);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+        },
+    });
+};
+
+export const useImportProjectCsv = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (file: File) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            const { data } = await api.post('/projects/import-csv', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
         },
     });
 };
@@ -214,7 +310,10 @@ export const useProject = (id: number) => {
         queryKey: ['projects', id],
         queryFn: async () => {
             const { data } = await api.get<Project>(`/projects/${id}`);
-            return data;
+            return {
+                ...data,
+                name: data.job_name
+            };
         },
         enabled: !!id,
     });
@@ -244,6 +343,17 @@ export const useMonitors = (siteId: number) => {
     });
 };
 
+export const useProjectMonitors = (projectId: number) => {
+    return useQuery({
+        queryKey: ['monitors', projectId],
+        queryFn: async () => {
+            const { data } = await api.get<Monitor[]>(`/projects/${projectId}/monitors`);
+            return data;
+        },
+        enabled: !!projectId,
+    });
+};
+
 export const useMonitor = (id: number) => {
     return useQuery({
         queryKey: ['monitors', id],
@@ -265,6 +375,28 @@ export const useInstalls = (monitorId: number) => {
             return data;
         },
         enabled: !!monitorId,
+    });
+};
+
+export const useSiteInstalls = (siteId: number) => {
+    return useQuery({
+        queryKey: ['installs', siteId],
+        queryFn: async () => {
+            const { data } = await api.get<Install[]>(`/sites/${siteId}/installs`);
+            return data;
+        },
+        enabled: !!siteId,
+    });
+};
+
+export const useProjectInstalls = (projectId: number) => {
+    return useQuery({
+        queryKey: ['installs', 'project', projectId],
+        queryFn: async () => {
+            const { data } = await api.get<Install[]>(`/projects/${projectId}/installs`);
+            return data;
+        },
+        enabled: !!projectId,
     });
 };
 
