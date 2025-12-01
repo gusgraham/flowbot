@@ -230,24 +230,23 @@ def parse_date(date_str: str) -> datetime:
         return date_str # Already datetime?
         
     date_str = date_str.strip()
+    
     if len(date_str) == 10:
-        # Try 4-digit year + hour (no minutes) first: YYYYMMDDHH
-        try:
-            return datetime.strptime(date_str, "%Y%m%d%H")
-        except ValueError:
-            # Fall back to 2-digit year + hour + minute: yyMMDDHHMM
-            return datetime.strptime(date_str, "%y%m%d%H%M")
+        # D10 format: YYMMDDHHMM
+        return datetime.strptime(date_str, "%y%m%d%H%M")
     elif len(date_str) == 12:
+        # D12 format: YYYYMMDDHHMM
         return datetime.strptime(date_str, "%Y%m%d%H%M")
     else:
-        # Try ISO format or other fallbacks
-        try:
-            return datetime.fromisoformat(date_str)
-        except:
-            raise ValueError("Unsupported date format: " + date_str)
+        raise ValueError(f"Unsupported date format: '{date_str}' (length {len(date_str)}). Only D10 (YYMMDDHHMM) and D12 (YYYYMMDDHHMM) are supported.")
 
 def fill_payload_gap(parsed_payload, missing_steps, unit_template):
     if not unit_template:
+        return []
+
+    # Safety check for excessive memory usage
+    if missing_steps > 500000:  # Approx 1 year of minute data
+        print(f"Warning: Gap too large ({missing_steps} steps). Skipping gap fill to prevent OOM.")
         return []
 
     repeat_count = len(unit_template)
@@ -289,8 +288,11 @@ def format_value(token_info, value):
     return " " * width
 
 def parse_file(filename):
+    print(f"   [PARSE] Reading file: {os.path.basename(filename)}")
     with open(filename, 'r') as f:
         lines = f.readlines()
+    
+    print(f"   [PARSE] File has {len(lines)} lines")
     
     header_lines = []
     data_blocks = []
@@ -329,6 +331,8 @@ def parse_file(filename):
     if current_constants and current_payload:
         data_blocks.append((current_constants, current_payload))
 
+    print(f"   [PARSE] Found {len(data_blocks)} data blocks")
+    
     header = parse_header(header_lines)
     
     data_format = header.get('DATA_FORMAT', '')
@@ -363,18 +367,21 @@ def parse_file(filename):
     previous_end = None
 
     for idx, (const_lines, payload_lines) in enumerate(data_blocks):
+        print(f"   [PARSE] Processing block {idx + 1}/{len(data_blocks)}")
         parsed_constants = parse_constants(const_lines, c_format, constants_names)
         start_dt = parse_date(parsed_constants["START"])
         # end_dt = parse_date(parsed_constants["END"])
         interval_minutes = int(parsed_constants["INTERVAL"])
 
         parsed_payload = parse_payload(payload_lines, record_format, record_length, field_names)
+        print(f"   [PARSE] Block {idx + 1} has {len(parsed_payload)} payload records")
 
         if previous_end is not None:
             expected_start = previous_end + timedelta(minutes=interval_minutes)
             if start_dt > expected_start:
                 gap_minutes = int((start_dt - expected_start).total_seconds() / 60)
                 missing_steps = gap_minutes // interval_minutes
+                print(f"   [PARSE] Gap detected: {missing_steps} missing steps")
                 
                 if parsed_payload:
                     unit_template = parsed_payload[0]
@@ -392,6 +399,8 @@ def parse_file(filename):
         if 'END' in last_constants:
             constants['END'] = last_constants['END']
 
+    print(f"   [PARSE] Parse complete: {len(full_payload)} total payload records")
+    
     return {
         'header': header,
         'constants': constants,
@@ -408,8 +417,11 @@ def import_fdv_file(file_path: str) -> Dict[str, Any]:
     Imports an FDV/STD file and returns a dictionary with flow monitor data.
     """
     try:
+        print(f"   [FDV] Parsing file structure...")
         file_data = parse_file(file_path)
+        print(f"   [FDV] File parsed, extracting units...")
         all_units = [unit for record in file_data["payload"] for unit in record]
+        print(f"   [FDV] Extracted {len(all_units)} units")
         
         constants = file_data["constants"]
         start_dt = parse_date(constants["START"])
@@ -417,14 +429,31 @@ def import_fdv_file(file_path: str) -> Dict[str, Any]:
         interval_minutes = int(constants["INTERVAL"])
         interval = timedelta(minutes=interval_minutes)
         
+        print(f"   [FDV] Date range: {start_dt} to {end_dt}, interval: {interval_minutes}min")
+        
+        # Calculate expected number of records
+        duration_mins = (end_dt - start_dt).total_seconds() / 60
+        no_of_records = int(duration_mins / interval_minutes) + 1
+        print(f"   [FDV] Expected {no_of_records} records")
+        
+        # Check if this is too large
+        if no_of_records > 500000:
+            print(f"   [FDV] WARNING: Very large dataset ({no_of_records} records)")
+        
+        print(f"   [FDV] Generating date range...")
         date_range = []
         current_dt = start_dt
+        count = 0
         while current_dt <= end_dt:
             date_range.append(current_dt)
             current_dt += interval
-            
-        duration_mins = (end_dt - start_dt).total_seconds() / 60
-        no_of_records = int(duration_mins / interval_minutes) + 1
+            count += 1
+            if count > 1000000:  # Safety limit
+                print(f"   [FDV] ERROR: Date range generation exceeded safety limit!")
+                raise ValueError("Date range too large - possible infinite loop")
+        
+        print(f"   [FDV] Generated {len(date_range)} dates")
+        print(f"   [FDV] Extracting flow/depth/velocity data...")
         
         flow_data = []
         depth_data = []
@@ -437,6 +466,9 @@ def import_fdv_file(file_path: str) -> Dict[str, Any]:
                 flow_data.append(float(unit.get("FLOW", 0.0) or 0.0))
                 depth_data.append(float(unit.get("DEPTH", 0.0) or 0.0))
                 velocity_data.append(float(unit.get("VELOCITY", 0.0) or 0.0))
+        
+        print(f"   [FDV] Extracted {len(flow_data)} flow records")
+        print(f"   [FDV] Extracting metadata...")
                 
         monitor_name = "Unknown"
         record_line = file_data['header'].get('IDENTIFIER', '')
@@ -458,6 +490,8 @@ def import_fdv_file(file_path: str) -> Dict[str, Any]:
                 
         rain_gauge_name = constants.get('RAINGAUGE', '')
         
+        print(f"   [FDV] Parse complete: {monitor_name}")
+        
         return {
             "name": monitor_name,
             "type": "flow_monitor",
@@ -478,6 +512,9 @@ def import_fdv_file(file_path: str) -> Dict[str, Any]:
             }
         }
     except Exception as e:
+        print(f"   [FDV] ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise ValueError(f"Error parsing FDV file {os.path.basename(file_path)}: {str(e)}")
 
 def import_r_file(file_path: str) -> Dict[str, Any]:

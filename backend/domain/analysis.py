@@ -25,6 +25,8 @@ class AnalysisDatasetBase(SQLModel):
     name: str
     variable: str  # 'Rainfall', 'Flow', 'Depth', 'Velocity'
     file_path: str
+    status: str = Field(default="processing")  # 'processing', 'ready', 'error'
+    error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     metadata_json: str = Field(default="{}", sa_column_kwargs={"name": "metadata"}) # Store extra info like units, gauge name
 
@@ -33,12 +35,17 @@ class AnalysisDataset(AnalysisDatasetBase, table=True):
     
 class AnalysisDatasetRead(AnalysisDatasetBase):
     id: int
+    status: str
+    error_message: Optional[str]
     metadata_json: str
 
 class AnalysisTimeSeriesBase(SQLModel):
     dataset_id: int = Field(foreign_key="analysisdataset.id", index=True)
     timestamp: datetime = Field(index=True)
-    value: float  # rainfall (mm/hr), flow (L/s), depth (mm), velocity (m/s)
+    value: Optional[float] = None # rainfall (mm/hr) or generic value
+    flow: Optional[float] = None # L/s
+    depth: Optional[float] = None # mm
+    velocity: Optional[float] = None # m/s
 
 class AnalysisTimeSeries(AnalysisTimeSeriesBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

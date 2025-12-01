@@ -420,6 +420,8 @@ export interface AnalysisDataset {
     variable: string;
     created_at: string;
     metadata_json: string;
+    status: 'processing' | 'ready' | 'error';
+    error_message?: string;
 }
 
 export const useAnalysisDatasets = (projectId: number) => {

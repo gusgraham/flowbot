@@ -313,6 +313,33 @@ class FDVService:
             return []
             
         try:
+            # Try to query timeseries from database
+            from domain.analysis import AnalysisTimeSeries
+            from sqlmodel import select
+            
+            stmt = select(AnalysisTimeSeries).where(
+                AnalysisTimeSeries.dataset_id == dataset_id
+            ).order_by(AnalysisTimeSeries.timestamp)
+            
+            if start_date:
+                stmt = stmt.where(AnalysisTimeSeries.timestamp >= start_date)
+            if end_date:
+                stmt = stmt.where(AnalysisTimeSeries.timestamp <= end_date)
+                
+            timeseries = self.session.exec(stmt).all()
+            
+            if timeseries:
+                return [
+                    {
+                        "time": ts.timestamp,
+                        "depth": ts.depth if ts.depth is not None else 0.0,
+                        "velocity": ts.velocity if ts.velocity is not None else 0.0,
+                        "flow": ts.flow if ts.flow is not None else 0.0
+                    }
+                    for ts in timeseries
+                ]
+
+            # Fallback to file parsing
             data = import_fdv_file(dataset.file_path)
             df = pd.DataFrame(data['data'])
             df['time'] = pd.to_datetime(df['time'])
@@ -324,7 +351,8 @@ class FDVService:
                 
             # Return time, depth, velocity, flow
             return df[['time', 'depth', 'velocity', 'flow']].to_dict('records')
-        except:
+        except Exception as e:
+            print(f"Error getting scatter data: {e}")
             return []
 
     def get_scatter_graph_data(
@@ -340,7 +368,32 @@ class FDVService:
             return {}
 
         try:
-            data = import_fdv_file(dataset.file_path)
+            # Try to query timeseries from database
+            from domain.analysis import AnalysisTimeSeries
+            from sqlmodel import select
+            
+            stmt = select(AnalysisTimeSeries).where(
+                AnalysisTimeSeries.dataset_id == dataset_id
+            )
+            timeseries = self.session.exec(stmt).all()
+            
+            data = {} # Placeholder for file data if we use DB
+            
+            if timeseries:
+                data_list = [
+                    {
+                        "time": ts.timestamp,
+                        "depth": ts.depth if ts.depth is not None else 0.0,
+                        "velocity": ts.velocity if ts.velocity is not None else 0.0,
+                        "flow": ts.flow if ts.flow is not None else 0.0
+                    }
+                    for ts in timeseries
+                ]
+                df = pd.DataFrame(data_list)
+            else:
+                # Fallback to file parsing
+                data = import_fdv_file(dataset.file_path)
+                df = pd.DataFrame(data['data'])
             
             # Extract pipe parameters from dataset metadata, falling back to data file or defaults
             import json
@@ -367,7 +420,8 @@ class FDVService:
                 pipe_params["gradient"] = max((pipe_params["us_invert"] - pipe_params["ds_invert"]) / pipe_params["length"], 0.00001)
 
             # 1. Scatter Data
-            df = pd.DataFrame(data['data'])
+            # 1. Scatter Data
+            # df is already created above
             
             # Downsample if too many points
             target_points = 3000
