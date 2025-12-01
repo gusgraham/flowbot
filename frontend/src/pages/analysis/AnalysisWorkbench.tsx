@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAnalysisProject, useAnalysisDatasets, useRainfallEvents, useDeleteAnalysisDataset } from '../../api/hooks';
-import { ArrowLeft, CloudRain, Activity, Loader2, Upload, FileText, Trash2, ChevronDown, LineChart as LineChartIcon, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, CloudRain, Activity, Loader2, Upload, FileText, Trash2, ChevronDown, LineChart as LineChartIcon, AlertCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import UploadDatasetModal from './UploadDatasetModal';
 import FDVChart from './FDVChart';
@@ -136,14 +136,14 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
     const selectedDatasets = datasets?.filter(d => selectedDatasetIds.includes(d.id) && (d.status === 'ready' || !d.status)) || [];
     const hasRainfall = selectedDatasets.some(d => d.variable === 'Rainfall');
     const hasFlow = selectedDatasets.some(d => d.variable === 'Flow/Depth' || d.variable === 'Flow');
+    const hasMixedTypes = hasRainfall && hasFlow;
 
     // Helper to check if multi-select is allowed
     const canMultiSelect = (variable: string) => {
+        if (activeTab === 'timeseries') return true;
+
         if (variable === 'Rainfall') {
             return ['event-analysis', 'cumulative-depth'].includes(activeTab);
-        }
-        if (variable === 'Flow/Depth' || variable === 'Flow') {
-            return activeTab === 'timeseries';
         }
         return false;
     };
@@ -160,6 +160,12 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
     // Auto-switch tab if current tab is not valid for selected dataset type
     React.useEffect(() => {
         if (selectedDatasetIds.length > 0) {
+            // If mixed types selected, only timeseries is valid
+            if (hasMixedTypes && activeTab !== 'timeseries') {
+                setActiveTab('timeseries');
+                return;
+            }
+
             // Define which tabs are valid for which dataset types
             const rainfallOnlyTabs = ['rainfall', 'event-analysis', 'cumulative-depth'];
             const flowOnlyTabs = ['dwf', 'scatter', 'data-editor'];
@@ -168,21 +174,21 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
             // Check if current tab is valid
             const isTabValid =
                 universalTabs.includes(activeTab) ||
-                (hasRainfall && rainfallOnlyTabs.includes(activeTab)) ||
-                (hasFlow && flowOnlyTabs.includes(activeTab));
+                (hasRainfall && !hasFlow && rainfallOnlyTabs.includes(activeTab)) ||
+                (hasFlow && !hasRainfall && flowOnlyTabs.includes(activeTab));
 
             // If tab is not valid, switch to an appropriate one
             if (!isTabValid) {
                 if (hasRainfall) {
-                    setActiveTab('rainfall');
-                } else if (hasFlow) {
                     setActiveTab('timeseries');
+                } else if (hasFlow) {
+                    setActiveTab('data-editor');
                 } else {
                     setActiveTab('timeseries');
                 }
             }
         }
-    }, [selectedDatasetIds, hasRainfall, hasFlow, activeTab]);
+    }, [selectedDatasetIds, hasRainfall, hasFlow, hasMixedTypes, activeTab]);
 
     if (!project) return <div className="p-8"><Loader2 className="animate-spin" /></div>;
 
@@ -452,19 +458,30 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                             <>
                                 {/* Tabs */}
                                 <div className="border-b border-gray-200 px-4 flex items-center gap-6 overflow-x-auto">
-                                    {/* Rainfall-specific tabs */}
-                                    {hasRainfall && (
+                                    {/* Rainfall-specific tabs - only show if no flow datasets selected */}
+                                    {hasRainfall && !hasMixedTypes && (
                                         <>
                                             <button
-                                                onClick={() => setActiveTab('rainfall')}
+                                                onClick={() => setActiveTab('timeseries')}
                                                 className={cn(
                                                     "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'rainfall'
+                                                    activeTab === 'timeseries'
                                                         ? "border-purple-600 text-purple-600"
                                                         : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                                                 )}
                                             >
-                                                Rainfall Events
+                                                Time Series
+                                            </button>
+                                            <button
+                                                onClick={() => setActiveTab('cumulative-depth')}
+                                                className={cn(
+                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                    activeTab === 'cumulative-depth'
+                                                        ? "border-purple-600 text-purple-600"
+                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                )}
+                                            >
+                                                Cumulative Depth
                                             </button>
                                             <button
                                                 onClick={() => setActiveTab('event-analysis')}
@@ -478,32 +495,43 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                                 Event Analysis
                                             </button>
                                             <button
-                                                onClick={() => setActiveTab('cumulative-depth')}
+                                                onClick={() => setActiveTab('rainfall')}
                                                 className={cn(
                                                     "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'cumulative-depth'
+                                                    activeTab === 'rainfall'
                                                         ? "border-purple-600 text-purple-600"
                                                         : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                                                 )}
                                             >
-                                                Cumulative Depth
+                                                Rainfall Events
                                             </button>
                                         </>
                                     )}
 
-                                    {/* Flow-specific tabs */}
-                                    {hasFlow && (
+                                    {/* Flow-specific tabs - only show if no rainfall datasets selected */}
+                                    {hasFlow && !hasMixedTypes && (
                                         <>
                                             <button
-                                                onClick={() => setActiveTab('dwf')}
+                                                onClick={() => setActiveTab('data-editor')}
                                                 className={cn(
                                                     "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'dwf'
+                                                    activeTab === 'data-editor'
                                                         ? "border-purple-600 text-purple-600"
                                                         : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                                                 )}
                                             >
-                                                Dry Weather Flow
+                                                Data Editor
+                                            </button>
+                                            <button
+                                                onClick={() => setActiveTab('timeseries')}
+                                                className={cn(
+                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                    activeTab === 'timeseries'
+                                                        ? "border-purple-600 text-purple-600"
+                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                )}
+                                            >
+                                                Time Series
                                             </button>
                                             <button
                                                 onClick={() => setActiveTab('scatter')}
@@ -517,31 +545,33 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                                 Scatter Plot
                                             </button>
                                             <button
-                                                onClick={() => setActiveTab('data-editor')}
+                                                onClick={() => setActiveTab('dwf')}
                                                 className={cn(
                                                     "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'data-editor'
+                                                    activeTab === 'dwf'
                                                         ? "border-purple-600 text-purple-600"
                                                         : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                                                 )}
                                             >
-                                                Data Editor
+                                                Dry Weather Flow
                                             </button>
                                         </>
                                     )}
 
-                                    {/* Universal tabs - available for all dataset types */}
-                                    <button
-                                        onClick={() => setActiveTab('timeseries')}
-                                        className={cn(
-                                            "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                            activeTab === 'timeseries'
-                                                ? "border-purple-600 text-purple-600"
-                                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                        )}
-                                    >
-                                        Time Series
-                                    </button>
+                                    {/* Mixed types - only show Time Series */}
+                                    {hasMixedTypes && (
+                                        <button
+                                            onClick={() => setActiveTab('timeseries')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'timeseries'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Time Series
+                                        </button>
+                                    )}
                                 </div>
 
                                 {/* Content */}
@@ -556,7 +586,7 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                         />
                                     )}
                                     {activeTab === 'timeseries' && (
-                                        <FDVChart datasetId={selectedDatasetIds[0]} />
+                                        <FDVChart datasets={selectedDatasets} />
                                     )}
                                     {activeTab === 'scatter' && (
                                         <ScatterChart datasetId={selectedDatasetIds[0].toString()} />

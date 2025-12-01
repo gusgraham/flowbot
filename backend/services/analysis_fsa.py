@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from sqlmodel import Session
 from services.importers import import_fdv_file, import_r_file
-from domain.fsa import FsaDataset as AnalysisDataset, FsaTimeSeries as AnalysisTimeSeries
+from domain.fsa import FsaDataset as AnalysisDataset
 
 class RainfallService:
     def __init__(self, session: Session):
@@ -41,7 +41,7 @@ class RainfallService:
         dataset_name = dataset.name
         
         # Try to query timeseries from database (fast!)
-        # from domain.analysis import AnalysisTimeSeries
+        from domain.fsa import FsaTimeSeries as AnalysisTimeSeries
         from sqlmodel import select
         
         try:
@@ -166,7 +166,7 @@ class RainfallService:
             
         try:
             # Try DB first
-            # from domain.analysis import AnalysisTimeSeries
+            from domain.fsa import FsaTimeSeries as AnalysisTimeSeries
             from sqlmodel import select
             
             stmt = select(AnalysisTimeSeries).where(
@@ -314,7 +314,7 @@ class FDVService:
             
         try:
             # Try to query timeseries from database
-            # from domain.analysis import AnalysisTimeSeries
+            from domain.fsa import FsaTimeSeries as AnalysisTimeSeries
             from sqlmodel import select
             
             stmt = select(AnalysisTimeSeries).where(
@@ -369,7 +369,7 @@ class FDVService:
 
         try:
             # Try to query timeseries from database
-            # from domain.analysis import AnalysisTimeSeries
+            from domain.fsa import FsaTimeSeries as AnalysisTimeSeries
             from sqlmodel import select
             
             stmt = select(AnalysisTimeSeries).where(

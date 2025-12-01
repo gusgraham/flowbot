@@ -73,7 +73,7 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
         setIsLoading(true);
         setError(null);
         try {
-            const response = await fetch(`/api/analysis/rainfall/events?dataset_id=${datasetId}`, {
+            const response = await fetch(`/api/fsa/rainfall/events?dataset_id=${datasetId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(params)

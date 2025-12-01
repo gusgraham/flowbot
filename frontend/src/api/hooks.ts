@@ -109,7 +109,7 @@ export const useAnalysisProjects = () => {
     return useQuery({
         queryKey: ['analysis_projects'],
         queryFn: async () => {
-            const { data } = await api.get<AnalysisProject[]>('/analysis/projects');
+            const { data } = await api.get<AnalysisProject[]>('/fsa/projects');
             return data;
         },
     });
@@ -119,7 +119,7 @@ export const useAnalysisProject = (id: number) => {
     return useQuery({
         queryKey: ['analysis_projects', id],
         queryFn: async () => {
-            const { data } = await api.get<AnalysisProject>(`/analysis/projects/${id}`);
+            const { data } = await api.get<AnalysisProject>(`/fsa/projects/${id}`);
             return data;
         },
         enabled: !!id,
@@ -130,7 +130,7 @@ export const useCreateAnalysisProject = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (newProject: AnalysisProjectCreate) => {
-            const { data } = await api.post<AnalysisProject>('/analysis/projects', newProject);
+            const { data } = await api.post<AnalysisProject>('/fsa/projects', newProject);
             return data;
         },
         onSuccess: () => {
@@ -428,7 +428,7 @@ export const useAnalysisDatasets = (projectId: number) => {
     return useQuery({
         queryKey: ['analysis_datasets', projectId],
         queryFn: async () => {
-            const { data } = await api.get<AnalysisDataset[]>(`/analysis/projects/${projectId}/datasets`);
+            const { data } = await api.get<AnalysisDataset[]>(`/fsa/projects/${projectId}/datasets`);
             return data;
         },
         enabled: !!projectId,
@@ -444,7 +444,7 @@ export const useUploadAnalysisDataset = () => {
             if (datasetType) {
                 formData.append('dataset_type', datasetType);
             }
-            const { data } = await api.post<AnalysisDataset>(`/analysis/projects/${projectId}/upload`, formData, {
+            const { data } = await api.post<AnalysisDataset>(`/fsa/projects/${projectId}/upload`, formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data',
                 },
@@ -461,7 +461,7 @@ export const useDeleteAnalysisDataset = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (datasetId: number) => {
-            const { data } = await api.delete(`/analysis/datasets/${datasetId}`);
+            const { data } = await api.delete(`/fsa/datasets/${datasetId}`);
             return data;
         },
         onSuccess: () => {
@@ -474,7 +474,7 @@ export const useUpdateAnalysisDataset = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ datasetId, updates }: { datasetId: number; updates: Record<string, any> }) => {
-            const { data } = await api.patch(`/analysis/datasets/${datasetId}`, updates);
+            const { data } = await api.patch(`/fsa/datasets/${datasetId}`, updates);
             return data;
         },
         onSuccess: (data) => {
@@ -490,7 +490,7 @@ export const useRainfallEvents = (datasetId: number) => {
     return useQuery({
         queryKey: ['rainfall_events', datasetId],
         queryFn: async () => {
-            const { data } = await api.post<any>(`/analysis/events/${datasetId}/detect-storms`);
+            const { data } = await api.post<any>(`/fsa/rainfall/events?dataset_id=${datasetId}`, {});
             return data.events;
         },
         enabled: !!datasetId,
@@ -516,7 +516,7 @@ export const useFDVScatter = (
             if (isoMin !== undefined) params.append('iso_min', isoMin.toString());
             if (isoMax !== undefined) params.append('iso_max', isoMax.toString());
 
-            const { data } = await api.get<any>(`/analysis/fdv/${datasetId}/scatter?${params}`);
+            const { data } = await api.get<any>(`/fsa/fdv/${datasetId}/scatter?${params}`);
             return data;
         },
         enabled: !!datasetId,
@@ -528,7 +528,7 @@ export const useFDVTimeseries = (datasetId: number) => {
     return useQuery({
         queryKey: ['fdv_timeseries', datasetId],
         queryFn: async () => {
-            const { data } = await api.get<any>(`/analysis/fdv/${datasetId}/timeseries`);
+            const { data } = await api.get<any>(`/fsa/fdv/${datasetId}/timeseries`);
             return data;
         },
         enabled: !!datasetId,

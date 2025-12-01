@@ -1,115 +1,148 @@
-import React from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush } from 'recharts';
+import React, { useMemo } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Brush, Legend } from 'recharts';
 import { Loader2 } from 'lucide-react';
-import { useFDVTimeseries } from '../../api/hooks';
-
+import { useQueries } from '@tanstack/react-query';
+import api from '../../api/client';
 
 interface FDVChartProps {
-    datasetId: number;
+    datasets: { id: number; name: string; variable: string }[];
 }
 
-const FDVChart: React.FC<FDVChartProps> = ({ datasetId }) => {
-    const { data: response, isLoading, error } = useFDVTimeseries(datasetId);
+const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#0088fe', '#00C49F', '#FFBB28', '#FF8042'];
+
+const FDVChart: React.FC<FDVChartProps> = ({ datasets }) => {
+    // Fetch data for all datasets
+    const queries = useQueries({
+        queries: datasets.map(dataset => ({
+            queryKey: ['fdv_timeseries', dataset.id],
+            queryFn: async () => {
+                const { data } = await api.get<any>(`/fsa/fdv/${dataset.id}/timeseries`);
+                return { ...data, datasetId: dataset.id, variable: dataset.variable, name: dataset.name };
+            },
+            enabled: !!dataset.id,
+        }))
+    });
+
+    const isLoading = queries.some(q => q.isLoading);
+    const error = queries.find(q => q.error);
 
     // State for zoom range
     const [zoomRange, setZoomRange] = React.useState<{ startIndex: number; endIndex: number } | null>(null);
 
-    // Smart Downsampling: Preserves peaks and troughs for all series
-    const downsampledData = React.useMemo(() => {
-        if (!response?.data || response.data.length <= 2000) return response?.data || [];
+    // Merge and process data with smart downsampling
+    const { mergedData, seriesInfo } = useMemo(() => {
+        if (isLoading) return { mergedData: [], seriesInfo: [] };
 
-        const data = response.data;
-        // Target roughly 1000 "chunks", but we might pick multiple points per chunk
-        const chunkSize = Math.ceil(data.length / 500);
-        const sampled: any[] = [];
+        const successfulQueries = queries.filter(q => q.isSuccess && q.data);
+        if (successfulQueries.length === 0) return { mergedData: [], seriesInfo: [] };
 
-        for (let i = 0; i < data.length; i += chunkSize) {
-            const chunk = data.slice(i, Math.min(i + chunkSize, data.length));
-            if (chunk.length === 0) continue;
+        const timeMap = new Map<string, any>();
+        const info: any[] = [];
 
-            // Always include the first point of the chunk
-            const indices = new Set<number>([0, chunk.length - 1]);
+        // First pass: merge all data onto common timeline (no downsampling yet)
+        successfulQueries.forEach((query, index) => {
+            if (!query.data?.data) return;
 
-            // Find indices of min/max for each variable
-            let minFlow = chunk[0].flow, maxFlow = chunk[0].flow;
-            let minDepth = chunk[0].depth, maxDepth = chunk[0].depth;
-            let minVel = chunk[0].velocity, maxVel = chunk[0].velocity;
+            const { data, datasetId, variable, name } = query.data;
+            const color = COLORS[index % COLORS.length];
 
-            let minFlowIdx = 0, maxFlowIdx = 0;
-            let minDepthIdx = 0, maxDepthIdx = 0;
-            let minVelIdx = 0, maxVelIdx = 0;
+            info.push({ id: datasetId, name, variable, color });
 
-            chunk.forEach((d: any, idx: number) => {
-                if (d.flow < minFlow) { minFlow = d.flow; minFlowIdx = idx; }
-                if (d.flow > maxFlow) { maxFlow = d.flow; maxFlowIdx = idx; }
+            // Helper to add value to time map
+            const addValue = (time: string, key: string, val: number) => {
+                if (!timeMap.has(time)) {
+                    timeMap.set(time, { time: new Date(time).getTime(), rawTime: time });
+                }
+                const entry = timeMap.get(time);
+                entry[key] = val;
+            };
 
-                if (d.depth < minDepth) { minDepth = d.depth; minDepthIdx = idx; }
-                if (d.depth > maxDepth) { maxDepth = d.depth; maxDepthIdx = idx; }
-
-                if (d.velocity < minVel) { minVel = d.velocity; minVelIdx = idx; }
-                if (d.velocity > maxVel) { maxVel = d.velocity; maxVelIdx = idx; }
+            const records = data || [];
+            records.forEach((record: any) => {
+                if (variable === 'Rainfall') {
+                    addValue(record.time, `rain_${datasetId}`, record.rainfall);
+                } else {
+                    addValue(record.time, `flow_${datasetId}`, record.flow);
+                    addValue(record.time, `depth_${datasetId}`, record.depth);
+                    addValue(record.time, `velocity_${datasetId}`, record.velocity);
+                }
             });
+        });
 
-            // Add key points
-            indices.add(minFlowIdx); indices.add(maxFlowIdx);
-            indices.add(minDepthIdx); indices.add(maxDepthIdx);
-            indices.add(minVelIdx); indices.add(maxVelIdx);
+        // Sort the merged data
+        const sortedData = Array.from(timeMap.values()).sort((a, b) => a.time - b.time);
 
-            // Sort indices and add to sampled data
-            Array.from(indices).sort((a, b) => a - b).forEach(idx => {
-                sampled.push(chunk[idx]);
-            });
-        }
-        return sampled;
-    }, [response]);
+        // Second pass: downsample the merged timeline
+        let downsampledData = sortedData;
+        if (sortedData.length > 2000) {
+            const chunkSize = Math.ceil(sortedData.length / 500);
+            const sampled: any[] = [];
 
-    // Calculate statistics based on current zoom range
-    const stats = React.useMemo(() => {
-        if (!response?.data) return null;
+            for (let i = 0; i < sortedData.length; i += chunkSize) {
+                const chunk = sortedData.slice(i, Math.min(i + chunkSize, sortedData.length));
+                if (chunk.length === 0) continue;
 
-        // Use downsampled data for stats if zoomed, otherwise full data
-        // Note: Ideally we'd filter the full data by time range, but for responsiveness 
-        // using the downsampled data visible in the view is a good approximation for the user
-        let dataToAnalyze = downsampledData;
+                // Always include first and last points of chunk
+                const indices = new Set<number>([0, chunk.length - 1]);
 
-        if (zoomRange) {
-            dataToAnalyze = downsampledData.slice(zoomRange.startIndex, zoomRange.endIndex + 1);
-        }
+                // Find min/max for each series in this chunk
+                info.forEach(series => {
+                    if (series.variable === 'Rainfall') {
+                        const key = `rain_${series.id}`;
+                        let minVal = chunk[0][key] ?? 0;
+                        let maxVal = chunk[0][key] ?? 0;
+                        let minIdx = 0;
+                        let maxIdx = 0;
 
-        if (dataToAnalyze.length === 0) return null;
+                        chunk.forEach((record: any, idx: number) => {
+                            const val = record[key] ?? 0;
+                            if (val < minVal) { minVal = val; minIdx = idx; }
+                            if (val > maxVal) { maxVal = val; maxIdx = idx; }
+                        });
 
-        return {
-            flow: {
-                max: Math.max(...dataToAnalyze.map((d: any) => d.flow)),
-                min: Math.min(...dataToAnalyze.map((d: any) => d.flow)),
-                mean: dataToAnalyze.reduce((sum: number, d: any) => sum + d.flow, 0) / dataToAnalyze.length
-            },
-            depth: {
-                max: Math.max(...dataToAnalyze.map((d: any) => d.depth)),
-                min: Math.min(...dataToAnalyze.map((d: any) => d.depth)),
-                mean: dataToAnalyze.reduce((sum: number, d: any) => sum + d.depth, 0) / dataToAnalyze.length
-            },
-            velocity: {
-                max: Math.max(...dataToAnalyze.map((d: any) => d.velocity)),
-                min: Math.min(...dataToAnalyze.map((d: any) => d.velocity)),
-                mean: dataToAnalyze.reduce((sum: number, d: any) => sum + d.velocity, 0) / dataToAnalyze.length
+                        indices.add(minIdx);
+                        indices.add(maxIdx);
+                    } else {
+                        // For flow monitors, check flow, depth, and velocity
+                        ['flow', 'depth', 'velocity'].forEach(metric => {
+                            const key = `${metric}_${series.id}`;
+                            let minVal = chunk[0][key] ?? 0;
+                            let maxVal = chunk[0][key] ?? 0;
+                            let minIdx = 0;
+                            let maxIdx = 0;
+
+                            chunk.forEach((record: any, idx: number) => {
+                                const val = record[key] ?? 0;
+                                if (val < minVal) { minVal = val; minIdx = idx; }
+                                if (val > maxVal) { maxVal = val; maxIdx = idx; }
+                            });
+
+                            indices.add(minIdx);
+                            indices.add(maxIdx);
+                        });
+                    }
+                });
+
+                // Add selected points to sampled data
+                Array.from(indices).sort((a, b) => a - b).forEach(idx => {
+                    sampled.push(chunk[idx]);
+                });
             }
-        };
-    }, [response, downsampledData, zoomRange]);
 
-    // Format time for display
-    const formattedData = React.useMemo(() => {
-        return downsampledData.map((d: any) => ({
+            downsampledData = sampled;
+        }
+
+        // Format time for display
+        const formatted = downsampledData.map(d => ({
             ...d,
-            time: new Date(d.time).toLocaleString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
+            displayTime: new Date(d.rawTime).toLocaleString('en-GB', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
             })
         }));
-    }, [downsampledData]);
+
+        return { mergedData: formatted, seriesInfo: info };
+    }, [datasets.map(d => d.id).join('-'), isLoading, queries.filter(q => q.isSuccess).length]);
 
     if (isLoading) {
         return (
@@ -119,7 +152,7 @@ const FDVChart: React.FC<FDVChartProps> = ({ datasetId }) => {
         );
     }
 
-    if (error || !response?.data) {
+    if (error) {
         return (
             <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-lg">
                 Error loading time-series data.
@@ -127,129 +160,154 @@ const FDVChart: React.FC<FDVChartProps> = ({ datasetId }) => {
         );
     }
 
-    const StatBox: React.FC<{ title: string; stats: { max: number; min: number; mean: number }; unit: string }> = ({ title, stats, unit }) => (
-        <div className="absolute top-2 right-2 bg-white bg-opacity-90 border border-gray-200 text-gray-700 text-xs p-2 rounded shadow-sm z-10">
-            <div className="font-semibold mb-1 text-gray-900">{title}</div>
-            <div>Max: {stats.max.toFixed(3)} {unit}</div>
-            <div>Min: {stats.min.toFixed(3)} {unit}</div>
-            <div>Mean: {stats.mean.toFixed(4)} {unit}</div>
-        </div>
-    );
+    if (mergedData.length === 0) {
+        return <div className="text-center text-gray-500 p-8">No data available for selected datasets.</div>;
+    }
+
+    const hasRainfall = seriesInfo.some(s => s.variable === 'Rainfall');
+    const flowSeries = seriesInfo.filter(s => s.variable !== 'Rainfall');
+    const hasFlowData = flowSeries.length > 0;
 
     return (
         <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Flow, Depth, Velocity Time Series</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Time Series Analysis</h3>
 
-            {/* Depth Chart (Top) */}
-            <div className="relative bg-white border border-gray-200 rounded-t-lg p-4 pb-0">
-                {stats && <StatBox title="Depth" stats={stats.depth} unit="mm" />}
-                <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={formattedData} syncId="fdv" margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                        <XAxis
-                            dataKey="time"
-                            tick={false}
-                            height={0}
-                            axisLine={false}
-                        />
-                        <YAxis
-                            label={{ value: 'Depth (mm)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                            tick={{ fontSize: 10 }}
-                        />
-                        <Tooltip
-                            contentStyle={{ fontSize: 12 }}
-                            labelStyle={{ fontWeight: 'bold' }}
-                        />
-                        <Line
-                            type="monotone"
-                            dataKey="depth"
-                            stroke="#cd5c5c"
-                            strokeWidth={1.5}
-                            dot={false}
-                            name="Depth"
-                            isAnimationActive={false}
-                        />
-                    </LineChart>
-                </ResponsiveContainer>
-            </div>
+            {/* Rainfall Chart - show at top if mixed, or as only chart if rainfall-only */}
+            {hasRainfall && (
+                <div className={`relative bg-white border border-gray-200 ${hasFlowData ? 'rounded-t-lg' : 'rounded-lg'} p-4 ${hasFlowData ? 'pb-0' : ''}`}>
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Rainfall Intensity</h4>
+                    <ResponsiveContainer width="100%" height={hasFlowData ? 150 : 400}>
+                        <LineChart data={mergedData} syncId="fdv" margin={{ top: 10, right: 30, left: 0, bottom: hasFlowData ? 0 : 60 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                            <XAxis
+                                dataKey="displayTime"
+                                tick={hasFlowData ? false : { fontSize: 10 }}
+                                height={hasFlowData ? 0 : 60}
+                                axisLine={!hasFlowData}
+                                angle={hasFlowData ? 0 : -45}
+                                textAnchor={hasFlowData ? "middle" : "end"}
+                            />
+                            <YAxis label={{ value: 'mm/hr', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} tick={{ fontSize: 10 }} reversed />
+                            <Tooltip contentStyle={{ fontSize: 12 }} labelStyle={{ fontWeight: 'bold' }} />
+                            <Legend />
+                            {seriesInfo.filter(s => s.variable === 'Rainfall').map(s => (
+                                <Line
+                                    key={s.id}
+                                    type="step"
+                                    dataKey={`rain_${s.id}`}
+                                    stroke={s.color}
+                                    strokeWidth={1.5}
+                                    dot={false}
+                                    name={s.name}
+                                    isAnimationActive={false}
+                                />
+                            ))}
+                            {!hasFlowData && (
+                                <Brush
+                                    dataKey="displayTime"
+                                    height={30}
+                                    stroke="#8884d8"
+                                    tickFormatter={() => ""}
+                                />
+                            )}
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
 
-            {/* Flow Chart (Middle) */}
-            <div className="relative bg-white border-x border-gray-200 p-4 pb-0 -mt-px">
-                {stats && <StatBox title="Flow" stats={stats.flow} unit="L/s" />}
-                <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={formattedData} syncId="fdv" margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                        <XAxis
-                            dataKey="time"
-                            tick={false}
-                            height={0}
-                            axisLine={false}
-                        />
-                        <YAxis
-                            label={{ value: 'Flow (L/s)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                            tick={{ fontSize: 10 }}
-                        />
-                        <Tooltip
-                            contentStyle={{ fontSize: 12 }}
-                            labelStyle={{ fontWeight: 'bold' }}
-                        />
-                        <Line
-                            type="monotone"
-                            dataKey="flow"
-                            stroke="#4682b4"
-                            strokeWidth={1.5}
-                            dot={false}
-                            name="Flow"
-                            isAnimationActive={false}
-                        />
-                    </LineChart>
-                </ResponsiveContainer>
-            </div>
+            {/* Only show flow/depth/velocity charts if we have flow data */}
+            {hasFlowData && (
+                <>
+                    {/* Depth Chart */}
+                    <div className={`relative bg-white border border-gray-200 ${hasRainfall ? 'border-t-0' : 'rounded-t-lg'} p-4 pb-0`}>
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">Depth</h4>
+                        <ResponsiveContainer width="100%" height={200}>
+                            <LineChart data={mergedData} syncId="fdv" margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                                <XAxis dataKey="displayTime" tick={false} height={0} axisLine={false} />
+                                <YAxis label={{ value: 'mm', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} tick={{ fontSize: 10 }} />
+                                <Tooltip contentStyle={{ fontSize: 12 }} labelStyle={{ fontWeight: 'bold' }} />
+                                <Legend />
+                                {flowSeries.map(s => (
+                                    <Line
+                                        key={s.id}
+                                        type="monotone"
+                                        dataKey={`depth_${s.id}`}
+                                        stroke={s.color}
+                                        strokeWidth={1.5}
+                                        dot={false}
+                                        name={s.name}
+                                        isAnimationActive={false}
+                                    />
+                                ))}
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
 
-            {/* Velocity Chart (Bottom) */}
-            <div className="relative bg-white border border-gray-200 rounded-b-lg p-4 -mt-px">
-                {stats && <StatBox title="Velocity" stats={stats.velocity} unit="m/s" />}
-                <ResponsiveContainer width="100%" height={260}>
-                    <LineChart data={formattedData} syncId="fdv" margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                        <XAxis
-                            dataKey="time"
-                            tick={{ fontSize: 10 }}
-                            angle={-45}
-                            textAnchor="end"
-                            height={60}
-                        />
-                        <YAxis
-                            label={{ value: 'Velocity (m/s)', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
-                            tick={{ fontSize: 10 }}
-                        />
-                        <Tooltip
-                            contentStyle={{ fontSize: 12 }}
-                            labelStyle={{ fontWeight: 'bold' }}
-                        />
-                        <Line
-                            type="monotone"
-                            dataKey="velocity"
-                            stroke="#3cb371"
-                            strokeWidth={1.5}
-                            dot={false}
-                            name="Velocity"
-                            isAnimationActive={false}
-                        />
-                        <Brush
-                            dataKey="time"
-                            height={30}
-                            stroke="#8884d8"
-                            tickFormatter={() => ""}
-                            onChange={(e: any) => {
-                                if (e && e.startIndex !== undefined && e.endIndex !== undefined) {
-                                    setZoomRange({ startIndex: e.startIndex, endIndex: e.endIndex });
-                                }
-                            }}
-                        />
-                    </LineChart>
-                </ResponsiveContainer>
-            </div>
+                    {/* Flow Chart */}
+                    <div className="relative bg-white border-x border-gray-200 p-4 pb-0 -mt-px">
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">Flow</h4>
+                        <ResponsiveContainer width="100%" height={200}>
+                            <LineChart data={mergedData} syncId="fdv" margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                                <XAxis dataKey="displayTime" tick={false} height={0} axisLine={false} />
+                                <YAxis label={{ value: 'L/s', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} tick={{ fontSize: 10 }} />
+                                <Tooltip contentStyle={{ fontSize: 12 }} labelStyle={{ fontWeight: 'bold' }} />
+                                <Legend />
+                                {flowSeries.map(s => (
+                                    <Line
+                                        key={s.id}
+                                        type="monotone"
+                                        dataKey={`flow_${s.id}`}
+                                        stroke={s.color}
+                                        strokeWidth={1.5}
+                                        dot={false}
+                                        name={s.name}
+                                        isAnimationActive={false}
+                                    />
+                                ))}
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* Velocity Chart */}
+                    <div className="relative bg-white border border-gray-200 rounded-b-lg p-4 -mt-px">
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">Velocity</h4>
+                        <ResponsiveContainer width="100%" height={260}>
+                            <LineChart data={mergedData} syncId="fdv" margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                                <XAxis dataKey="displayTime" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={60} />
+                                <YAxis label={{ value: 'm/s', angle: -90, position: 'insideLeft', style: { fontSize: 12 } }} tick={{ fontSize: 10 }} />
+                                <Tooltip contentStyle={{ fontSize: 12 }} labelStyle={{ fontWeight: 'bold' }} />
+                                <Legend />
+                                {flowSeries.map(s => (
+                                    <Line
+                                        key={s.id}
+                                        type="monotone"
+                                        dataKey={`velocity_${s.id}`}
+                                        stroke={s.color}
+                                        strokeWidth={1.5}
+                                        dot={false}
+                                        name={s.name}
+                                        isAnimationActive={false}
+                                    />
+                                ))}
+                                <Brush
+                                    dataKey="displayTime"
+                                    height={30}
+                                    stroke="#8884d8"
+                                    tickFormatter={() => ""}
+                                    onChange={(e: any) => {
+                                        if (e && e.startIndex !== undefined && e.endIndex !== undefined) {
+                                            setZoomRange({ startIndex: e.startIndex, endIndex: e.endIndex });
+                                        }
+                                    }}
+                                />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </>
+            )}
         </div>
     );
 };

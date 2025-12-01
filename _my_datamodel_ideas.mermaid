@@ -1,0 +1,297 @@
+erDiagram
+
+    %% ================================
+    %% AUTH / USER ACCESS CONTROL
+    %% ================================
+
+    USER {
+        string userId PK
+        string name
+        string email
+    }
+
+    PROJECT_ACCESS {
+        string accessId PK
+        string userId FK
+        string projectId
+        string projectType "FSM | FSA"
+        string role "owner | editor | viewer"
+    }
+
+    USER ||--o{ PROJECT_ACCESS : "has access"
+
+
+    %% ================================
+    %% PROJECT ABSTRACTION LAYER
+    %% ================================
+
+    FSM_PROJECT {
+        string projectId PK
+        string name
+        date startDate
+        date endDate
+    }
+
+    FSA_PROJECT {
+        string projectId PK
+        string name
+        date startDate
+        date endDate
+    }
+
+    PROJECT_ACCESS ||--o{ FSM_PROJECT : "FSM access"
+    PROJECT_ACCESS ||--o{ FSA_PROJECT : "FSA access"
+
+
+
+    %% ================================
+    %% FSM DOMAIN (FULLY NORMALISED)
+    %% ================================
+
+    SITE {
+        string siteId PK
+        string projectId FK
+        string siteType "network-asset | location"
+    }
+
+    NETWORK_ASSET_SITE {
+        string siteId PK
+        string assetId
+    }
+
+    LOCATION_SITE {
+        string siteId PK
+        string address
+        float latitude
+        float longitude
+        string description
+    }
+
+    EQUIPMENT {
+        string equipmentId PK
+        string equipmentType "flow-monitor | depth-monitor | rain-gauge | pump-logger"
+        string serialNumber
+        string model
+    }
+
+    PROJECT_EQUIPMENT {
+        string projectEquipmentId PK
+        string projectId FK
+        string equipmentId FK
+    }
+
+    INSTALL {
+        string installId PK
+        string siteId FK
+        string projectEquipmentId FK
+        date installDate
+        date removalDate
+    }
+
+    INSTALL_CONFIG {
+        string installId PK
+        string pipeShape
+        int pipeHeight
+        int pipeWidth
+        int depthToInvert
+        int sensorOffset
+        string orientation
+        string rgMountingType
+        string notes
+    }
+
+    RAWDATASET {
+        string rawDataSetId PK
+        string installId FK
+        date downloadedAt
+    }
+
+    RAW_DEPTH {
+        string id PK
+        string rawDataSetId FK
+        datetime t
+        float depth
+        int qualityCode
+    }
+
+    RAW_VELOCITY {
+        string id PK
+        string rawDataSetId FK
+        datetime t
+        float velocity
+        int qualityCode
+    }
+
+    RAW_RAINFALL {
+        string id PK
+        string rawDataSetId FK
+        datetime t
+        float intensity
+        int tips
+    }
+
+    RAW_PUMPLOG {
+        string id PK
+        string rawDataSetId FK
+        datetime t
+        boolean pumpOn
+    }
+
+    RAW_BATTERY {
+        string id PK
+        string rawDataSetId FK
+        datetime t
+        float voltage
+    }
+
+    RAW_DIAGNOSTIC {
+        string id PK
+        string rawDataSetId FK
+        datetime t
+        string diagCode
+        string diagValue
+    }
+
+    CALIBRATEDDATA {
+        string calibratedId PK
+        string installId FK
+        date generatedAt
+    }
+
+    ML_CLASSIFICATION {
+        string mlClassId PK
+        string calibratedId FK
+        date generatedAt
+        string modelVersion
+    }
+
+    USER_CLASSIFICATION {
+        string userClassId PK
+        string calibratedId FK
+        date updatedAt
+        string updatedBy
+    }
+
+
+    %% FSM RELATIONSHIPS
+    FSM_PROJECT ||--o{ SITE : "has sites"
+    SITE ||--|| NETWORK_ASSET_SITE : "details"
+    SITE ||--|| LOCATION_SITE : "details"
+
+    FSM_PROJECT ||--o{ PROJECT_EQUIPMENT : "allocates"
+    EQUIPMENT ||--o{ PROJECT_EQUIPMENT : "is allocated"
+
+    SITE ||--o{ INSTALL : "hosts"
+    PROJECT_EQUIPMENT ||--o{ INSTALL : "is installed as"
+
+    INSTALL ||--|| INSTALL_CONFIG : "config"
+    INSTALL ||--o{ RAWDATASET : "downloads"
+
+    RAWDATASET ||--o{ RAW_DEPTH : "depth"
+    RAWDATASET ||--o{ RAW_VELOCITY : "velocity"
+    RAWDATASET ||--o{ RAW_RAINFALL : "rainfall"
+    RAWDATASET ||--o{ RAW_PUMPLOG : "pump log"
+    RAWDATASET ||--o{ RAW_BATTERY : "battery"
+    RAWDATASET ||--o{ RAW_DIAGNOSTIC : "diagnostic"
+
+    INSTALL ||--|| CALIBRATEDDATA : "produces"
+    CALIBRATEDDATA ||--o{ ML_CLASSIFICATION : "ml"
+    CALIBRATEDDATA ||--o{ USER_CLASSIFICATION : "user class"
+
+
+
+    %% ================================
+    %% FSA DOMAIN (FLOW SURVEY ANALYSIS)
+    %% ================================
+
+    FSA_DATASET {
+        string datasetId PK
+        string projectId FK
+        string source
+        date importedAt
+    }
+
+    FLOW_MONITOR {
+        string flowMonitorId PK
+        string datasetId FK
+        string name
+        float timestep
+        string flowUnits
+        string depthUnits
+        string velocityUnits
+    }
+
+    FLOW_MONITOR_STATS {
+        string flowMonitorId PK
+        float minFlow
+        float maxFlow
+        float totalVolume
+        float minDepth
+        float maxDepth
+        float minVelocity
+        float maxVelocity
+    }
+
+    FLOW_MONITOR_MODEL {
+        string flowMonitorId PK
+        boolean hasModelData
+        string pipeRef
+        string modelRG
+        float pipeLength
+        string pipeShape
+        float pipeDia
+        float pipeHeight
+        float pipeRoughness
+        float usInvert
+        float dsInvert
+        string systemType
+    }
+
+    FLOW_MONITOR_LOCATION {
+        string flowMonitorId PK
+        float x
+        float y
+    }
+
+    RAIN_GAUGE {
+        string rainGaugeId PK
+        string datasetId FK
+        string name
+        float timestep
+    }
+
+    RAIN_GAUGE_STATS {
+        string rainGaugeId PK
+        float minIntensity
+        float maxIntensity
+        float totalDepth
+        float returnPeriod
+    }
+
+    RAIN_GAUGE_LOCATION {
+        string rainGaugeId PK
+        float x
+        float y
+    }
+
+    SURVEY_EVENT {
+        string eventId PK
+        string projectId FK
+        string eventType
+        datetime eventStart
+        datetime eventEnd
+    }
+
+    %% Relationships
+    FSA_PROJECT ||--o{ FSA_DATASET : hasData
+    FSA_PROJECT ||--o{ SURVEY_EVENT : hasEvents
+
+    FSA_DATASET ||--o{ FLOW_MONITOR : hasFlow
+    FSA_DATASET ||--o{ RAIN_GAUGE : hasRain
+
+    FLOW_MONITOR ||--|| FLOW_MONITOR_STATS : stats
+    FLOW_MONITOR ||--|| FLOW_MONITOR_MODEL : model
+    FLOW_MONITOR ||--|| FLOW_MONITOR_LOCATION : location
+
+    RAIN_GAUGE ||--|| RAIN_GAUGE_STATS : stats
+    RAIN_GAUGE ||--|| RAIN_GAUGE_LOCATION : location

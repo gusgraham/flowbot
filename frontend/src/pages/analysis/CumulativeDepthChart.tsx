@@ -88,7 +88,7 @@ export const CumulativeDepthChart: React.FC<CumulativeDepthChartProps> = ({ data
             for (const id of rainfallIds) {
                 try {
                     console.log(`Fetching data for dataset ${id}...`);
-                    const response = await fetch(`/api/analysis/rainfall/${id}/cumulative-depth`);
+                    const response = await fetch(`/api/fsa/rainfall/${id}/cumulative-depth`);
                     if (!response.ok) {
                         console.error(`HTTP error for dataset ${id}: ${response.status}`);
                         continue;

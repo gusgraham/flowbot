@@ -1,0 +1,238 @@
+erDiagram
+    Project ||--o{ Site : "has"
+    Project ||--o{ Install : "has"
+    Project ||--o{ Monitor : "has"
+    Project ||--o{ Interim : "has"
+    
+    Site ||--o{ Install : "has"
+    
+    Monitor ||--o{ Install : "used_in"
+    Monitor ||--o{ TimeSeries : "generates"
+    
+    Install ||--o{ Visit : "has"
+    Install ||--o{ TimeSeries : "has"
+    Install ||--|| RawData : "has"
+    Install ||--o{ ProcessedData : "has"
+    Install ||--o{ InterimReview : "reviewed_in"
+    Install ||--o{ Event : "has"
+
+    Interim ||--o{ InterimReview : "contains"
+
+    AnalysisProject ||--o{ AnalysisDataset : "contains"
+    AnalysisDataset ||--o{ AnalysisTimeSeries : "contains"
+
+    User ||--o{ Note : "creates"
+    User ||--o{ Attachment : "uploads"
+
+    Project {
+        int id PK
+        string job_number
+        string job_name
+        string client
+        string client_job_ref
+        datetime survey_start_date
+        datetime survey_end_date
+        bool survey_complete
+    }
+
+    Site {
+        int id PK
+        int project_id FK
+        string site_id
+        string site_type
+        string address
+        string mh_ref
+        string w3w
+        float easting
+        float northing
+    }
+
+    Monitor {
+        int id PK
+        int project_id FK
+        string monitor_asset_id
+        string monitor_type
+        string monitor_sub_type
+        string pmac_id
+    }
+
+    Install {
+        int id PK
+        int project_id FK
+        int site_id FK
+        int monitor_id FK
+        string install_id
+        string install_type
+        string client_ref
+        datetime install_date
+        datetime remove_date
+        string fm_pipe_letter
+        string fm_pipe_shape
+        int fm_pipe_height_mm
+        int fm_pipe_width_mm
+        int fm_pipe_depth_to_invert_mm
+        int fm_sensor_offset_mm
+        string rg_position
+    }
+
+    Visit {
+        int id PK
+        int install_id FK
+        datetime visit_date
+        string crew_lead
+        int silt_level_mm
+        float battery_voltage
+        string notes
+        string photos_json
+    }
+
+    RawData {
+        int id PK
+        int install_id FK
+        string rainfall_file_pattern
+        string depth_file_pattern
+        string velocity_file_pattern
+        string silt_levels_json
+        string depth_corrections_json
+        string velocity_corrections_json
+        string pipe_shape_override
+    }
+
+    ProcessedData {
+        int id PK
+        int install_id FK
+        datetime start_time
+        datetime end_time
+        string file_path
+        datetime created_at
+    }
+
+    Interim {
+        int id PK
+        int project_id FK
+        datetime start_date
+        datetime end_date
+        bool data_import_complete
+        bool site_inspection_review_complete
+        bool data_classification_complete
+        bool report_complete
+        string summary_text
+    }
+
+    InterimReview {
+        int id PK
+        int interim_id FK
+        int install_id FK
+        bool data_covered
+        bool ignore_missing
+        string reason_missing
+        bool anomalies_found
+        string comments
+    }
+
+    TimeSeries {
+        int id PK
+        int install_id FK
+        int monitor_id FK
+        string variable
+        string data_type
+        datetime start_time
+        datetime end_time
+        int interval_minutes
+        string filename
+    }
+
+    Event {
+        int id PK
+        int install_id FK
+        string event_type
+        datetime start_time
+        datetime end_time
+        string label
+    }
+
+    User {
+        int id PK
+        string username
+        string email
+        string full_name
+        bool is_active
+        bool is_superuser
+        string role
+        string hashed_password
+    }
+
+    Note {
+        int id PK
+        string content
+        datetime created_at
+        int user_id FK
+        int project_id FK "Optional"
+        int site_id FK "Optional"
+        int monitor_id FK "Optional"
+        int install_id FK "Optional"
+    }
+
+    Attachment {
+        int id PK
+        string filename
+        string file_path
+        datetime uploaded_at
+        int user_id FK
+        int note_id FK "Optional"
+        int project_id FK "Optional"
+        int site_id FK "Optional"
+        int monitor_id FK "Optional"
+        int install_id FK "Optional"
+    }
+
+    AnalysisProject {
+        int id PK
+        string name
+        string client
+        string job_number
+        string description
+        datetime created_at
+    }
+
+    AnalysisDataset {
+        int id PK
+        int project_id FK
+        string name
+        string variable
+        string file_path
+        string status
+        string error_message
+        datetime created_at
+        string metadata_json
+    }
+
+    AnalysisTimeSeries {
+        int id PK
+        int dataset_id FK
+        datetime timestamp
+        float value
+        float flow
+        float depth
+        float velocity
+    }
+
+    VerificationProject {
+        int id PK
+        string name
+        string client
+        string job_number
+        string model_name
+        string description
+        datetime created_at
+    }
+
+    WaterQualityProject {
+        int id PK
+        string name
+        string client
+        string job_number
+        datetime campaign_date
+        string description
+        datetime created_at
+    }

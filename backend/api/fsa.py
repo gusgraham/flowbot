@@ -1,55 +1,60 @@
-from typing import Dict, Any, Optional, List
+from typing import List, Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Body
 from sqlmodel import Session, select
-from database import get_session
-from services.analysis import RainfallService
-from domain.analysis import AnalysisProject, AnalysisProjectCreate, AnalysisProjectRead, AnalysisDataset, AnalysisDatasetRead, AnalysisTimeSeries
+import shutil
+import os
+import json
+import threading
+import time
+
+from database import get_session, SessionLocal
+from domain.fsa import (
+    FsaProject, FsaProjectCreate, FsaProjectRead,
+    FsaDataset, FsaDatasetCreate, FsaDatasetRead,
+    FlowMonitor, FlowMonitorRead,
+    FsaTimeSeries
+)
+from services.importers import import_fdv_file, import_r_file
+from services.fsa_services import FsaRainfallService, FsaEventService, FsaFDVService
 from pydantic import BaseModel
 
-router = APIRouter()
+router = APIRouter(prefix="/fsa", tags=["Flow Survey Analysis"])
 
-# Analysis Projects
-@router.post("/analysis/projects", response_model=AnalysisProjectRead)
-def create_analysis_project(
-    project: AnalysisProjectCreate, 
-    session: Session = Depends(get_session)
-):
-    db_project = AnalysisProject.from_orm(project)
+# ==========================================
+# PROJECTS
+# ==========================================
+
+@router.post("/projects/", response_model=FsaProjectRead)
+def create_project(project: FsaProjectCreate, session: Session = Depends(get_session)):
+    db_project = FsaProject(**project.model_dump())
     session.add(db_project)
     session.commit()
     session.refresh(db_project)
     return db_project
 
-@router.get("/analysis/projects", response_model=List[AnalysisProjectRead])
-def list_analysis_projects(
-    offset: int = 0, 
-    limit: int = 100, 
+@router.get("/projects/", response_model=List[FsaProjectRead])
+def read_projects(
+    offset: int = 0,
+    limit: int = Query(default=100, le=100),
     session: Session = Depends(get_session)
 ):
-    projects = session.exec(select(AnalysisProject).offset(offset).limit(limit)).all()
+    projects = session.exec(select(FsaProject).offset(offset).limit(limit)).all()
     return projects
 
-@router.get("/analysis/projects/{project_id}", response_model=AnalysisProjectRead)
-def get_analysis_project(
-    project_id: int, 
-    session: Session = Depends(get_session)
-):
-    project = session.get(AnalysisProject, project_id)
+@router.get("/projects/{project_id}", response_model=FsaProjectRead)
+def read_project(project_id: int, session: Session = Depends(get_session)):
+    project = session.get(FsaProject, project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="Analysis Project not found")
+        raise HTTPException(status_code=404, detail="Project not found")
     return project
 
-# Analysis Datasets
-from fastapi import UploadFile, File
-import shutil
-import os
-import json
-from domain.analysis import AnalysisDataset, AnalysisDatasetRead
-from services.importers import import_fdv_file, import_r_file
+# ==========================================
+# FILE UPLOAD
+# ==========================================
 
-@router.post("/analysis/projects/{project_id}/upload", response_model=AnalysisDatasetRead)
-def upload_analysis_dataset(
+@router.post("/projects/{project_id}/upload", response_model=FsaDatasetRead)
+def upload_dataset(
     project_id: int,
     file: UploadFile = File(...),
     dataset_type: Optional[str] = None,
@@ -61,8 +66,13 @@ def upload_analysis_dataset(
     print(f"   Dataset Type: {dataset_type}")
     print(f"{'='*60}")
     
+    # Verify project exists
+    project = session.get(FsaProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
     # Ensure directory exists
-    upload_dir = f"data/analysis/{project_id}"
+    upload_dir = f"data/fsa/{project_id}"
     os.makedirs(upload_dir, exist_ok=True)
     
     file_path = os.path.join(upload_dir, file.filename)
@@ -93,11 +103,10 @@ def upload_analysis_dataset(
     
     # Create dataset record with 'processing' status
     print(f"💾 Creating dataset record (status: processing)")
-    import time
     retries = 3
     while retries > 0:
         try:
-            dataset = AnalysisDataset(
+            dataset = FsaDataset(
                 project_id=project_id,
                 name=file.filename,
                 variable=variable_type,
@@ -131,7 +140,6 @@ def upload_analysis_dataset(
     
     # Trigger background processing
     print(f"🚀 Triggering background processing for dataset {dataset.id}")
-    import threading
     thread = threading.Thread(target=process_dataset_background, args=(dataset.id,))
     thread.daemon = True
     thread.start()
@@ -144,11 +152,9 @@ def upload_analysis_dataset(
 
 def process_dataset_background(dataset_id: int):
     """Background task to parse file and populate timeseries data"""
-    from database import SessionLocal
-    
     session = SessionLocal()
     try:
-        dataset = session.get(AnalysisDataset, dataset_id)
+        dataset = session.get(FsaDataset, dataset_id)
         if not dataset:
             print(f"⚠️  Dataset {dataset_id} not found for background processing")
             return
@@ -228,7 +234,6 @@ def process_dataset_background(dataset_id: int):
             return
         
         # Store timeseries data
-        from domain.analysis import AnalysisTimeSeries
         if parsed_data and 'data' in parsed_data:
             print(f"💾 Storing timeseries data")
             try:
@@ -243,7 +248,7 @@ def process_dataset_background(dataset_id: int):
                         print(f"   Processing {len(times)} rainfall records...")
                         for timestamp, value in zip(times, values):
                             timeseries_records.append(
-                                AnalysisTimeSeries(
+                                FsaTimeSeries(
                                     dataset_id=dataset.id,
                                     timestamp=timestamp,
                                     value=float(value)
@@ -254,58 +259,17 @@ def process_dataset_background(dataset_id: int):
                         depths = data_dict.get('depth', [])
                         velocities = data_dict.get('velocity', [])
                         
-                        # Ensure all arrays are same length or handle missing
                         count = len(times)
                         print(f"   Processing {count} flow/depth/velocity records...")
                         
                         for i in range(count):
                             timeseries_records.append(
-                                AnalysisTimeSeries(
+                                FsaTimeSeries(
                                     dataset_id=dataset.id,
                                     timestamp=times[i],
                                     flow=float(flows[i]) if i < len(flows) and flows[i] is not None else 0.0,
                                     depth=float(depths[i]) if i < len(depths) and depths[i] is not None else 0.0,
                                     velocity=float(velocities[i]) if i < len(velocities) and velocities[i] is not None else 0.0
-                                )
-                            )
-                    else:
-                        values = data_dict.get('value', [])
-                        print(f"   Processing {len(times)} generic records...")
-                        for timestamp, value in zip(times, values):
-                            timeseries_records.append(
-                                AnalysisTimeSeries(
-                                    dataset_id=dataset.id,
-                                    timestamp=timestamp,
-                                    value=float(value)
-                                )
-                            )
-                else:
-                    print(f"   Processing {len(data_dict)} records (legacy format)...")
-                    for point in data_dict:
-                        if variable_type == "Rainfall":
-                            timeseries_records.append(
-                                AnalysisTimeSeries(
-                                    dataset_id=dataset.id,
-                                    timestamp=point['time'],
-                                    value=float(point.get('rainfall', 0.0))
-                                )
-                            )
-                        elif variable_type == "Flow/Depth":
-                            timeseries_records.append(
-                                AnalysisTimeSeries(
-                                    dataset_id=dataset.id,
-                                    timestamp=point['time'],
-                                    flow=float(point.get('flow', 0.0)),
-                                    depth=float(point.get('depth', 0.0)),
-                                    velocity=float(point.get('velocity', 0.0))
-                                )
-                            )
-                        else:
-                            timeseries_records.append(
-                                AnalysisTimeSeries(
-                                    dataset_id=dataset.id,
-                                    timestamp=point['time'],
-                                    value=float(point.get('value', 0.0))
                                 )
                             )
                 
@@ -328,7 +292,6 @@ def process_dataset_background(dataset_id: int):
                                 if "database is locked" in str(e):
                                     retries -= 1
                                     print(f"   ⚠️ Database locked, retrying batch {i//BATCH_SIZE + 1} ({retries} retries left)...")
-                                    import time
                                     time.sleep(1)
                                     session.rollback()
                                 else:
@@ -339,9 +302,6 @@ def process_dataset_background(dataset_id: int):
                             raise Exception("Database locked - failed to insert batch after retries")
                             
                         print(f"   ✓ Stored batch {i//BATCH_SIZE + 1}/{(total_records + BATCH_SIZE - 1)//BATCH_SIZE}")
-                        
-                        # Yield to other threads
-                        import time
                         time.sleep(0.1)
                     
                     print(f"✓ Stored {len(timeseries_records)} timeseries records")
@@ -364,20 +324,31 @@ def process_dataset_background(dataset_id: int):
     finally:
         session.close()
 
-@router.get("/analysis/projects/{project_id}/datasets", response_model=List[AnalysisDatasetRead])
-def list_analysis_datasets(
+# ==========================================
+# DATASETS
+# ==========================================
+
+@router.get("/projects/{project_id}/datasets", response_model=List[FsaDatasetRead])
+def list_datasets(
     project_id: int,
     session: Session = Depends(get_session)
 ):
-    datasets = session.exec(select(AnalysisDataset).where(AnalysisDataset.project_id == project_id)).all()
+    datasets = session.exec(select(FsaDataset).where(FsaDataset.project_id == project_id)).all()
     return datasets
 
-@router.delete("/analysis/datasets/{dataset_id}")
-def delete_analysis_dataset(
+@router.get("/datasets/{dataset_id}", response_model=FsaDatasetRead)
+def read_dataset(dataset_id: int, session: Session = Depends(get_session)):
+    dataset = session.get(FsaDataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return dataset
+
+@router.delete("/datasets/{dataset_id}")
+def delete_dataset(
     dataset_id: int,
     session: Session = Depends(get_session)
 ):
-    dataset = session.get(AnalysisDataset, dataset_id)
+    dataset = session.get(FsaDataset, dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
@@ -394,34 +365,50 @@ def delete_analysis_dataset(
     
     return {"message": "Dataset deleted successfully", "dataset_id": dataset_id}
 
-@router.patch("/analysis/datasets/{dataset_id}", response_model=AnalysisDatasetRead)
-def update_analysis_dataset(
+@router.patch("/datasets/{dataset_id}", response_model=FsaDatasetRead)
+def update_dataset(
     dataset_id: int,
-    updates: Dict[str, Any],
+    updates: Dict[str, Any] = Body(...),
     session: Session = Depends(get_session)
 ):
-    """Update dataset metadata (e.g., pipe parameters)"""
-    dataset = session.get(AnalysisDataset, dataset_id)
+    dataset = session.get(FsaDataset, dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
-    # Merge updates into existing metadata
-    # Not implemented in service yet, but keeping endpoint structure
+    # Parse existing metadata
+    try:
+        metadata = json.loads(dataset.metadata_json) if dataset.metadata_json else {}
+    except json.JSONDecodeError:
+        metadata = {}
+
+    for key, value in updates.items():
+        if hasattr(dataset, key):
+            # Handle metadata_json if passed explicitly as dict
+            if key == "metadata_json" and isinstance(value, dict):
+                metadata.update(value)
+            else:
+                setattr(dataset, key, value)
+        else:
+            # If field doesn't exist on model, store in metadata
+            metadata[key] = value
+    
+    # Save updated metadata
+    dataset.metadata_json = json.dumps(metadata)
+    
+    session.add(dataset)
+    session.commit()
+    session.refresh(dataset)
     return dataset
 
-def get_rainfall_service(session: Session = Depends(get_session)) -> RainfallService:
-    return RainfallService(session)
+# ==========================================
+# RAINFALL ANALYSIS
+# ==========================================
 
-@router.get("/analysis/rainfall/{dataset_id}/completeness")
-def check_data_completeness(
-    dataset_id: int, 
-    service: RainfallService = Depends(get_rainfall_service)
-) -> Dict[str, Any]:
-    return service.check_data_completeness(dataset_id)
+def get_rainfall_service(session: Session = Depends(get_session)) -> FsaRainfallService:
+    return FsaRainfallService(session)
 
-def get_event_service(session: Session = Depends(get_session)) -> Any:
-    from services.analysis import EventService
-    return EventService(session)
+def get_event_service(session: Session = Depends(get_session)) -> FsaEventService:
+    return FsaEventService(session)
 
 class AnalysisParams(BaseModel):
     rainfallDepthTolerance: float = 0
@@ -433,18 +420,16 @@ class AnalysisParams(BaseModel):
     partialPercent: float = 20
     useConsecutiveIntensities: bool = True
 
-@router.post("/analysis/rainfall/events")
+@router.post("/rainfall/events")
 def run_rainfall_analysis(
     dataset_id: int,
     params: AnalysisParams,
-    service: Any = Depends(get_event_service),
-    rainfall_service: RainfallService = Depends(get_rainfall_service)
+    service: FsaEventService = Depends(get_event_service),
+    rainfall_service: FsaRainfallService = Depends(get_rainfall_service)
 ) -> Dict[str, Any]:
-    # Map frontend params to service params
-    
     events = service.detect_storms(
         dataset_id=dataset_id, 
-        inter_event_hours=12, # Standard separation or derived?
+        inter_event_hours=12,
         min_total_mm=params.requiredDepth,
         min_intensity=params.requiredIntensity,
         min_intensity_duration=params.requiredIntensityDuration,
@@ -479,8 +464,8 @@ def run_rainfall_analysis(
             "Start": e['start_time'].isoformat(),
             "End": e['end_time'].isoformat(),
             "Depth": e['total_mm'],
-            "Intensity_Count": 0, # Placeholder
-            "Passed": e['passed'], # 1=Full, 2=Partial, 0=No
+            "Intensity_Count": 0,
+            "Passed": e['passed'],
             "Status": e['status']
         })
         
@@ -498,40 +483,21 @@ def run_rainfall_analysis(
         }
     }
 
-@router.post("/analysis/events/{dataset_id}/detect-storms")
-def detect_storms(
-    dataset_id: int,
-    inter_event_hours: int = 6,
-    min_total_mm: float = 2.0,
-    service: Any = Depends(get_event_service)
-) -> Dict[str, Any]:
-    events = service.detect_storms(dataset_id, inter_event_hours, min_total_mm)
-    return {"dataset_id": dataset_id, "events": events, "count": len(events)}
+@router.get("/rainfall/{dataset_id}/cumulative-depth")
+def get_cumulative_depth(
+    dataset_id: int, 
+    service: FsaRainfallService = Depends(get_rainfall_service)
+):
+    return service.get_cumulative_depth(dataset_id)
 
-@router.post("/analysis/events/{dataset_id}/detect-dry-days")
-def detect_dry_days(
-    dataset_id: int,
-    threshold_mm: float = 0.1,
-    service: Any = Depends(get_event_service)
-) -> Dict[str, Any]:
-    days = service.detect_dry_days(dataset_id, threshold_mm)
-    return {"dataset_id": dataset_id, "dry_days": days, "count": len(days)}
+# ==========================================
+# FDV ANALYSIS
+# ==========================================
 
-def get_fdv_service(session: Session = Depends(get_session)) -> Any:
-    from services.analysis import FDVService
-    return FDVService(session)
+def get_fdv_service(session: Session = Depends(get_session)) -> FsaFDVService:
+    return FsaFDVService(session)
 
-@router.get("/analysis/scatter/{dataset_id}")
-def get_scatter_data(
-    dataset_id: int,
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
-    service: Any = Depends(get_fdv_service)
-) -> Dict[str, Any]:
-    points = service.get_scatter_data(dataset_id, start_date, end_date)
-    return {"dataset_id": dataset_id, "points": points, "count": len(points)}
-
-@router.get("/analysis/fdv/{dataset_id}/timeseries")
+@router.get("/fdv/{dataset_id}/timeseries")
 def get_fdv_timeseries(
     dataset_id: int,
     start_date: Optional[datetime] = Query(None),
@@ -539,54 +505,25 @@ def get_fdv_timeseries(
     session: Session = Depends(get_session)
 ) -> Dict[str, Any]:
     """Get time-series data (flow, depth, velocity) for FDV dataset"""
-    # Verify dataset exists
-    dataset = session.get(AnalysisDataset, dataset_id)
+    dataset = session.get(FsaDataset, dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
         
-    # Query timeseries data
-    query = select(AnalysisTimeSeries).where(AnalysisTimeSeries.dataset_id == dataset_id)
+    query = select(FsaTimeSeries).where(FsaTimeSeries.dataset_id == dataset_id)
     
     if start_date:
-        query = query.where(AnalysisTimeSeries.timestamp >= start_date)
+        query = query.where(FsaTimeSeries.timestamp >= start_date)
     if end_date:
-        query = query.where(AnalysisTimeSeries.timestamp <= end_date)
+        query = query.where(FsaTimeSeries.timestamp <= end_date)
         
-    query = query.order_by(AnalysisTimeSeries.timestamp)
+    query = query.order_by(FsaTimeSeries.timestamp)
     results = session.exec(query).all()
     
-    # If no data in DB, try to parse from file (fallback for legacy/unprocessed datasets)
-    if not results and dataset.status != "processing":
-        # ... (fallback logic could go here, but for now let's rely on DB)
-        pass
-
-    # Convert to response format
     timeseries = []
-    
-    # Check if we need to separate flow/depth/velocity or if they are all in one value
-    # For FDV, we might need a more complex schema if we stored them separately
-    # But currently AnalysisTimeSeries only has 'value'. 
-    # Wait, FDV has flow, depth, velocity. AnalysisTimeSeries has a single 'value'.
-    # We might have stored them as separate rows with different variable types?
-    # Let's check how we stored them in the background task.
-    
-    # In background task:
-    # timeseries_records.append(AnalysisTimeSeries(..., value=float(value)))
-    # It seems we only stored one value! 
-    # Wait, let me check the background task implementation again.
-    
-    # It seems we might have a schema mismatch. 
-    # The background task code I wrote:
-    # if variable_type == "Rainfall": values = data_dict.get('rainfall', [])
-    # elif variable_type == "Flow/Depth": values = data_dict.get('flow', data_dict.get('depth', []))
-    
-    # It selects EITHER flow OR depth. That's a problem for FDV files which have both!
-    # We need to fix the background task to store multiple series, or the model to support multiple values.
-    # For now, let's assume we want to fix the endpoint to return what we have.
-    
     for row in results:
         timeseries.append({
             "time": row.timestamp.isoformat(),
+            "rainfall": row.value if row.value is not None else 0.0,
             "flow": row.flow if row.flow is not None else 0.0,
             "depth": row.depth if row.depth is not None else 0.0,
             "velocity": row.velocity if row.velocity is not None else 0.0
@@ -594,38 +531,14 @@ def get_fdv_timeseries(
         
     return {"dataset_id": dataset_id, "data": timeseries, "count": len(timeseries)}
 
-@router.get("/analysis/fdv/{dataset_id}/scatter")
+@router.get("/fdv/{dataset_id}/scatter")
 def get_fdv_scatter(
     dataset_id: int,
     plot_mode: str = Query("velocity"),
     iso_min: Optional[float] = Query(None),
     iso_max: Optional[float] = Query(None),
     iso_count: int = Query(2),
-    service: Any = Depends(get_fdv_service)
+    service: FsaFDVService = Depends(get_fdv_service)
 ) -> Dict[str, Any]:
     """Get scatter graph data including CBW and iso curves"""
     return service.get_scatter_graph_data(dataset_id, plot_mode, iso_min, iso_max, iso_count)
-
-
-
-@router.get("/analysis/rainfall/{dataset_id}/cumulative-depth")
-def get_cumulative_depth(
-    dataset_id: int, 
-    service: RainfallService = Depends(get_rainfall_service)
-):
-    return service.get_cumulative_depth(dataset_id)
-
-def get_spatial_service(session: Session = Depends(get_session)) -> Any:
-    from services.analysis import SpatialService
-    return SpatialService(session)
-
-@router.post("/analysis/spatial/idw")
-def calculate_idw(
-    target_lat: float,
-    target_lon: float,
-    source_gauges: List[Dict[str, Any]],
-    power: float = 2.0,
-    service: Any = Depends(get_spatial_service)
-) -> Dict[str, Any]:
-    result = service.calculate_idw(target_lat, target_lon, source_gauges, power)
-    return {"target_lat": target_lat, "target_lon": target_lon, "interpolated_value": result}

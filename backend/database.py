@@ -1,5 +1,5 @@
 from sqlmodel import create_engine, SQLModel, Session
-from domain import project, monitor, events, auth, visit, qa, fsm
+from domain import project, monitor, events, auth, visit, qa, fsm, fsa
 
 # SQLite database URL
 DATABASE_URL = "sqlite:///./flowbot.db"
