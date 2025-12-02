@@ -411,43 +411,74 @@ def get_event_service(session: Session = Depends(get_session)) -> FsaEventServic
     return FsaEventService(session)
 
 class AnalysisParams(BaseModel):
-    rainfallDepthTolerance: float = 0
+    rainfallDepthTolerance: float = 0.1 # Used as threshold_mm for dry days
     precedingDryDays: int = 4
-    consecZero: int = 5
+    consecZero: int = 5 # Legacy, maybe unused if interEventGap is set
+    interEventGap: int = 360 # Minutes
     requiredDepth: float = 5
     requiredIntensity: float = 6
-    requiredIntensityDuration: int = 4
+    requiredIntensityDuration: int = 4 # Minutes
     partialPercent: float = 20
     useConsecutiveIntensities: bool = True
 
 @router.post("/rainfall/events")
 def run_rainfall_analysis(
-    dataset_id: int,
-    params: AnalysisParams,
+    payload: Dict[str, Any],
     service: FsaEventService = Depends(get_event_service),
     rainfall_service: FsaRainfallService = Depends(get_rainfall_service)
 ) -> Dict[str, Any]:
-    events = service.detect_storms(
-        dataset_id=dataset_id, 
-        inter_event_hours=12,
-        min_total_mm=params.requiredDepth,
-        min_intensity=params.requiredIntensity,
-        min_intensity_duration=params.requiredIntensityDuration,
-        partial_percent=params.partialPercent
-    )
+    # Parse payload manually to handle both legacy single ID and new list
+    dataset_id = payload.get("dataset_id")
+    dataset_ids = payload.get("dataset_ids", [])
     
-    dry_days = service.detect_dry_days(
-        dataset_id=dataset_id,
-        threshold_mm=0.1
-    )
-    
-    # Get full timeseries for the graph
-    timeseries_data = rainfall_service.get_rainfall_timeseries(dataset_id)
+    if dataset_id and not dataset_ids:
+        dataset_ids = [dataset_id]
+        
+    params_dict = payload.get("params", {})
+    # Default params if not provided
+    params = AnalysisParams(**params_dict) if params_dict else AnalysisParams()
 
-    # Calculate stats
-    total_rainfall = sum(e['total_mm'] for e in events if e['status'] == 'Event')
+    all_events = []
+    all_dry_days = []
     
-    # Get period from events or dataset
+    for ds_id in dataset_ids:
+        dataset = service.get_dataset(ds_id)
+        if not dataset:
+            continue
+            
+        events = service.detect_storms(
+            dataset_id=ds_id, 
+            inter_event_minutes=params.interEventGap,
+            min_total_mm=params.requiredDepth,
+            min_intensity=params.requiredIntensity,
+            min_intensity_duration=params.requiredIntensityDuration,
+            partial_percent=params.partialPercent,
+            use_consecutive_intensities=params.useConsecutiveIntensities
+        )
+        
+        # Detect dry days
+        dry_days = service.detect_dry_days(
+            dataset_id=ds_id,
+            threshold_mm=params.rainfallDepthTolerance,
+            preceding_dry_days=params.precedingDryDays
+        )
+        
+        # Add dataset name to events
+        for event in events:
+            event['dataset_id'] = ds_id
+            event['dataset_name'] = dataset.name
+            all_events.append(event)
+            
+        # Add dataset name to dry days
+        for dry_day in dry_days:
+            dry_day['dataset_id'] = ds_id
+            dry_day['dataset_name'] = dataset.name
+            all_dry_days.append(dry_day)
+    
+    return {
+        "events": all_events,
+        "dry_days": all_dry_days
+    }
     period_start = datetime.now().isoformat()
     period_end = datetime.now().isoformat()
     if events:

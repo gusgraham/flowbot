@@ -39,7 +39,7 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
     const [showIso, setShowIso] = useState(true);
     const [controlsExpanded, setControlsExpanded] = useState(false);
 
-    // Iso‑line configuration (kept from previous implementation)
+    // Iso‑line configuration
     const [localIsoMin, setLocalIsoMin] = useState<string>("");
     const [localIsoMax, setLocalIsoMax] = useState<string>("");
     const [localIsoCount, setLocalIsoCount] = useState<string>("2");
@@ -59,7 +59,32 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
     );
 
     // -----------------------------------------------------------------------
-    // Initialise iso‑line defaults once we have the scatter data
+    // Prepare data points (Moved before early returns to satisfy Rules of Hooks)
+    // -----------------------------------------------------------------------
+    const {
+        scatter_data = [],
+        cbw_curve = [],
+        iso_curves = [],
+        iso_type = "flow",
+        pipe_params = {},
+        pipe_profile = [],
+    } = response || {};
+
+    const xVar = plotMode === "velocity" ? "velocity" : "flow";
+
+    const scatterPoints = React.useMemo(() => scatter_data.map((d: any) => ({
+        x: d[xVar],
+        y: d.depth,
+        flow: d.flow,
+        velocity: d.velocity,
+    })), [scatter_data, xVar]);
+
+    const cbwPoints = React.useMemo(() => cbw_curve.map((d: any) => ({ x: d[xVar], y: d.depth })), [cbw_curve, xVar]);
+
+
+
+    // -----------------------------------------------------------------------
+    // Initialise iso‑line defaults
     // -----------------------------------------------------------------------
     useEffect(() => {
         if (response?.scatter_data && !localIsoMin && !localIsoMax) {
@@ -116,36 +141,10 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
     }
 
     // -----------------------------------------------------------------------
-    // Destructure response payload
+    // Axis domain calculation
     // -----------------------------------------------------------------------
-    const {
-        scatter_data = [],
-        cbw_curve = [],
-        iso_curves = [],
-        iso_type = "flow",
-        pipe_params = {},
-        pipe_profile = [],
-    } = response;
-
-    // -----------------------------------------------------------------------
-    // Prepare data points for Recharts (uniform {x, y} objects)
-    // -----------------------------------------------------------------------
-    const xVar = plotMode === "velocity" ? "velocity" : "flow";
-
-    const scatterPoints = scatter_data.map((d: any) => ({
-        x: d[xVar],
-        y: d.depth,
-        flow: d.flow,
-        velocity: d.velocity,
-    }));
-
-    const cbwPoints = cbw_curve.map((d: any) => ({ x: d[xVar], y: d.depth }));
-
-    // -----------------------------------------------------------------------
-    // Axis domain calculation – now includes CBW extents
-    // -----------------------------------------------------------------------
-    const allX = [...scatterPoints.map(p => p.x), ...cbwPoints.map(p => p.x)];
-    const allY = [...scatterPoints.map(p => p.y), ...cbwPoints.map(p => p.y)];
+    const allX = [...scatterPoints.map((p: any) => p.x), ...cbwPoints.map((p: any) => p.x)];
+    const allY = [...scatterPoints.map((p: any) => p.y), ...cbwPoints.map((p: any) => p.y)];
 
     const minX = Math.min(...allX);
     const maxX = Math.max(...allX);
@@ -179,7 +178,7 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
 
 
     // -----------------------------------------------------------------------
-    // Tooltip – shows depth, velocity, flow
+    // Tooltip
     // -----------------------------------------------------------------------
     const CustomTooltip = ({ active, payload }: any) => {
         if (active && payload && payload.length) {
@@ -249,6 +248,7 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                                 Display Options
                             </h4>
                             <div className="space-y-2">
+
                                 <label className="flex items-center space-x-2 cursor-pointer text-sm">
                                     <input
                                         type="checkbox"
@@ -256,7 +256,7 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                                         onChange={e => setShowScatter(e.target.checked)}
                                         className="rounded text-purple-600 focus:ring-purple-500"
                                     />
-                                    <span>Show Data Points</span>
+                                    <span>Show Individual Points</span>
                                 </label>
                                 <label className="flex items-center space-x-2 cursor-pointer text-sm">
                                     <input
@@ -367,12 +367,14 @@ const ScatterChart: React.FC<{ datasetId: string }> = ({ datasetId }) => {
                             />
                         )}
 
+
+
                         {showScatter && (
                             <Scatter
-                                name="Observed Data"
+                                name="Individual Points"
                                 data={scatterPoints}
                                 fill="#8884d8"
-                                fillOpacity={0.6}
+                                fillOpacity={0.3}
                                 shape="circle"
                             />
                         )}

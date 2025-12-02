@@ -320,7 +320,7 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                                                         )}
                                                                     </div>
                                                                     <p className="text-xs text-gray-500 truncate">
-                                                                        {new Date(dataset.created_at).toLocaleDateString()}
+                                                                        {new Date(dataset.imported_at).toLocaleDateString()}
                                                                     </p>
                                                                 </div>
                                                             </button>
@@ -418,7 +418,7 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                                                         )}
                                                                     </div>
                                                                     <p className="text-xs text-gray-500 truncate">
-                                                                        {new Date(dataset.created_at).toLocaleDateString()}
+                                                                        {new Date(dataset.imported_at).toLocaleDateString()}
                                                                     </p>
                                                                 </div>
                                                             </button>
@@ -581,8 +581,7 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                     )}
                                     {activeTab === 'event-analysis' && (
                                         <RainfallEventsAnalysis
-                                            datasetId={selectedDatasetIds[0]}
-                                            datasetName={selectedDatasets[0]?.name || ''}
+                                            datasetIds={selectedDatasetIds}
                                         />
                                     )}
                                     {activeTab === 'timeseries' && (

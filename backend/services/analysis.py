@@ -200,104 +200,250 @@ class EventService:
     def detect_storms(
         self, 
         dataset_id: int, 
-        inter_event_hours: int = 6, 
+        inter_event_minutes: int = 10, # Default 10 minutes
         min_total_mm: float = 2.0,
         min_intensity: float = 0.0,
         min_intensity_duration: int = 0,
-        partial_percent: float = 20.0
+        partial_percent: float = 20.0,
+        use_consecutive_intensities: bool = True
     ) -> List[Dict[str, Any]]:
         dataset = self.get_dataset(dataset_id)
         if not dataset:
             return []
             
         try:
-            data = import_r_file(dataset.file_path)
-            df = pd.DataFrame(data['data'])
-            df['time'] = pd.to_datetime(df['time'])
-            df['value'] = df['rainfall']
+            # Try DB first
+            from domain.fsa import FsaTimeSeries as AnalysisTimeSeries
+            from sqlmodel import select
             
-            # Sort
+            stmt = select(AnalysisTimeSeries).where(
+                AnalysisTimeSeries.dataset_id == dataset_id
+            ).order_by(AnalysisTimeSeries.timestamp)
+            
+            timeseries = self.session.exec(stmt).all()
+            
+            if timeseries:
+                data_list = [{"time": ts.timestamp, "value": ts.value} for ts in timeseries]
+                df = pd.DataFrame(data_list)
+            else:
+                # Fallback to file
+                data = import_r_file(dataset.file_path)
+                df = pd.DataFrame(data['data'])
+                df['time'] = pd.to_datetime(df['time'])
+                df['value'] = df['rainfall']
+            
+            if df.empty:
+                return []
+
+            # Sort and prepare numpy arrays
             df = df.sort_values('time')
+            rain = df['value'].to_numpy(dtype=np.float32, copy=False)
+            times = df['time'].to_numpy(copy=False)
             
-            # Filter for wet timesteps
-            wet_df = df[df['value'] > 0].copy()
-            if wet_df.empty:
+            if rain.size == 0:
                 return []
                 
-            wet_df['time_diff'] = wet_df['time'].diff().dt.total_seconds() / 3600
-            wet_df['new_event'] = (wet_df['time_diff'] > inter_event_hours).cumsum()
+            # Calculate time step in minutes
+            if len(times) > 1:
+                # Mode of differences
+                diffs = np.diff(times).astype('timedelta64[m]').astype(int)
+                # Filter out large gaps (likely separate files or errors) to find base step
+                valid_diffs = diffs[diffs > 0]
+                if valid_diffs.size > 0:
+                    time_step_min = int(np.bincount(valid_diffs).argmax())
+                else:
+                    time_step_min = 1 # Default
+            else:
+                time_step_min = 1
+                
+            # Calculate consecZero based on inter_event_minutes
+            consec_zero = max(1, int(inter_event_minutes / time_step_min))
+            
+            # Legacy _runs_of_zeros_separators logic
+            # Find indices where a run of >= consec_zero zeros ends
+            # Uses sliding window to find all positions with consec_zero consecutive zeros
+            
+            if consec_zero <= 0:
+                seps = np.empty(0, dtype=np.int64)
+            elif consec_zero == 1:
+                # Any zero is a separator
+                seps = np.where(rain == 0)[0]
+            else:
+                # Sliding window approach
+                is_zero = (rain == 0)
+                if len(rain) < consec_zero:
+                    seps = np.empty(0, dtype=np.int64)
+                else:
+                    from numpy.lib.stride_tricks import sliding_window_view
+                    # Check if each window of consec_zero elements are all zeros
+                    w = sliding_window_view(is_zero, consec_zero).all(axis=1)
+                    # Return indices of the LAST zero in each window
+                    seps = np.where(w)[0] + (consec_zero - 1)
+            
+            # Create event boundaries using separators
+            # Legacy: starts = np.r_[0, seps + 1], ends = np.r_[seps, len(rain) - 1]
+            if len(seps) > 0:
+                starts = np.r_[0, seps + 1]
+                ends = np.r_[seps, len(rain) - 1]
+                
+                # Filter out invalid ranges (where start > end)
+                valid = starts <= ends
+                starts, ends = starts[valid], ends[valid]
+            else:
+                # No separators, entire dataset is one event
+                starts = np.array([0])
+                ends = np.array([len(rain) - 1])
+            
+            d_min = ((100 - partial_percent) / 100.0) * min_total_mm
+            i_min = int(round(((100 - partial_percent) / 100.0) * min_intensity_duration))
+            k = max(1, int(round(min_intensity_duration / max(1, time_step_min))))
             
             events = []
-            for event_id, group in wet_df.groupby('new_event'):
-                total_rain = group['value'].sum()
-                start_time = group['time'].iloc[0]
-                end_time = group['time'].iloc[-1]
-                duration_hours = (end_time - start_time).total_seconds() / 3600
-                max_intensity = group['value'].max()
+            event_counter = 1
+            
+            for s, e in zip(starts, ends):
+                # Ensure indices are within bounds
+                s = max(0, min(s, len(rain)-1))
+                e = max(0, min(e, len(rain)-1))
                 
-                # Classification Logic
-                # 1. Full Event: Meets all criteria
-                # 2. Partial Event: Meets partial percent of depth OR other criteria? 
-                #    Legacy code implies "Partial Event (20%)" -> maybe 20% of required depth?
-                #    Let's assume Partial if total_rain >= min_total_mm * (partial_percent / 100)
-                # 3. No Event: Fails criteria
+                r = rain[s:e + 1]
+                if r.size == 0 or float(r.max(initial=0.0)) == 0.0:
+                    continue
+                    
+                # Depth over the whole block
+                depth = float((r * (time_step_min / 60.0)).sum())
                 
+                # Intensity Tests
+                above = (r > min_intensity)
+                
+                if use_consecutive_intensities:
+                    if k <= r.size:
+                        from numpy.lib.stride_tricks import sliding_window_view
+                        w = sliding_window_view(above, k)
+                        has_consec = bool(w.all(axis=1).any())
+                    else:
+                        has_consec = False
+                        
+                    intensity_count = min_intensity_duration if has_consec else 0
+                    total_minutes_above = int(above.sum() * time_step_min)
+                else:
+                    total_minutes_above = int(above.sum() * time_step_min)
+                    intensity_count = min_intensity_duration if total_minutes_above >= min_intensity_duration else 0
+                    
+                # Classification
                 status = "No Event"
-                passed = 0
+                passed = 0.0
                 
-                # Check intensity duration if required
-                # This is complex on raw data without resampling, assuming step data for now
-                # If any point > min_intensity, we count it. 
-                # For duration, we'd need to check consecutive points.
-                
-                # Simplified check for now:
-                depth_pass = total_rain >= min_total_mm
-                
-                if depth_pass:
+                # Full event
+                if depth > min_total_mm and intensity_count >= min_intensity_duration:
+                    passed = 1.0
                     status = "Event"
-                    passed = 1
-                elif total_rain >= min_total_mm * (partial_percent / 100.0):
-                    status = "Partial Event"
-                    passed = 2 # Using 2 for Partial
+                else:
+                    # Partial scenarios
+                    cond1 = (d_min <= depth < min_total_mm) and (intensity_count >= min_intensity_duration)
+                    cond2 = (depth >= min_total_mm) and (i_min <= intensity_count < min_intensity_duration)
+                    
+                    cond3 = False
+                    if use_consecutive_intensities:
+                        cond3 = (depth > min_total_mm) and (total_minutes_above >= min_intensity_duration)
+                        
+                    if cond1 or cond2 or cond3:
+                        passed = 0.5
+                        status = "Partial Event"
                 
+                
+                # Always append events, including "No Event"
                 events.append({
-                    "event_id": int(event_id),
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "total_mm": round(total_rain, 2),
-                    "duration_hours": round(duration_hours, 2),
-                    "peak_intensity": max_intensity,
+                    "event_id": event_counter,
+                    "start_time": pd.Timestamp(times[s]),
+                    "end_time": pd.Timestamp(times[e]),
+                    "total_mm": round(depth, 3),
+                    "duration_hours": round((pd.Timestamp(times[e]) - pd.Timestamp(times[s])).total_seconds() / 3600, 2),
+                    "peak_intensity": float(r.max()) if r.size > 0 else 0.0,
                     "status": status,
                     "passed": passed
                 })
+                event_counter += 1
+                    
             return events
             
         except Exception as e:
             print(f"Error detecting storms: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
-    def detect_dry_days(self, dataset_id: int, threshold_mm: float = 0.1) -> List[Dict[str, Any]]:
+    def detect_dry_days(self, dataset_id: int, threshold_mm: float = 0.1, preceding_dry_days: int = 4) -> List[Dict[str, Any]]:
+        """
+        Return list of dates that are part of runs of dry days longer than 'preceding_dry_days'.
+        Uses legacy vectorized logic.
+        """
         dataset = self.get_dataset(dataset_id)
         if not dataset:
             return []
             
         try:
-            data = import_r_file(dataset.file_path)
-            df = pd.DataFrame(data['data'])
+            # Try DB first
+            from domain.fsa import FsaTimeSeries as AnalysisTimeSeries
+            from sqlmodel import select
+            
+            stmt = select(AnalysisTimeSeries).where(
+                AnalysisTimeSeries.dataset_id == dataset_id
+            ).order_by(AnalysisTimeSeries.timestamp)
+            
+            timeseries = self.session.exec(stmt).all()
+            
+            if timeseries:
+                data_list = [{"time": ts.timestamp, "value": ts.value} for ts in timeseries]
+                df = pd.DataFrame(data_list)
+            else:
+                # Fallback to file
+                data = import_r_file(dataset.file_path)
+                df = pd.DataFrame(data['data'])
+                df['time'] = pd.to_datetime(df['time'])
+                df['value'] = df['rainfall']
+            
+            if df.empty:
+                return []
+                
             df['time'] = pd.to_datetime(df['time'])
-            df['value'] = df['rainfall']
             
-            daily_rain = df.set_index('time').resample('D')['value'].sum()
+            # Resample to daily totals
+            df_per_diem = df.set_index('time').resample('D')['value'].sum().reset_index()
+            df_per_diem.columns = ['rain_date', 'rainfall_mm']
             
+            if df_per_diem.empty:
+                return []
+            
+            # Legacy vectorized logic
+            is_dry = df_per_diem["rainfall_mm"].to_numpy(copy=False) <= threshold_mm
+            
+            # Group runs of dry days using transitions in ~is_dry
+            groups = np.cumsum(~is_dry)  # increments when wet encountered
+            
+            # Cumulative count within each group
+            dry_runs = pd.Series(is_dry, dtype="int32").groupby(groups).cumsum().to_numpy()
+            
+            # Mask for days that are part of runs longer than preceding_dry_days
+            mask = is_dry & (dry_runs > preceding_dry_days)
+            
+            # Extract matching dates
+            dry_day_dates = pd.to_datetime(df_per_diem.loc[mask, "rain_date"]).dt.date.tolist()
+            
+            # Format as list of dicts with date and total_mm
             dry_days = []
-            for date, total in daily_rain.items():
-                if total < threshold_mm:
-                    dry_days.append({
-                        "date": date.date(),
-                        "total_mm": round(total, 3)
-                    })
+            for idx in df_per_diem[mask].index:
+                dry_days.append({
+                    "date": df_per_diem.loc[idx, "rain_date"].date(),
+                    "total_mm": round(df_per_diem.loc[idx, "rainfall_mm"], 3)
+                })
+            
             return dry_days
-        except:
+            
+        except Exception as e:
+            print(f"Error detecting dry days: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
 class FDVService:
@@ -372,22 +518,28 @@ class FDVService:
             # from domain.analysis import AnalysisTimeSeries
             from sqlmodel import select
             
-            stmt = select(AnalysisTimeSeries).where(
+            # Optimize: Fetch only needed columns to avoid ORM overhead
+            stmt = select(
+                AnalysisTimeSeries.timestamp,
+                AnalysisTimeSeries.depth,
+                AnalysisTimeSeries.velocity,
+                AnalysisTimeSeries.flow
+            ).where(
                 AnalysisTimeSeries.dataset_id == dataset_id
             )
-            timeseries = self.session.exec(stmt).all()
+            results = self.session.exec(stmt).all()
             
             data = {} # Placeholder for file data if we use DB
             
-            if timeseries:
+            if results:
                 data_list = [
                     {
-                        "time": ts.timestamp,
-                        "depth": ts.depth if ts.depth is not None else 0.0,
-                        "velocity": ts.velocity if ts.velocity is not None else 0.0,
-                        "flow": ts.flow if ts.flow is not None else 0.0
+                        "time": r[0],
+                        "depth": r[1] if r[1] is not None else 0.0,
+                        "velocity": r[2] if r[2] is not None else 0.0,
+                        "flow": r[3] if r[3] is not None else 0.0
                     }
-                    for ts in timeseries
+                    for r in results
                 ]
                 df = pd.DataFrame(data_list)
             else:
@@ -424,7 +576,7 @@ class FDVService:
             # df is already created above
             
             # Downsample if too many points
-            target_points = 3000
+            target_points = 2000
             if len(df) > target_points:
                 scatter_data = self._downsample_scatter_data(df, target_points)
             else:
@@ -461,45 +613,15 @@ class FDVService:
 
     def _downsample_scatter_data(self, df: pd.DataFrame, target_points: int) -> List[Dict[str, Any]]:
         """
-        Downsample scatter data using a grid-based approach to preserve the visual envelope.
+        Downsample scatter data using simple random sampling.
+        This is faster than grid-based methods and statistically preserves density.
         """
         try:
-            # Calculate grid size based on target points (approx sqrt)
-            # We want roughly target_points bins. 
-            # Aspect ratio of V vs D is roughly 2:1 or 3:2 usually, but let's assume square grid for simplicity
-            # or fixed grid size.
+            if len(df) <= target_points:
+                return df[['depth', 'velocity', 'flow']].to_dict('records')
             
-            # Let's try a fixed grid size that yields approx target_points
-            # If we have 100k points, we want to reduce to 3k.
-            
-            # Determine bounds
-            v_min, v_max = df['velocity'].min(), df['velocity'].max()
-            d_min, d_max = df['depth'].min(), df['depth'].max()
-            
-            if v_min == v_max or d_min == d_max:
-                return df[['depth', 'velocity', 'flow']].head(target_points).to_dict('records')
-
-            # Create bins
-            # We want approx target_points filled bins.
-            # Let's try a 60x50 grid (3000 cells)
-            v_bins = 60
-            d_bins = 50
-            
-            df['v_bin'] = pd.cut(df['velocity'], bins=v_bins, labels=False)
-            df['d_bin'] = pd.cut(df['depth'], bins=d_bins, labels=False)
-            
-            # Group by bins and keep the point with max flow (or just first, or max depth?)
-            # Keeping max flow might be interesting, or maybe just random/first to show density.
-            # Actually, to show the "envelope", we want points on the edges.
-            # A simple way is to take the max flow in each bin, which usually correlates with max velocity/depth in that bin.
-            # Or we can take the first point.
-            # Let's take the point with the maximum Flow in each bin to prioritize high-flow events?
-            # Or maybe just the first one is faster and sufficient for "density".
-            # Let's try max flow.
-            
-            downsampled = df.loc[df.groupby(['v_bin', 'd_bin'])['flow'].idxmax()].dropna()
-            
-            return downsampled[['depth', 'velocity', 'flow']].to_dict('records')
+            # Simple random sample
+            return df.sample(n=target_points).to_dict('records')
             
         except Exception as e:
             print(f"Downsampling error: {e}")

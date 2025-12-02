@@ -418,7 +418,7 @@ export interface AnalysisDataset {
     project_id: number;
     name: string;
     variable: string;
-    created_at: string;
+    imported_at: string;
     metadata_json: string;
     status: 'processing' | 'ready' | 'error';
     error_message?: string;
@@ -486,14 +486,19 @@ export const useUpdateAnalysisDataset = () => {
 
 
 // Analysis - Rainfall Events
-export const useRainfallEvents = (datasetId: number) => {
+// Analysis - Rainfall Events
+export const useRainfallEvents = (datasetIds: number[]) => {
     return useQuery({
-        queryKey: ['rainfall_events', datasetId],
+        queryKey: ['rainfall_events', datasetIds],
         queryFn: async () => {
-            const { data } = await api.post<any>(`/fsa/rainfall/events?dataset_id=${datasetId}`, {});
+            if (!datasetIds || datasetIds.length === 0) return [];
+            const { data } = await api.post<any>(`/fsa/rainfall/events`, {
+                dataset_ids: datasetIds,
+                params: {} // Default params
+            });
             return data.events;
         },
-        enabled: !!datasetId,
+        enabled: !!datasetIds && datasetIds.length > 0,
     });
 };
 
