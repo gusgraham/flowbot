@@ -563,3 +563,24 @@ export const useWQCorrelation = (monitorId: number, flowMonitorId: number) => {
         enabled: !!monitorId && !!flowMonitorId,
     });
 };
+
+// Analysis - Project Events
+export interface SurveyEvent {
+    id: number;
+    project_id: number;
+    name: string;
+    event_type: string;
+    start_time: string;
+    end_time: string;
+}
+
+export const useProjectEvents = (projectId: number) => {
+    return useQuery({
+        queryKey: ['project_events', projectId],
+        queryFn: async () => {
+            const { data } = await api.get<SurveyEvent[]>(`/fsa/projects/${projectId}/events`);
+            return data;
+        },
+        enabled: !!projectId,
+    });
+};

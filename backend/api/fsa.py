@@ -573,3 +573,65 @@ def get_fdv_scatter(
 ) -> Dict[str, Any]:
     """Get scatter graph data including CBW and iso curves"""
     return service.get_scatter_graph_data(dataset_id, plot_mode, iso_min, iso_max, iso_count)
+
+# ==========================================
+# SURVEY EVENTS (Captured Events)
+# ==========================================
+
+class CaptureEventRequest(BaseModel):
+    name: str
+    event_type: str  # "Storm Event", "Dry Day", "Dry Period"
+    start_time: datetime
+    end_time: datetime
+
+@router.post("/projects/{project_id}/events")
+def create_survey_event(
+    project_id: int,
+    event_data: CaptureEventRequest,
+    session: Session = Depends(get_session)
+):
+    """Save a captured event to the SurveyEvent table"""
+    from domain.fsa import SurveyEvent
+    
+    # Verify project exists
+    project = session.get(FsaProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Create survey event
+    survey_event = SurveyEvent(
+        project_id=project_id,
+        name=event_data.name,
+        event_type=event_data.event_type,
+        start_time=event_data.start_time,
+        end_time=event_data.end_time
+    )
+    
+    session.add(survey_event)
+    session.commit()
+    session.refresh(survey_event)
+    
+    return {
+        "id": survey_event.id,
+        "project_id": survey_event.project_id,
+        "name": survey_event.name,
+        "event_type": survey_event.event_type,
+        "start_time": survey_event.start_time.isoformat(),
+        "end_time": survey_event.end_time.isoformat()
+    }
+
+@router.get("/projects/{project_id}/events")
+def read_project_events(
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """Get all captured events for a project"""
+    from domain.fsa import SurveyEvent
+    
+    events = session.exec(
+        select(SurveyEvent)
+        .where(SurveyEvent.project_id == project_id)
+        .order_by(SurveyEvent.start_time)
+    ).all()
+    
+    return events

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useAnalysisProject, useAnalysisDatasets, useRainfallEvents, useDeleteAnalysisDataset } from '../../api/hooks';
-import { ArrowLeft, CloudRain, Activity, Loader2, Upload, FileText, Trash2, ChevronDown, LineChart as LineChartIcon, AlertCircle } from 'lucide-react';
+import { useAnalysisProject, useAnalysisDatasets, useRainfallEvents, useDeleteAnalysisDataset, useProjectEvents } from '../../api/hooks';
+import { ArrowLeft, CloudRain, Activity, Loader2, Upload, FileText, Trash2, ChevronDown, LineChart as LineChartIcon, AlertCircle, Calendar } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import UploadDatasetModal from './UploadDatasetModal';
 import FDVChart from './FDVChart';
@@ -73,6 +73,7 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
     const { data: project } = useAnalysisProject(id);
 
     const { data: datasets, refetch: refetchDatasets } = useAnalysisDatasets(id);
+    const { data: savedEvents, refetch: refetchEvents } = useProjectEvents(id);
     const deleteDataset = useDeleteAnalysisDataset();
 
     // State for selection
@@ -81,6 +82,7 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [rainfallExpanded, setRainfallExpanded] = useState(true);
     const [flowExpanded, setFlowExpanded] = useState(true);
+    const [eventsExpanded, setEventsExpanded] = useState(true);
 
     // Group datasets by type
     const rainfallDatasets = datasets?.filter(d => d.variable === 'Rainfall') || [];
@@ -440,126 +442,87 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                     </div>
                                 )}
                             </>
-                        )
-                        }
-                    </div >
-                </div >
+                        )}
+                    </div>
+                </div>
 
-                {/* Main Content Area */}
-                < div className="flex-1 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden" >
-                    {
-                        selectedDatasetIds.length === 0 ? (
-                            <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
-                                <LineChartIcon size={48} className="mb-4 opacity-20" />
-                                <p className="text-lg font-medium">No datasets selected</p>
-                                <p className="text-sm">Select a dataset from the sidebar to view analysis.</p>
+                {/* Sidebar: Events */}
+                <div className="w-72 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden">
+                    <div className="p-4 border-b border-gray-200 bg-gray-50">
+                        <h3 className="font-semibold text-gray-700">Events</h3>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2 space-y-3">
+                        {savedEvents?.length === 0 ? (
+                            <div className="text-center py-8 px-4 text-gray-500 text-sm">
+                                <Calendar size={32} className="mx-auto mb-2 opacity-20" />
+                                <p>No events captured yet.</p>
                             </div>
                         ) : (
-                            <>
-                                {/* Tabs */}
-                                <div className="border-b border-gray-200 px-4 flex items-center gap-6 overflow-x-auto">
-                                    {/* Rainfall-specific tabs - only show if no flow datasets selected */}
-                                    {hasRainfall && !hasMixedTypes && (
-                                        <>
-                                            <button
-                                                onClick={() => setActiveTab('timeseries')}
-                                                className={cn(
-                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'timeseries'
-                                                        ? "border-purple-600 text-purple-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
+                            <div>
+                                <button
+                                    onClick={() => setEventsExpanded(!eventsExpanded)}
+                                    className="w-full flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <Calendar size={16} className="text-purple-600" />
+                                        <span>Saved Events</span>
+                                        <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                                            {savedEvents?.length || 0}
+                                        </span>
+                                    </div>
+                                    <ChevronDown
+                                        size={16}
+                                        className={cn(
+                                            "transition-transform",
+                                            eventsExpanded ? "rotate-180" : ""
+                                        )}
+                                    />
+                                </button>
+                                {eventsExpanded && (
+                                    <div className="mt-1 space-y-1">
+                                        {savedEvents?.map(event => (
+                                            <div
+                                                key={event.id}
+                                                className="text-left p-3 rounded-lg border bg-white border-transparent hover:bg-gray-50 hover:border-gray-200 transition-all flex items-start gap-3 group"
                                             >
-                                                Time Series
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('cumulative-depth')}
-                                                className={cn(
-                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'cumulative-depth'
-                                                        ? "border-purple-600 text-purple-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                Cumulative Depth
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('event-analysis')}
-                                                className={cn(
-                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'event-analysis'
-                                                        ? "border-purple-600 text-purple-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                Event Analysis
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('rainfall')}
-                                                className={cn(
-                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'rainfall'
-                                                        ? "border-purple-600 text-purple-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                Rainfall Events
-                                            </button>
-                                        </>
-                                    )}
+                                                <div className="p-2 rounded-md flex-shrink-0 bg-purple-100 text-purple-600">
+                                                    <Calendar size={16} />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="font-medium text-gray-900 truncate" title={event.name}>
+                                                        {event.name}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500 mt-0.5">
+                                                        {new Date(event.start_time).toLocaleDateString()}
+                                                    </p>
+                                                    <p className="text-xs text-gray-400 mt-0.5">
+                                                        {event.event_type}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-                                    {/* Flow-specific tabs - only show if no rainfall datasets selected */}
-                                    {hasFlow && !hasMixedTypes && (
-                                        <>
-                                            <button
-                                                onClick={() => setActiveTab('data-editor')}
-                                                className={cn(
-                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'data-editor'
-                                                        ? "border-purple-600 text-purple-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                Data Editor
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('timeseries')}
-                                                className={cn(
-                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'timeseries'
-                                                        ? "border-purple-600 text-purple-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                Time Series
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('scatter')}
-                                                className={cn(
-                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'scatter'
-                                                        ? "border-purple-600 text-purple-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                Scatter Plot
-                                            </button>
-                                            <button
-                                                onClick={() => setActiveTab('dwf')}
-                                                className={cn(
-                                                    "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                    activeTab === 'dwf'
-                                                        ? "border-purple-600 text-purple-600"
-                                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                )}
-                                            >
-                                                Dry Weather Flow
-                                            </button>
-                                        </>
-                                    )}
-
-                                    {/* Mixed types - only show Time Series */}
-                                    {hasMixedTypes && (
+                {/* Main Content Area */}
+                <div className="flex-1 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden">
+                    {selectedDatasetIds.length === 0 ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+                            <LineChartIcon size={48} className="mb-4 opacity-20" />
+                            <p className="text-lg font-medium">No datasets selected</p>
+                            <p className="text-sm">Select a dataset from the sidebar to view analysis.</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Tabs */}
+                            <div className="border-b border-gray-200 px-4 flex items-center gap-6 overflow-x-auto">
+                                {/* Rainfall-specific tabs - only show if no flow datasets selected */}
+                                {hasRainfall && !hasMixedTypes && (
+                                    <>
                                         <button
                                             onClick={() => setActiveTab('timeseries')}
                                             className={cn(
@@ -571,43 +534,144 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                         >
                                             Time Series
                                         </button>
-                                    )}
-                                </div>
+                                        <button
+                                            onClick={() => setActiveTab('cumulative-depth')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'cumulative-depth'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Cumulative Depth
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('event-analysis')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'event-analysis'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Event Analysis
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('rainfall')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'rainfall'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Rainfall Events
+                                        </button>
+                                    </>
+                                )}
 
-                                {/* Content */}
-                                <div className="flex-1 overflow-y-auto p-6">
-                                    {activeTab === 'rainfall' && (
-                                        <RainfallTab datasetId={selectedDatasetIds[0]} />
-                                    )}
-                                    {activeTab === 'event-analysis' && (
-                                        <RainfallEventsAnalysis
-                                            datasetIds={selectedDatasetIds}
-                                        />
-                                    )}
-                                    {activeTab === 'timeseries' && (
-                                        <FDVChart datasets={selectedDatasets} />
-                                    )}
-                                    {activeTab === 'scatter' && (
-                                        <ScatterChart datasetId={selectedDatasetIds[0].toString()} />
-                                    )}
-                                    {activeTab === 'cumulative-depth' && (
-                                        <CumulativeDepthChart
-                                            datasetIds={selectedDatasetIds}
-                                            datasets={datasets || []}
-                                        />
-                                    )}
-                                    {activeTab === 'data-editor' && (
-                                        <DataEditor
-                                            datasetId={selectedDatasetIds[0]}
-                                            currentMetadata={selectedDatasets[0]?.metadata_json ? JSON.parse(selectedDatasets[0].metadata_json) : {}}
-                                        />
-                                    )}
-                                    {activeTab === 'dwf' && (
-                                        <DWFTab datasetId={selectedDatasetIds[0]} />
-                                    )}
-                                </div>
-                            </>
-                        )
+                                {/* Flow-specific tabs - only show if no rainfall datasets selected */}
+                                {hasFlow && !hasMixedTypes && (
+                                    <>
+                                        <button
+                                            onClick={() => setActiveTab('data-editor')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'data-editor'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Data Editor
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('timeseries')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'timeseries'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Time Series
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('scatter')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'scatter'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Scatter Plot
+                                        </button>
+                                        <button
+                                            onClick={() => setActiveTab('dwf')}
+                                            className={cn(
+                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                                activeTab === 'dwf'
+                                                    ? "border-purple-600 text-purple-600"
+                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                            )}
+                                        >
+                                            Dry Weather Flow
+                                        </button>
+                                    </>
+                                )}
+
+                                {/* Mixed types - only show Time Series */}
+                                {hasMixedTypes && (
+                                    <button
+                                        onClick={() => setActiveTab('timeseries')}
+                                        className={cn(
+                                            "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                                            activeTab === 'timeseries'
+                                                ? "border-purple-600 text-purple-600"
+                                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                        )}
+                                    >
+                                        Time Series
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Content */}
+                            <div className="flex-1 overflow-y-auto p-6">
+                                {activeTab === 'rainfall' && (
+                                    <RainfallTab datasetId={selectedDatasetIds[0]} />
+                                )}
+                                {activeTab === 'event-analysis' && (
+                                    <RainfallEventsAnalysis
+                                        datasetIds={selectedDatasetIds}
+                                        projectId={id}
+                                        onEventSaved={refetchEvents}
+                                    />
+                                )}
+                                {activeTab === 'timeseries' && (
+                                    <FDVChart datasets={selectedDatasets} />
+                                )}
+                                {activeTab === 'scatter' && (
+                                    <ScatterChart datasetId={selectedDatasetIds[0].toString()} />
+                                )}
+                                {activeTab === 'cumulative-depth' && (
+                                    <CumulativeDepthChart
+                                        datasetIds={selectedDatasetIds}
+                                        datasets={datasets || []}
+                                    />
+                                )}
+                                {activeTab === 'data-editor' && (
+                                    <DataEditor
+                                        datasetId={selectedDatasetIds[0]}
+                                        currentMetadata={selectedDatasets[0]?.metadata_json ? JSON.parse(selectedDatasets[0].metadata_json) : {}}
+                                    />
+                                )}
+                                {activeTab === 'dwf' && (
+                                    <DWFTab datasetId={selectedDatasetIds[0]} />
+                                )}
+                            </div>
+                        </>
+                    )
                     }
                 </div >
             </div >
