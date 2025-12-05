@@ -19,6 +19,7 @@ class FsmProjectBase(SQLModel):
     survey_start_date: Optional[datetime] = None
     survey_end_date: Optional[datetime] = None
     survey_complete: bool = False
+    default_download_path: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
 class FsmProject(FsmProjectBase, table=True):
@@ -26,6 +27,7 @@ class FsmProject(FsmProjectBase, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    last_ingestion_date: Optional[datetime] = None
     
     # Relationships with cascade delete
     sites: List["Site"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
@@ -40,11 +42,23 @@ class FsmProjectCreate(SQLModel):
     description: Optional[str] = None
     survey_start_date: Optional[datetime] = None
     survey_end_date: Optional[datetime] = None
+    default_download_path: Optional[str] = None
 
-class FsmProjectRead(FsmProjectCreate):
+class FsmProjectUpdate(SQLModel):
+    name: Optional[str] = None
+    job_number: Optional[str] = None
+    client: Optional[str] = None
+    client_job_ref: Optional[str] = None
+    description: Optional[str] = None
+    survey_start_date: Optional[datetime] = None
+    survey_end_date: Optional[datetime] = None
+    survey_complete: Optional[bool] = None
+    default_download_path: Optional[str] = None
+
+class FsmProjectRead(FsmProjectBase):
     id: int
     owner_id: Optional[int]
-    created_at: datetime
+    last_ingestion_date: Optional[datetime] = None
 
 # ==========================================
 # MONITOR
