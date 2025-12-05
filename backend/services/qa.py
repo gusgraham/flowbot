@@ -1,6 +1,6 @@
 from typing import List
 from sqlmodel import Session
-from domain.qa import Note, NoteCreate, Attachment, AttachmentCreate
+from domain.fsm import Note, NoteCreate, Attachment, AttachmentCreate
 from repositories.qa import NoteRepository, AttachmentRepository
 from infra.storage import StorageService
 

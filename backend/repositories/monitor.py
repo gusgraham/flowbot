@@ -1,5 +1,5 @@
 from sqlmodel import Session
-from domain.monitor import Monitor
+from domain.fsm import Monitor
 from repositories.base import BaseRepository
 
 class MonitorRepository(BaseRepository[Monitor]):

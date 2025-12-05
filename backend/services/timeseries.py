@@ -3,7 +3,7 @@ import io
 from datetime import datetime
 from typing import List, Optional
 from sqlmodel import Session
-from domain.events import TimeSeries
+from domain.fsm import TimeSeries
 from repositories.timeseries import TimeSeriesRepository
 from infra.storage import StorageService
 

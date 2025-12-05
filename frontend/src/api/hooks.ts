@@ -4,13 +4,14 @@ import api from './client';
 // Types
 export interface Project {
     id: number;
-    job_name: string;
-    name: string; // Mapped from job_name
+    name: string;
     client: string;
     job_number: string;
     client_job_ref?: string;
     survey_start_date?: string;
     survey_end_date?: string;
+    owner_id?: number;
+    created_at?: string;
 }
 
 export interface Site {
@@ -229,19 +230,17 @@ export const useProjects = () => {
         queryKey: ['projects'],
         queryFn: async () => {
             const { data } = await api.get<Project[]>('/projects');
-            return data.map(p => ({
-                ...p,
-                name: p.job_name // Map job_name to name
-            }));
+            return data;
         },
     });
 };
 
 export interface ProjectCreate {
+    name: string;
     job_number: string;
-    job_name: string;
     client: string;
     client_job_ref?: string;
+    description?: string;
     survey_start_date?: string;
     survey_end_date?: string;
 }
@@ -310,10 +309,7 @@ export const useProject = (id: number) => {
         queryKey: ['projects', id],
         queryFn: async () => {
             const { data } = await api.get<Project>(`/projects/${id}`);
-            return {
-                ...data,
-                name: data.job_name
-            };
+            return data;
         },
         enabled: !!id,
     });
@@ -351,6 +347,7 @@ export const useProjectMonitors = (projectId: number) => {
             return data;
         },
         enabled: !!projectId,
+        refetchOnWindowFocus: true,
     });
 };
 
@@ -397,6 +394,98 @@ export const useProjectInstalls = (projectId: number) => {
             return data;
         },
         enabled: !!projectId,
+    });
+};
+
+export const useInstall = (installId: number) => {
+    return useQuery({
+        queryKey: ['install', installId],
+        queryFn: async () => {
+            const { data } = await api.get<Install>(`/installs/${installId}`);
+            return data;
+        },
+        enabled: !!installId,
+    });
+};
+
+export const useDeleteInstall = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (installId: number) => {
+            await api.delete(`/installs/${installId}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['installs'] });
+        },
+    });
+};
+
+export const useUninstallInstall = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ installId, removalDate }: { installId: number; removalDate: string }) => {
+            await api.put(`/installs/${installId}/uninstall`, { removal_date: removalDate });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['installs'] });
+        },
+    });
+};
+
+// Raw Data Settings
+export interface RawDataSettings {
+    id: number;
+    install_id: number;
+    file_path?: string;
+    rainfall_file_format?: string;
+    depth_file_format?: string;
+    velocity_file_format?: string;
+    battery_file_format?: string;
+    pumplogger_file_format?: string;
+    rg_tb_depth?: number;
+    rg_timing_corr?: string;
+    pipe_shape?: string;
+    pipe_width?: number;
+    pipe_height?: number;
+    pipe_shape_intervals?: number;
+    pipe_shape_def?: string;
+    dep_corr?: string;
+    vel_corr?: string;
+    dv_timing_corr?: string;
+    silt_levels?: string;
+    pl_timing_corr?: string;
+    pl_added_onoffs?: string;
+}
+
+export const useRawDataSettings = (installId: number) => {
+    return useQuery({
+        queryKey: ['rawDataSettings', installId],
+        queryFn: async () => {
+            try {
+                const { data } = await api.get<RawDataSettings>(`/installs/${installId}/raw-data-settings`);
+                return data;
+            } catch (error: any) {
+                // Return null if settings don't exist yet (404)
+                if (error.response?.status === 404) {
+                    return null;
+                }
+                throw error;
+            }
+        },
+        enabled: !!installId,
+    });
+};
+
+export const useUpdateRawDataSettings = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ installId, settings }: { installId: number; settings: Partial<RawDataSettings> }) => {
+            const { data } = await api.put<RawDataSettings>(`/installs/${installId}/raw-data-settings`, settings);
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['rawDataSettings', variables.installId] });
+        },
     });
 };
 
@@ -584,3 +673,81 @@ export const useProjectEvents = (projectId: number) => {
         enabled: !!projectId,
     });
 };
+
+// Users
+export interface User {
+    id: number;
+    username: string;
+    email?: string;
+    full_name?: string;
+    is_active: boolean;
+    is_superuser: boolean;
+    role: string;
+}
+
+export interface UserCreate {
+    username: string;
+    email?: string;
+    full_name?: string;
+    password: string;
+    role: string;
+    is_superuser?: boolean;
+    is_active?: boolean;
+}
+
+export interface UserUpdate {
+    email?: string;
+    full_name?: string;
+    password?: string;
+    role?: string;
+    is_active?: boolean;
+    is_superuser?: boolean;
+}
+
+export const useUsers = () => {
+    return useQuery({
+        queryKey: ['users'],
+        queryFn: async () => {
+            const { data } = await api.get<User[]>('/users');
+            return data;
+        },
+    });
+};
+
+export const useCurrentUser = () => {
+    return useQuery({
+        queryKey: ['users', 'me'],
+        queryFn: async () => {
+            const { data } = await api.get<User>('/users/me');
+            return data;
+        },
+        retry: false,
+    });
+};
+
+export const useCreateUser = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (newUser: UserCreate) => {
+            const { data } = await api.post<User>('/users', newUser);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        },
+    });
+};
+
+export const useUpdateUser = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, updates }: { id: number; updates: UserUpdate }) => {
+            const { data } = await api.put<User>(`/users/${id}`, updates);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        },
+    });
+};
+

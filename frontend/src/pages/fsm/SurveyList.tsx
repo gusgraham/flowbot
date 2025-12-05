@@ -141,8 +141,7 @@ const SurveyList: React.FC = () => {
                         </div>
 
                         <h3 className="text-lg font-bold text-gray-900 mb-1">
-                            {/* Use job_name if available, fallback to name (which we mapped to job_name in hook) */}
-                            {(project as any).job_name || project.name}
+                            {project.name}
                         </h3>
                         <p className="text-sm text-gray-500">{project.client}</p>
 

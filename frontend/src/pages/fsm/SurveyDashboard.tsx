@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useProject, useSites, useProjectMonitors, useProjectInstalls } from '../../api/hooks';
-import type { Site, Monitor } from '../../api/hooks';
+import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall } from '../../api/hooks';
+import type { Site, Monitor, Install } from '../../api/hooks';
 import {
     ArrowLeft, MapPin, Loader2, Plus, Building2, CloudRain,
-    ChevronDown, ChevronRight, Activity, Droplets
+    ChevronDown, ChevronRight, Activity, Droplets, Trash2
 } from 'lucide-react';
 import AddSiteModal from './AddSiteModal';
 import EditProjectModal from './EditProjectModal';
@@ -12,6 +12,7 @@ import AddMonitorModal from './AddMonitorModal';
 import ManageSiteModal from './ManageSiteModal';
 import ManageMonitorModal from './ManageMonitorModal';
 import AddInstallModal from './AddInstallModal';
+import DeleteInstallModal from './DeleteInstallModal';
 
 const SurveyDashboard: React.FC = () => {
     const { projectId } = useParams<{ projectId: string }>();
@@ -28,6 +29,7 @@ const SurveyDashboard: React.FC = () => {
     const [isAddInstallModalOpen, setIsAddInstallModalOpen] = useState(false);
     const [managingSite, setManagingSite] = useState<Site | null>(null);
     const [managingMonitor, setManagingMonitor] = useState<Monitor | null>(null);
+    const [deletingInstall, setDeletingInstall] = useState<Install | null>(null);
 
     // Section Collapse State
     const [isMonitorsOpen, setIsMonitorsOpen] = useState(true);
@@ -40,8 +42,12 @@ const SurveyDashboard: React.FC = () => {
 
     // Group monitors by type
     const flowMonitors = monitors?.filter(m => m.monitor_type === 'Flow Monitor') || [];
-    const rainGauges = monitors?.filter(m => m.monitor_type === 'Raingauge') || [];
-    const otherMonitors = monitors?.filter(m => m.monitor_type !== 'Flow Monitor' && m.monitor_type !== 'Raingauge') || [];
+    const rainGauges = monitors?.filter(m => m.monitor_type === 'Rain Gauge') || [];
+    const otherMonitors = monitors?.filter(m => m.monitor_type !== 'Flow Monitor' && m.monitor_type !== 'Rain Gauge') || [];
+
+    // Delete and uninstall mutations
+    const { mutate: deleteInstall } = useDeleteInstall();
+    const { mutate: uninstallInstall } = useUninstallInstall();
 
     if (projectLoading || sitesLoading) {
         return (
@@ -64,7 +70,7 @@ const SurveyDashboard: React.FC = () => {
                     <div>
                         <div className="flex items-center gap-3 mb-2">
                             <h1 className="text-3xl font-bold text-gray-900">
-                                {(project as any).job_name || project.name}
+                                {project.name}
                             </h1>
                             <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
                                 {project.job_number}
@@ -311,13 +317,32 @@ const SurveyDashboard: React.FC = () => {
                                     {installs?.map((install) => (
                                         <div key={install.id} className="border border-gray-200 rounded-lg p-3">
                                             <div className="flex justify-between items-start">
-                                                <div>
+                                                <div className="flex-1">
                                                     <p className="font-medium text-gray-900">{install.install_id}</p>
                                                     <p className="text-sm text-gray-500">{install.install_type}</p>
+                                                    {install.removal_date && (
+                                                        <p className="text-xs text-red-500 mt-1">
+                                                            Removed: {new Date(install.removal_date).toLocaleDateString()}
+                                                        </p>
+                                                    )}
                                                 </div>
-                                                <span className="text-xs text-gray-500">
-                                                    {install.install_date ? new Date(install.install_date).toLocaleDateString() : 'N/A'}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs text-gray-500">
+                                                        {install.install_date ? new Date(install.install_date).toLocaleDateString() : 'N/A'}
+                                                    </span>
+                                                    <Link
+                                                        to={`/fsm/install/${install.id}`}
+                                                        className="text-sm text-blue-600 hover:underline"
+                                                    >
+                                                        Manage
+                                                    </Link>
+                                                    <button
+                                                        onClick={() => setDeletingInstall(install)}
+                                                        className="text-red-600 hover:text-red-700"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -334,26 +359,93 @@ const SurveyDashboard: React.FC = () => {
                 <div className="space-y-6">
                     <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                         <h3 className="font-bold text-gray-900 mb-4">Project Stats</h3>
-                        <div className="space-y-4">
+                        <div className="space-y-3">
+                            {/* Sites Section */}
                             <div className="flex justify-between items-center">
-                                <span className="text-gray-500">Total Sites</span>
-                                <span className="font-medium">{sites?.length || 0}</span>
+                                <span className="text-gray-700 font-semibold">Total Sites</span>
+                                <span className="font-bold">{sites?.length || 0}</span>
                             </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-500">Network Assets</span>
-                                <span className="font-medium text-blue-600">{networkAssets.length}</span>
+                            <div className="flex justify-between items-center pl-4">
+                                <span className="text-gray-500 text-sm">Network Assets</span>
+                                <span className="font-medium text-blue-600 text-sm">{networkAssets.length}</span>
                             </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-500">Locations</span>
-                                <span className="font-medium text-purple-600">{locations.length}</span>
+                            <div className="flex justify-between items-center pl-4">
+                                <span className="text-gray-500 text-sm">Locations</span>
+                                <span className="font-medium text-purple-600 text-sm">{locations.length}</span>
                             </div>
+
+                            <div className="border-t border-gray-100 pt-3 mt-3"></div>
+
+                            {/* Monitors Section */}
                             <div className="flex justify-between items-center">
-                                <span className="text-gray-500">Total Monitors</span>
-                                <span className="font-medium text-green-600">{monitors?.length || 0}</span>
+                                <span className="text-gray-700 font-semibold">Total Monitors</span>
+                                <span className="font-bold">{monitors?.length || 0}</span>
                             </div>
+                            <div className="flex justify-between items-center pl-4">
+                                <span className="text-gray-500 text-sm">Flow Monitors</span>
+                                <span className="font-medium text-blue-600 text-sm">{flowMonitors.length}</span>
+                            </div>
+                            <div className="flex justify-between items-center pl-4">
+                                <span className="text-gray-500 text-sm">Rain Gauges</span>
+                                <span className="font-medium text-cyan-600 text-sm">{rainGauges.length}</span>
+                            </div>
+                            {otherMonitors.length > 0 && (
+                                <div className="flex justify-between items-center pl-4">
+                                    <span className="text-gray-500 text-sm">Other</span>
+                                    <span className="font-medium text-gray-600 text-sm">{otherMonitors.length}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between items-center pl-4 pt-1">
+                                <span className="text-gray-400 text-xs italic">Installed</span>
+                                <span className="font-medium text-green-600 text-xs">
+                                    {installs?.filter(i => !i.removal_date).length || 0}
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center pl-4">
+                                <span className="text-gray-400 text-xs italic">Available</span>
+                                <span className="font-medium text-gray-500 text-xs">
+                                    {(monitors?.length || 0) - (installs?.filter(i => !i.removal_date).length || 0)}
+                                </span>
+                            </div>
+
+                            <div className="border-t border-gray-100 pt-3 mt-3"></div>
+
+                            {/* Installs Section */}
                             <div className="flex justify-between items-center">
-                                <span className="text-gray-500">Total Installs</span>
-                                <span className="font-medium text-orange-600">{installs?.length || 0}</span>
+                                <span className="text-gray-700 font-semibold">Total Installs</span>
+                                <span className="font-bold">{installs?.length || 0}</span>
+                            </div>
+                            <div className="flex justify-between items-center pl-4">
+                                <span className="text-gray-500 text-sm">Flow Monitors</span>
+                                <span className="font-medium text-blue-600 text-sm">
+                                    {installs?.filter(i => i.install_type === 'Flow Monitor').length || 0}
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center pl-4">
+                                <span className="text-gray-500 text-sm">Rain Gauges</span>
+                                <span className="font-medium text-cyan-600 text-sm">
+                                    {installs?.filter(i => i.install_type === 'Rain Gauge').length || 0}
+                                </span>
+                            </div>
+                            {installs?.some(i => i.install_type !== 'Flow Monitor' && i.install_type !== 'Rain Gauge') && (
+                                <div className="flex justify-between items-center pl-4">
+                                    <span className="text-gray-500 text-sm">Other</span>
+                                    <span className="font-medium text-gray-600 text-sm">
+                                        {installs?.filter(i => i.install_type !== 'Flow Monitor' && i.install_type !== 'Rain Gauge').length || 0}
+                                    </span>
+                                </div>
+                            )}
+                            <div className="flex justify-between items-center pl-4 pt-1">
+                                <span className="text-gray-400 text-xs italic">Active</span>
+                                <span className="font-medium text-green-600 text-xs">
+                                    {installs?.filter(i => !i.removal_date).length || 0}
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center pl-4">
+                                <span className="text-gray-400 text-xs italic">Removed</span>
+                                <span className="font-medium text-gray-400 text-xs">
+                                    {installs?.filter(i => i.removal_date).length || 0}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -407,6 +499,22 @@ const SurveyDashboard: React.FC = () => {
                 onClose={() => setIsAddInstallModalOpen(false)}
                 projectId={id}
             />
+
+            {deletingInstall && (
+                <DeleteInstallModal
+                    isOpen={!!deletingInstall}
+                    onClose={() => setDeletingInstall(null)}
+                    install={deletingInstall}
+                    onDelete={() => {
+                        deleteInstall(deletingInstall.id);
+                        setDeletingInstall(null);
+                    }}
+                    onUninstall={(removalDate) => {
+                        uninstallInstall({ installId: deletingInstall.id, removalDate });
+                        setDeletingInstall(null);
+                    }}
+                />
+            )}
         </div>
     );
 };

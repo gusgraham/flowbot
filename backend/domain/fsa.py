@@ -8,22 +8,32 @@ from sqlmodel import SQLModel, Field, Relationship
 
 class FsaProjectBase(SQLModel):
     name: str = Field(index=True)
+    job_number: str = Field(index=True)
+    client: str
     description: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
 class FsaProject(FsaProjectBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    __tablename__ = "fsaproject"
     
-    datasets: List["FsaDataset"] = Relationship(back_populates="project")
-    events: List["SurveyEvent"] = Relationship(back_populates="project")
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    
+    datasets: List["FsaDataset"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    events: List["SurveyEvent"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
-class FsaProjectCreate(FsaProjectBase):
-    pass
+class FsaProjectCreate(SQLModel):
+    name: str
+    job_number: str
+    client: str
+    description: Optional[str] = None
 
-class FsaProjectRead(FsaProjectBase):
+class FsaProjectRead(FsaProjectCreate):
     id: int
+    owner_id: Optional[int]
+    created_at: datetime
 
 # ==========================================
 # FSA DATASET
@@ -44,9 +54,9 @@ class FsaDataset(FsaDatasetBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     
     project: Optional[FsaProject] = Relationship(back_populates="datasets")
-    flow_monitors: List["FlowMonitor"] = Relationship(back_populates="dataset")
-    rain_gauges: List["RainGauge"] = Relationship(back_populates="dataset")
-    timeseries: List["FsaTimeSeries"] = Relationship(back_populates="dataset")
+    flow_monitors: List["FlowMonitor"] = Relationship(back_populates="dataset", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    rain_gauges: List["RainGauge"] = Relationship(back_populates="dataset", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    timeseries: List["FsaTimeSeries"] = Relationship(back_populates="dataset", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 class FsaDatasetCreate(FsaDatasetBase):
     pass
@@ -83,8 +93,8 @@ class FlowMonitor(FlowMonitorBase, table=True):
     # For now, we'll keep them on the main table or separate if complex.
     # Let's separate Model and Stats for cleanliness as per the ERD.
     
-    stats: Optional["FlowMonitorStats"] = Relationship(back_populates="monitor", sa_relationship_kwargs={"uselist": False})
-    model: Optional["FlowMonitorModel"] = Relationship(back_populates="monitor", sa_relationship_kwargs={"uselist": False})
+    stats: Optional["FlowMonitorStats"] = Relationship(back_populates="monitor", sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"})
+    model: Optional["FlowMonitorModel"] = Relationship(back_populates="monitor", sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"})
 
 class FlowMonitorCreate(FlowMonitorBase):
     pass
@@ -145,7 +155,7 @@ class RainGauge(RainGaugeBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     
     dataset: Optional[FsaDataset] = Relationship(back_populates="rain_gauges")
-    stats: Optional["RainGaugeStats"] = Relationship(back_populates="rain_gauge", sa_relationship_kwargs={"uselist": False})
+    stats: Optional["RainGaugeStats"] = Relationship(back_populates="rain_gauge", sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"})
 
 class RainGaugeStats(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

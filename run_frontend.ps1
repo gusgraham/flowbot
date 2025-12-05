@@ -1,2 +1,2 @@
 Set-Location "$PSScriptRoot\frontend"
-npm run dev
+npm run dev -- --host

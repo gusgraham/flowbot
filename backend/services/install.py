@@ -1,6 +1,6 @@
 from typing import List, Optional
 from sqlmodel import Session
-from domain.visit import Visit, VisitCreate
+from domain.fsm import Visit, VisitCreate
 from repositories.visit import VisitRepository
 from repositories.project import InstallRepository
 from infra.storage import StorageService

@@ -1,6 +1,6 @@
 from typing import List
 from sqlmodel import Session, select
-from domain.visit import Visit
+from domain.fsm import Visit
 from repositories.base import BaseRepository
 
 class VisitRepository(BaseRepository[Visit]):

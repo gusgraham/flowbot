@@ -11,7 +11,7 @@ const CreateSurveyModal: React.FC<CreateSurveyModalProps> = ({ isOpen, onClose }
     const createProject = useCreateProject();
     const [formData, setFormData] = useState<ProjectCreate>({
         job_number: '',
-        job_name: '',
+        name: '',
         client: '',
         client_job_ref: '',
     });
@@ -26,7 +26,7 @@ const CreateSurveyModal: React.FC<CreateSurveyModalProps> = ({ isOpen, onClose }
             // Reset form
             setFormData({
                 job_number: '',
-                job_name: '',
+                name: '',
                 client: '',
                 client_job_ref: '',
             });
@@ -71,15 +71,15 @@ const CreateSurveyModal: React.FC<CreateSurveyModalProps> = ({ isOpen, onClose }
                     </div>
 
                     <div>
-                        <label htmlFor="job_name" className="block text-sm font-medium text-gray-700 mb-1">
+                        <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
                             Job Name *
                         </label>
                         <input
                             type="text"
-                            id="job_name"
-                            name="job_name"
+                            id="name"
+                            name="name"
                             required
-                            value={formData.job_name}
+                            value={formData.name}
                             onChange={handleChange}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                             placeholder="e.g. City Center Flow Survey"

@@ -1,7 +1,10 @@
 from typing import List, Optional
+from datetime import datetime
 from sqlmodel import Session
-from domain.project import Project, ProjectCreate, Site, SiteCreate, Install, InstallCreate
-from domain.monitor import Monitor, MonitorCreate
+from domain.fsm import (
+    FsmProject, FsmProjectCreate, Site, SiteCreate, Install, InstallCreate, 
+    Monitor, MonitorCreate, RawDataSettings, RawDataSettingsCreate, RawDataSettingsUpdate
+)
 from repositories.project import ProjectRepository, SiteRepository, InstallRepository
 from repositories.monitor import MonitorRepository
 
@@ -14,14 +17,15 @@ class ProjectService:
         self.monitor_repo = MonitorRepository(session)
 
     # Projects
-    def create_project(self, project_in: ProjectCreate) -> Project:
-        project = Project.from_orm(project_in)
+    def create_project(self, project_in: FsmProjectCreate, owner_id: int) -> FsmProject:
+        project = FsmProject.from_orm(project_in)
+        project.owner_id = owner_id
         return self.project_repo.create(project)
 
-    def get_project(self, project_id: int) -> Optional[Project]:
+    def get_project(self, project_id: int) -> Optional[FsmProject]:
         return self.project_repo.get(project_id)
 
-    def update_project(self, project_id: int, project_update: ProjectCreate) -> Optional[Project]:
+    def update_project(self, project_id: int, project_update: FsmProjectCreate) -> Optional[FsmProject]:
         # Basic update logic - in a real app, use a dedicated Update schema
         project = self.project_repo.get(project_id)
         if not project:
@@ -33,7 +37,14 @@ class ProjectService:
             
         return self.project_repo.update(project)
 
-    def list_projects(self, offset: int = 0, limit: int = 100) -> List[Project]:
+    def list_projects(self, offset: int = 0, limit: int = 100, owner_id: Optional[int] = None) -> List[FsmProject]:
+        # If owner_id is provided, filter by it.
+        # BaseRepository.list doesn't support filtering, so we might need to do it manually or add a method to repo.
+        # For now, let's do it here or use a custom query.
+        if owner_id:
+            from sqlmodel import select
+            statement = select(FsmProject).where(FsmProject.owner_id == owner_id).offset(offset).limit(limit)
+            return self.session.exec(statement).all()
         return self.project_repo.list(offset, limit)
 
     def delete_project(self, project_id: int) -> bool:
@@ -61,9 +72,7 @@ class ProjectService:
         return self.monitor_repo.list(offset, limit)
     
     def list_monitors_by_site(self, site_id: int) -> List[Monitor]:
-        # Get all installs for this site, then get unique monitors
-        from domain.project import Install
-        from domain.monitor import Monitor
+        from domain.fsm import Install, Monitor
         from sqlmodel import select
         
         statement = select(Install).where(Install.site_id == site_id)
@@ -88,11 +97,26 @@ class ProjectService:
         install = Install.from_orm(install_in)
         return self.install_repo.create(install)
     
+    
     def list_installs(self, project_id: int) -> List[Install]:
         all_installs = self.install_repo.list(limit=1000)
         return [i for i in all_installs if i.project_id == project_id]
+    
+    def get_install(self, install_id: int) -> Optional[Install]:
+        return self.install_repo.get(install_id)
+    
+    def delete_install(self, install_id: int):
+        self.install_repo.delete(install_id)
+    
+    def uninstall_install(self, install_id: int, removal_date: datetime):
+        install = self.install_repo.get(install_id)
+        if install:
+            install.removal_date = removal_date
+            self.session.add(install)
+            self.session.commit()
+            self.session.refresh(install)
 
-    def import_project_from_csv(self, csv_content: bytes):
+    def import_project_from_csv(self, csv_content: bytes, owner_id: int):
         import pandas as pd
         import io
         from datetime import datetime
@@ -113,7 +137,7 @@ class ProjectService:
         for project_name, p_group in df.groupby('ProjectName'):
             # Check if project exists?
             # For now, create new
-            project = self.create_project(ProjectCreate(name=project_name, client_ref=project_name, job_number="IMPORTED"))
+            project = self.create_project(FsmProjectCreate(name=project_name, client=project_name, job_number="IMPORTED"), owner_id=owner_id)
             
             for index, row in p_group.iterrows():
                 # Create Site
@@ -145,6 +169,63 @@ class ProjectService:
                     monitor_id=monitor.id,
                     install_date=install_date,
                     fm_pipe_shape=str(row.get('PipeShape', 'Circular')),
-                    fm_pipe_dim_a=float(row.get('PipeWidth', 0)) if not pd.isna(row.get('PipeWidth')) else 0,
                     fm_pipe_dim_b=float(row.get('PipeHeight', 0)) if not pd.isna(row.get('PipeHeight')) else 0
                 ))
+    
+    # Raw Data Settings
+    def get_raw_data_settings(self, install_id: int) -> Optional[RawDataSettings]:
+        from sqlmodel import select
+        statement = select(RawDataSettings).where(RawDataSettings.install_id == install_id)
+        return self.session.exec(statement).first()
+    
+    def update_raw_data_settings(self, install_id: int, settings_update: RawDataSettingsUpdate) -> RawDataSettings:
+        from sqlmodel import select
+        # Try to get existing settings
+        statement = select(RawDataSettings).where(RawDataSettings.install_id == install_id)
+        settings = self.session.exec(statement).first()
+        
+        if not settings:
+            # Create new settings if none exist
+            settings = RawDataSettings(install_id=install_id)
+        
+        # Update fields
+        update_data = settings_update.dict(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(settings, key, value)
+        
+        self.session.add(settings)
+        self.session.commit()
+        self.session.refresh(settings)
+        return settings
+    
+    def resolve_file_format(self, file_format: str, install: Install, project: FsmProject) -> str:
+        """Resolve file format template with actual values."""
+        import os
+        
+        # Get monitor for this install
+        monitor = self.monitor_repo.get(install.monitor_id) if install.monitor_id else None
+        site = self.site_repo.get(install.site_id) if install.site_id else None
+        
+        resolved = file_format
+        if monitor:
+            resolved = resolved.replace('{pmac_id}', monitor.pmac_id or '')
+            resolved = resolved.replace('{ast_id}', monitor.monitor_asset_id or '')
+        if install:
+            resolved = resolved.replace('{inst_id}', install.install_id or '')
+            resolved = resolved.replace('{cl_ref}', install.client_ref or '')
+        if site:
+            resolved = resolved.replace('{site_id}', site.site_id or '')
+        if project:
+            resolved = resolved.replace('{prj_id}', project.job_number or '')
+        
+        return resolved
+    
+    def validate_file_exists(self, file_path: str, file_format: str, install: Install) -> bool:
+        """Check if a file exists at the resolved path."""
+        import os
+        
+        project = self.get_project(install.project_id)
+        resolved_format = self.resolve_file_format(file_format, install, project)
+        full_path = os.path.join(file_path, resolved_format)
+        
+        return os.path.isfile(full_path)

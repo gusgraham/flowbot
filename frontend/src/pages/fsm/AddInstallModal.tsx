@@ -97,7 +97,7 @@ const AddInstallModal: React.FC<AddInstallModalProps> = ({ isOpen, onClose, proj
         return sites.filter(site => {
             if (selectedMonitor.monitor_type === 'Flow Monitor') {
                 return site.site_type === 'Flow Monitor'; // Assuming "Flow Monitor" site type corresponds to Network Asset
-            } else if (selectedMonitor.monitor_type === 'Raingauge') {
+            } else if (selectedMonitor.monitor_type === 'Rain Gauge') {
                 return site.site_type === 'Rain Gauge'; // Assuming "Rain Gauge" site type corresponds to Location
             }
             return true;
@@ -117,7 +117,7 @@ const AddInstallModal: React.FC<AddInstallModalProps> = ({ isOpen, onClose, proj
             if (selectedSite.site_type === 'Flow Monitor') {
                 return monitor.monitor_type === 'Flow Monitor';
             } else if (selectedSite.site_type === 'Rain Gauge') {
-                return monitor.monitor_type === 'Raingauge';
+                return monitor.monitor_type === 'Rain Gauge';
             }
             return true;
         });
@@ -303,9 +303,9 @@ const AddInstallModal: React.FC<AddInstallModalProps> = ({ isOpen, onClose, proj
                         </div>
                     )}
 
-                    {selectedMonitor && selectedMonitor.monitor_type === 'Raingauge' && (
+                    {selectedMonitor && selectedMonitor.monitor_type === 'Rain Gauge' && (
                         <div className="bg-green-50 p-4 rounded-lg space-y-4">
-                            <h3 className="font-semibold text-green-900">Raingauge Details</h3>
+                            <h3 className="font-semibold text-green-900">Rain Gauge Details</h3>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
                                 <select

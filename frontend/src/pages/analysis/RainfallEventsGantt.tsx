@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
     BarChart,
     Bar,
@@ -6,7 +6,7 @@ import {
     YAxis,
     CartesianGrid,
     ResponsiveContainer,
-    Cell
+    Cell,
 } from 'recharts';
 import { format } from 'date-fns';
 import { ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -28,49 +28,60 @@ interface RainfallEventsGanttProps {
     events: EventResult[];
 }
 
-const RainfallEventsGantt: React.FC<RainfallEventsGanttProps> = ({ events }) => {
-    const processedData = useMemo(() => {
-        if (!events || events.length === 0) return { chartData: [], maxSegments: 0, minTime: 0, maxTime: 0 };
+// Keep margins here so chart + mouse math stay in sync
+const chartMargin = { top: 20, right: 30, left: 100, bottom: 20 };
 
-        // 1. Find global time range
-        const timestamps = events.flatMap(e => [new Date(e.start_time).getTime(), new Date(e.end_time).getTime()]);
+const RainfallEventsGantt: React.FC<RainfallEventsGanttProps> = ({ events }) => {
+    // Tooltip state
+    const [cursorTime, setCursorTime] = useState<Date | null>(null);
+    const [cursorX, setCursorX] = useState(0);
+    const [cursorY, setCursorY] = useState(0);
+
+    // Ref for measuring container
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    // Preprocess events
+    const processedData = useMemo(() => {
+        if (!events || events.length === 0) {
+            return { chartData: [], maxSegments: 0, minTime: 0, maxTime: 0 };
+        }
+
+        const timestamps = events.flatMap(e => [
+            new Date(e.start_time).getTime(),
+            new Date(e.end_time).getTime(),
+        ]);
         const minTime = Math.min(...timestamps);
         const maxTime = Math.max(...timestamps);
 
-        // 2. Group by dataset
+        // Group by dataset
         const grouped: Record<string, EventResult[]> = {};
-        events.forEach(e => {
+        for (const e of events) {
             if (!grouped[e.dataset_name]) grouped[e.dataset_name] = [];
             grouped[e.dataset_name].push(e);
-        });
+        }
 
-        // 3. Transform to stacked bar format
+        // Build stacked rows
         let maxSegments = 0;
-        const chartData = Object.keys(grouped).map(datasetName => {
-            const datasetEvents = grouped[datasetName].sort((a, b) =>
-                new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+        const chartData = Object.keys(grouped).map(dataset => {
+            const datasetEvents = grouped[dataset].sort(
+                (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
             );
 
-            const row: any = { name: datasetName };
+            const row: any = { name: dataset };
             let lastEndTime = minTime;
 
             datasetEvents.forEach((event, idx) => {
                 const start = new Date(event.start_time).getTime();
                 const end = new Date(event.end_time).getTime();
 
-                // Gap from last event (or start) to this event
                 const gapDuration = start - lastEndTime;
-                // Duration of this event
-                // Ensure at least some width for very short events
-                const eventDuration = Math.max(end - start, 60000);
+                const eventDuration = Math.max(end - start, 60000); // enforce min width
 
                 row[`gap_${idx}`] = gapDuration;
                 row[`dur_${idx}`] = eventDuration;
-
-                // Store metadata for tooltip/coloring
                 row[`meta_${idx}`] = event;
 
-                lastEndTime = start + eventDuration; // Use calculated end for next gap
+                lastEndTime = start + eventDuration;
             });
 
             maxSegments = Math.max(maxSegments, datasetEvents.length);
@@ -81,164 +92,185 @@ const RainfallEventsGantt: React.FC<RainfallEventsGanttProps> = ({ events }) => 
     }, [events]);
 
     const { chartData, maxSegments, minTime, maxTime } = processedData;
-
-    // Zoom state - only affects X-axis (time dimension), Y-axis (datasets) is locked
     const totalDuration = maxTime - minTime;
+
+    // Zoom domain
     const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
 
-    // Initialize zoom domain when data is available
     useEffect(() => {
         if (totalDuration > 0) {
             setZoomDomain([0, totalDuration]);
         }
     }, [totalDuration]);
 
+    // Zoom/pan handlers
     const handleZoomIn = () => {
         if (!zoomDomain) return;
-        const [start, end] = zoomDomain;
-        const duration = end - start;
-        const newDuration = duration * 0.6; // Zoom in by 40%
-        const center = start + duration / 2;
-        setZoomDomain([
-            Math.max(0, center - newDuration / 2),
-            Math.min(totalDuration, center + newDuration / 2)
-        ]);
+        const [s, e] = zoomDomain;
+        const d = e - s;
+        const nd = d * 0.6;
+        const c = s + d / 2;
+        setZoomDomain([Math.max(0, c - nd / 2), Math.min(totalDuration, c + nd / 2)]);
     };
 
     const handleZoomOut = () => {
         if (!zoomDomain) return;
-        const [start, end] = zoomDomain;
-        const duration = end - start;
-        const newDuration = duration * 1.4; // Zoom out by 40%
-        const center = start + duration / 2;
-        setZoomDomain([
-            Math.max(0, center - newDuration / 2),
-            Math.min(totalDuration, center + newDuration / 2)
-        ]);
+        const [s, e] = zoomDomain;
+        const d = e - s;
+        const nd = d * 1.4;
+        const c = s + d / 2;
+        setZoomDomain([Math.max(0, c - nd / 2), Math.min(totalDuration, c + nd / 2)]);
     };
 
-    const handleReset = () => {
-        setZoomDomain([0, totalDuration]);
-    };
+    const handleReset = () => setZoomDomain([0, totalDuration]);
 
     const handlePanLeft = () => {
         if (!zoomDomain) return;
-        const [start, end] = zoomDomain;
-        const duration = end - start;
-        const panAmount = duration * 0.25; // Pan by 25% of visible range
-        const newStart = Math.max(0, start - panAmount);
-        const newEnd = newStart + duration;
-        setZoomDomain([newStart, Math.min(totalDuration, newEnd)]);
+        const [s, e] = zoomDomain;
+        const d = e - s;
+        const amt = d * 0.25;
+        const ns = Math.max(0, s - amt);
+        setZoomDomain([ns, Math.min(totalDuration, ns + d)]);
     };
 
     const handlePanRight = () => {
         if (!zoomDomain) return;
-        const [start, end] = zoomDomain;
-        const duration = end - start;
-        const panAmount = duration * 0.25; // Pan by 25% of visible range
-        const newEnd = Math.min(totalDuration, end + panAmount);
-        const newStart = Math.max(0, newEnd - duration);
-        setZoomDomain([newStart, newEnd]);
+        const [s, e] = zoomDomain;
+        const d = e - s;
+        const amt = d * 0.25;
+        const ne = Math.min(totalDuration, e + amt);
+        setZoomDomain([Math.max(0, ne - d), ne]);
     };
 
-    // Generate bars - memoized to prevent re-rendering on zoom/pan
+    // Build bars
     const bars = useMemo(() => {
-        const barElements = [];
+        const arr = [];
         for (let i = 0; i < maxSegments; i++) {
-            // Transparent Gap Bar
-            barElements.push(
-                <Bar key={`gap-${i}`} dataKey={`gap_${i}`} stackId="a" fill="transparent" isAnimationActive={false} />
+            arr.push(
+                <Bar
+                    key={`gap-${i}`}
+                    dataKey={`gap_${i}`}
+                    stackId="a"
+                    fill="transparent"
+                    isAnimationActive={false}
+                />
             );
-
-            // Colored Event Bar
-            barElements.push(
-                <Bar key={`dur-${i}`} dataKey={`dur_${i}`} stackId="a" isAnimationActive={false}>
-                    {chartData.map((entry: any, index: number) => {
-                        const event = entry[`meta_${i}`] as EventResult;
-                        if (!event) return <Cell key={`cell-${index}`} fill="transparent" />;
-
-                        let color = '#ef4444'; // Red (No Event)
-                        if (event.status === 'Event') color = '#22c55e'; // Green
-                        else if (event.status === 'Partial Event') color = '#f59e0b'; // Orange
-
-                        return <Cell key={`cell-${index}`} fill={color} />;
+            arr.push(
+                <Bar
+                    key={`dur-${i}`}
+                    dataKey={`dur_${i}`}
+                    stackId="a"
+                    isAnimationActive={false}
+                >
+                    {chartData.map((entry: any, idx) => {
+                        const ev = entry[`meta_${i}`] as EventResult;
+                        if (!ev) return <Cell key={idx} fill="transparent" />;
+                        let fill = "#ef4444";
+                        if (ev.status === "Event") fill = "#22c55e";
+                        else if (ev.status === "Partial Event") fill = "#f59e0b";
+                        return <Cell key={idx} fill={fill} />;
                     })}
                 </Bar>
             );
         }
-        return barElements;
+        return arr;
     }, [chartData, maxSegments]);
 
-    const formatXAxis = (tickItem: number) => {
-        return format(new Date(minTime + tickItem), 'dd MMM HH:mm');
-    };
+    const formatXAxis = (x: number) =>
+        format(new Date(minTime + x), "dd MMM HH:mm");
 
-    if (events.length === 0) return <div className="text-center p-4 text-gray-500">No events to display</div>;
+    if (events.length === 0) {
+        return <div className="text-center p-4 text-gray-500">No events to display</div>;
+    }
 
     return (
-        <div className="space-y-2">
-            {/* Zoom and Pan Controls - Only affect X-axis (time), Y-axis (datasets) is locked */}
+        <div className="relative space-y-2">
+            {/* Controls */}
             <div className="flex justify-end gap-2">
-                <button
-                    onClick={handlePanLeft}
-                    className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors disabled:opacity-50"
-                    title="Pan Left"
-                    disabled={!zoomDomain || zoomDomain[0] === 0}
-                >
-                    <ChevronLeft size={18} />
-                </button>
-                <button
-                    onClick={handlePanRight}
-                    className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors disabled:opacity-50"
-                    title="Pan Right"
-                    disabled={!zoomDomain || zoomDomain[1] >= totalDuration}
-                >
-                    <ChevronRight size={18} />
-                </button>
-                <div className="w-px bg-gray-300 mx-1" />
-                <button
-                    onClick={handleZoomIn}
-                    className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
-                    title="Zoom In"
-                >
-                    <ZoomIn size={18} />
-                </button>
-                <button
-                    onClick={handleZoomOut}
-                    className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
-                    title="Zoom Out"
-                >
-                    <ZoomOut size={18} />
-                </button>
-                <button
-                    onClick={handleReset}
-                    className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
-                    title="Reset Zoom"
-                >
-                    <RotateCcw size={18} />
-                </button>
+                <button onClick={handlePanLeft}><ChevronLeft size={18} /></button>
+                <button onClick={handlePanRight}><ChevronRight size={18} /></button>
+                <button onClick={handleZoomIn}><ZoomIn size={18} /></button>
+                <button onClick={handleZoomOut}><ZoomOut size={18} /></button>
+                <button onClick={handleReset}><RotateCcw size={18} /></button>
             </div>
 
-            <div style={{ width: '100%', height: Math.max(400, chartData.length * 60) }}>
+            {/* Floating tooltip – just date */}
+            {cursorTime && Number.isFinite(cursorX) && Number.isFinite(cursorY) && (
+                <div
+                    className="absolute pointer-events-none bg-white border border-gray-300 shadow-md p-2 text-xs rounded"
+                    style={{
+                        left: cursorX + 12,
+                        top: cursorY + 12,
+                        zIndex: 9999,
+                    }}
+                >
+                    {format(cursorTime, "dd MMM yyyy")}
+                </div>
+            )}
+
+            {/* Mouse tracking wrapper */}
+            <div
+                ref={containerRef}
+                style={{
+                    width: "100%",
+                    height: Math.max(400, chartData.length * 60),
+                    position: "relative",
+                }}
+                onMouseMove={(e) => {
+                    if (!containerRef.current || !zoomDomain) {
+                        setCursorTime(null);
+                        return;
+                    }
+
+                    const rect = containerRef.current.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+
+                    const fullWidth = rect.width;
+
+                    // X-axis actual drawing area (exclude left/right margins)
+                    const axisStart = chartMargin.left;
+                    const axisEnd = fullWidth - chartMargin.right;
+                    const axisWidth = axisEnd - axisStart;
+
+                    if (axisWidth <= 0) {
+                        setCursorTime(null);
+                        return;
+                    }
+
+                    // If mouse is outside plot area horizontally, hide tooltip
+                    if (x < axisStart || x > axisEnd) {
+                        setCursorTime(null);
+                        return;
+                    }
+
+                    const ratio = (x - axisStart) / axisWidth;
+                    const [ds, de] = zoomDomain;
+                    const offset = ds + ratio * (de - ds);
+
+                    setCursorX(x);
+                    setCursorY(y);
+                    setCursorTime(new Date(minTime + offset));
+                }}
+                onMouseLeave={() => setCursorTime(null)}
+            >
                 <ResponsiveContainer>
                     <BarChart
                         layout="vertical"
                         data={chartData}
-                        margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
+                        margin={chartMargin}
                     >
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis
                             type="number"
                             domain={zoomDomain || [0, totalDuration]}
-                            allowDataOverflow={true}
+                            allowDataOverflow
                             tickFormatter={formatXAxis}
-                            stroke="#888888"
                             fontSize={12}
                         />
                         <YAxis
                             type="category"
                             dataKey="name"
-                            stroke="#888888"
                             fontSize={12}
                             fontWeight={500}
                         />

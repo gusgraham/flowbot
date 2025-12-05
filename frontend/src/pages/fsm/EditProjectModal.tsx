@@ -18,7 +18,7 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ isOpen, onClose, pr
         if (project) {
             reset({
                 job_number: project.job_number,
-                job_name: (project as any).job_name || project.name, // Handle job_name mapping
+                name: project.name,
                 client: project.client,
                 client_job_ref: project.client_job_ref,
                 survey_start_date: project.survey_start_date,
@@ -62,10 +62,10 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ isOpen, onClose, pr
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Job Name</label>
                         <input
-                            {...register('job_name', { required: 'Job Name is required' })}
+                            {...register('name', { required: 'Job Name is required' })}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
-                        {errors.job_name && <p className="text-red-500 text-xs mt-1">{errors.job_name.message}</p>}
+                        {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
                     </div>
 
                     <div>

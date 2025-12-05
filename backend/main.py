@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 
-from api import projects, installs, dashboard, qa, verification, wq, auth, fsa
+from api import fsm, verification, wq, auth, fsa, users
 from database import get_session, create_db_and_tables
 from domain.auth import User, UserCreate
 from services.auth import AuthService
@@ -25,14 +25,11 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
-app.include_router(projects.router, prefix="/api", tags=["projects"])
-app.include_router(installs.router, prefix="/api", tags=["installs"])
-app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
-app.include_router(qa.router, prefix="/api", tags=["qa"])
-
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(fsm.router, prefix="/api", tags=["fsm"])
+app.include_router(fsa.router, prefix="/api")
 app.include_router(verification.router, prefix="/api", tags=["verification"])
 app.include_router(wq.router, prefix="/api", tags=["wq"])
-app.include_router(fsa.router, prefix="/api")
 
 @app.on_event("startup")
 def on_startup():

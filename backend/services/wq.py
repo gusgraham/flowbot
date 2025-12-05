@@ -4,7 +4,7 @@ import io
 from sqlmodel import Session
 from services.timeseries import TimeSeriesService
 from infra.storage import StorageService
-from domain.events import TimeSeries
+from domain.fsm import TimeSeries
 
 class WQService:
     def __init__(self, session: Session):

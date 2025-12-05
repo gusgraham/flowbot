@@ -1,6 +1,6 @@
 from typing import List
 from sqlmodel import Session, select
-from domain.events import TimeSeries
+from domain.fsm import TimeSeries
 from repositories.base import BaseRepository
 
 class TimeSeriesRepository(BaseRepository[TimeSeries]):

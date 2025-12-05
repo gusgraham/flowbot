@@ -21,6 +21,7 @@ interface AnalysisParams {
     requiredIntensityDuration: number;
     partialPercent: number;
     useConsecutiveIntensities: boolean;
+    includeNonEvents: boolean;
 }
 
 interface EventResult {
@@ -59,7 +60,8 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
         requiredIntensity: 6,
         requiredIntensityDuration: 4,
         partialPercent: 20,
-        useConsecutiveIntensities: true
+        useConsecutiveIntensities: true,
+        includeNonEvents: false
     });
 
     const [isLoading, setIsLoading] = useState(false);
@@ -150,11 +152,25 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
         return savedEvent;
     };
 
-    // Filter events by status
+    // Filter events by status and includeNonEvents toggle
     const filteredEvents = result?.events.filter(event => {
+        // Filter out "No Event" if toggle is off
+        if (!params.includeNonEvents && event.status === 'No Event') return false;
+        // Apply status filter
         if (statusFilter === 'All') return true;
         return event.status === statusFilter;
     }) || [];
+
+    // Events for Gantt chart (filtered by includeNonEvents only)
+    const ganttEvents = result?.events.filter(event => {
+        if (!params.includeNonEvents && event.status === 'No Event') return false;
+        return true;
+    }) || [];
+
+    // Available status filter options based on includeNonEvents
+    const statusFilterOptions = params.includeNonEvents
+        ? ['All', 'Event', 'Partial Event', 'No Event']
+        : ['All', 'Event', 'Partial Event'];
 
 
 
@@ -249,6 +265,22 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
                             </div>
                         </div>
 
+                        {/* Display Options */}
+                        <div>
+                            <h4 className="text-sm font-semibold text-gray-900 mb-3 border-b pb-1">Display Options</h4>
+                            <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={params.includeNonEvents}
+                                        onChange={e => handleParamChange('includeNonEvents', e.target.checked)}
+                                        className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700">Include Non-Events</span>
+                                </label>
+                            </div>
+                        </div>
+
                         <div className="flex justify-end pt-2">
                             <button
                                 onClick={runAnalysis}
@@ -279,7 +311,7 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
                             <h3 className="text-lg font-semibold">Rainfall Events Gantt Chart</h3>
                         </div>
                         <div className="overflow-x-auto">
-                            <RainfallEventsGantt events={result.events} />
+                            <RainfallEventsGantt events={ganttEvents} />
                         </div>
                         <div className="mt-4 flex gap-4 text-sm justify-center">
                             <div className="flex items-center gap-2">
@@ -290,10 +322,12 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
                                 <div className="w-4 h-4 bg-orange-500 rounded"></div>
                                 <span>Partial Event</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-4 h-4 bg-red-500 rounded"></div>
-                                <span>No Event</span>
-                            </div>
+                            {params.includeNonEvents && (
+                                <div className="flex items-center gap-2">
+                                    <div className="w-4 h-4 bg-red-500 rounded"></div>
+                                    <span>No Event</span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -310,9 +344,9 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
 
                     {/* Event Table */}
                     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                        <button
+                        <div
                             onClick={() => setIsEventsTableOpen(!isEventsTableOpen)}
-                            className="w-full px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                            className="w-full px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors cursor-pointer"
                         >
                             <div className="flex items-center gap-2">
                                 <ChevronDown
@@ -323,7 +357,7 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
                             </div>
                             {/* Status Filter */}
                             <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                                {['All', 'Event', 'Partial Event', 'No Event'].map((status) => (
+                                {statusFilterOptions.map((status) => (
                                     <button
                                         key={status}
                                         onClick={() => setStatusFilter(status)}
@@ -336,7 +370,7 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
                                     </button>
                                 ))}
                             </div>
-                        </button>
+                        </div>
                         {isEventsTableOpen && (
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50 sticky top-0">

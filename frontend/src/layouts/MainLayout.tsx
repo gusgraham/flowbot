@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Database, Activity, CheckCircle, Droplets, LogOut, Menu, X } from 'lucide-react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Database, Activity, CheckCircle, Droplets, LogOut, Menu, X, Users } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/utils';
+import { useCurrentUser } from '../api/hooks';
 
 const MainLayout: React.FC = () => {
     const location = useLocation();
+    const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const [isCollapsed, setIsCollapsed] = useState(false);
+
+    const { data: user } = useCurrentUser();
 
     const navItems = [
         { name: 'Hub', path: '/', icon: LayoutDashboard },
@@ -14,6 +20,16 @@ const MainLayout: React.FC = () => {
         { name: 'Verification', path: '/verification', icon: CheckCircle },
         { name: 'Water Quality', path: '/wq', icon: Droplets },
     ];
+
+    if (user?.is_superuser || user?.role === 'Admin') {
+        navItems.push({ name: 'Users', path: '/admin/users', icon: Users });
+    }
+
+    const handleSignOut = () => {
+        localStorage.removeItem('token');
+        queryClient.clear();
+        navigate('/login');
+    };
 
     return (
         <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
@@ -67,6 +83,7 @@ const MainLayout: React.FC = () => {
 
                 <div className="p-4 border-t border-gray-100">
                     <button
+                        onClick={handleSignOut}
                         className={cn(
                             "flex items-center gap-3 px-4 py-3 w-full text-left text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-red-600 rounded-lg transition-colors",
                             isCollapsed && "justify-center"
@@ -87,7 +104,7 @@ const MainLayout: React.FC = () => {
                     </h2>
                     <div className="flex items-center gap-4">
                         <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs">
-                            FG
+                            {user?.username?.substring(0, 2).toUpperCase() || 'FG'}
                         </div>
                     </div>
                 </header>

@@ -11,9 +11,7 @@ from flowbot_graphing import graphPipeShapeDefinition
 import pandas as pd
 from datetime import datetime
 
-
 class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
-
     def __init__(self, install: fsmInstall, fsm_project: fsmProject, parent=None):
         """Constructor."""
         super(flowbot_dialog_fsm_raw_data_settings, self).__init__(parent)
@@ -57,10 +55,8 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
         self.lastValidHeight = self.spinBox_height.value()
 
         self.pipeShapeChanged()
-        #
 
     def browse_for_folder(self):
-        
         initialPath = ''
         if self.raw is not None:
             if os.path.exists(self.raw.file_path):
@@ -338,18 +334,6 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
             super().keyPressEvent(event)
 
     def setupTabs(self):
-
-        # for index in range(self.tabRawDataSettings.count()):
-        #     tab = self.tabRawDataSettings.widget(index)  # Get the tab widget
-        #     if tab.objectName() == 'tab_depth':  # Check its object name
-        #         self.tabRawDataSettings.setTabText(index, 'Depth\nCorrections')
-        #     elif tab.objectName() == 'tab_velocity':  # Check its object name
-        #         self.tabRawDataSettings.setTabText(
-        #             index, 'Velocity\nCorrections')
-        #     elif tab.objectName() == 'tab_dv_timing':  # Check its object name
-        #         self.tabRawDataSettings.setTabText(
-        #             index, 'Depth/Velocity\nTiming')
-
         # Determine visibility based on install type
         if self.inst.install_type == 'Rain Gauge':
             visible_tabs = {'tab_file_location', 'tab_rainfall'}
@@ -388,8 +372,6 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
             self.txtFolderLocation.setText(self.raw.file_path)
             self.txtRainfallFileNameFormat.setText(self.raw.rainfall_file_format)
             self.updateRainfallFile()
-            # self.txtBatteryFileNameFormat.setText(self.raw.battery_file_format)
-            # self.updateBatteryFile()
 
             self.doubleSpinBox_tipping_bucket.setValue(self.raw.rg_tb_depth)
             self.populateTableWidget(self.tableWidget_rainfall_timing, self.raw.rg_timing_corr)
@@ -557,11 +539,6 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
         string_item.setFlags(string_item.flags() | QtCore.Qt.ItemIsEditable)
         tableWidget.setItem(row, 2, string_item)
 
-# from PyQt5 import QtWidgets, QtCore
-# from PyQt5.QtWidgets import QTableWidget, QComboBox
-# from datetime import datetime
-
-
     def addDefaultRow(self, tableWidget: QTableWidget, row_data):
         row = tableWidget.rowCount()
         tableWidget.insertRow(row)
@@ -708,32 +685,6 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
         string_item = QtWidgets.QTableWidgetItem("")
         string_item.setFlags(string_item.flags() | QtCore.Qt.ItemIsEditable)
         self.tableWidget_depth_corrections.setItem(row, 3, string_item)
-
-    # def onDefaultCellChanged(self, row, column):
-
-    #     focused_widget = self.focusWidget()
-    #     # Check if this is the last row
-    #     if row != focused_widget.rowCount() - 1:
-    #         return
-
-    #     try:
-    #         # Extract and validate data
-    #         date_edit = focused_widget.cellWidget(row, 0)
-    #         float_item = focused_widget.item(row, 1)
-
-    #         if (
-    #             date_edit and
-    #             float_item and float_item.text().strip()
-    #         ):
-    #             float(float_item.text().strip())  # Validate numeric value
-
-    #             # Block signals to prevent loops
-    #             focused_widget.blockSignals(True)
-    #             # self.highlightRowAsComplete(row)
-    #             self.addDefaultEmptyRow(focused_widget)
-    #             focused_widget.blockSignals(False)
-    #     except (ValueError, AttributeError):
-    #         pass
 
     def onDefaultCellChanged(self, row, column):
         """Generic handler for QTableWidget cell changes."""
@@ -925,26 +876,6 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
         # If all cells are empty
         return True
 
-    # def isLastRowEmpty(self, table_widget):
-    #     """Check if the last row in the table is empty."""
-    #     last_row = table_widget.rowCount() - 1
-
-    #     # Check if the first two cells are empty
-    #     date_edit = table_widget.cellWidget(last_row, 0)
-    #     float_item = table_widget.item(last_row, 1)
-
-    #     if (
-    #         date_edit is None or
-    #         float_item is None or
-    #         not float_item.text().strip()
-    #     ):
-    #         return True
-
-    #     return False
-
-    # def generatePipeShape(self):
-    #     pass
-
     def onAccept(self):
         if self.inst.install_type == 'Rain Gauge':
             # Update DataFrame
@@ -986,35 +917,6 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
     def onReject(self):
         self.reject()
 
-    # def getDataFrameFromDefaultTableWidget(self, tableWidget: pd.DataFrame):
-
-    #     data = []
-
-    #     for row in range(tableWidget.rowCount() - 1):
-    #         date_edit = tableWidget.cellWidget(row, 0)
-    #         float_item = tableWidget.item(row, 1)
-    #         string_item = tableWidget.item(row, 2)
-
-    #         try:
-    #             # Extract and format date
-    #             date_value = date_edit.dateTime().toString("yyyy-MM-dd HH:mm")
-    #             float_value = float(float_item.text().strip())
-    #             string_value = string_item.text().strip()
-
-    #             # Validate and append data
-    #             if string_value:
-    #                 data.append([date_value, float_value, string_value])
-    #             else:
-    #                 data.append([date_value, float_value, ''])
-
-    #         except (ValueError, AttributeError):
-    #             QtWidgets.QMessageBox.warning(
-    #                 self, "Invalid Data", f"Invalid data in row {row + 1}. Please correct it.")
-    #             return  # Stop saving on error
-
-    #     # Update DataFrame
-    #     return pd.DataFrame(data, columns=["DateTime", "FloatValue", "StringValue"])
-
     def getDataFrameFromDefaultTableWidget(self, tableWidget: QtWidgets.QTableWidget) -> pd.DataFrame:
         data = []
 
@@ -1052,38 +954,6 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
 
         # Return DataFrame
         return pd.DataFrame(data, columns=["DateTime", "FloatValue", "StringValue"])
-
-    # def getDataFrameFromDepthCorrTableWidget(self, tableWidget: pd.DataFrame):
-
-    #     data = []
-
-    #     for row in range(tableWidget.rowCount() - 1):
-    #         date_edit = tableWidget.cellWidget(row, 0)
-    #         float_item1 = tableWidget.item(row, 1)
-    #         float_item2 = tableWidget.item(row, 2)
-    #         string_item = tableWidget.item(row, 3)
-
-    #         try:
-    #             # Extract and format date
-    #             date_value = date_edit.dateTime().toString("yyyy-MM-dd HH:mm")
-    #             float_value1 = float(float_item1.text().strip())
-    #             float_value2 = float(float_item2.text().strip())
-    #             string_value = string_item.text().strip()
-
-    #             # Validate and append data
-    #             if string_value:
-    #                 data.append([date_value, float_value1,
-    #                             float_value2, string_value])
-    #             else:
-    #                 data.append([date_value, float_value1, float_value2, ''])
-
-    #         except (ValueError, AttributeError):
-    #             QtWidgets.QMessageBox.warning(
-    #                 self, "Invalid Data", f"Invalid data in row {row + 1}. Please correct it.")
-    #             return  # Stop saving on error
-
-    #     # Update DataFrame
-    #     return pd.DataFrame(data, columns=["DateTime", "DepthCorr", "InvertOffset", "Comment"])
 
     def getDataFrameFromDepthCorrTableWidget(self) -> pd.DataFrame:
         data = []
@@ -1158,115 +1028,3 @@ class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
 
         # Update DataFrame
         return pd.DataFrame(data, columns=["Width", "Height"]), max_width, max_height
-
-
-# class flowbot_dialog_fsm_raw_data_settings(QtWidgets.QDialog, Ui_Dialog):
-
-#     def __init__(self, install: fsmInstall, fsm_project: fsmProject, parent=None):
-#         """Constructor."""
-#         super(flowbot_dialog_fsm_raw_data_settings, self).__init__(parent)
-#         self.setupUi(self)
-
-#         self.btnOK.clicked.connect(self.onAccept)
-#         self.btnCancel.clicked.connect(self.onReject)
-#         # self.monitor_id = monitor_id
-#         self.project = fsm_project
-#         self.inst = install
-#         self.raw = self.project.get_raw_data_by_install(self.inst.install_id)
-
-#         self.tableWidget_rainfall_timing.cellChanged.connect(
-#             self.onRainfallTimingCellChanged)
-
-#         # Types are: 'Rain Gauge', 'Flow Monitor' or 'Depth Monitor'
-#         if self.inst.install_type == 'Rain Gauge':
-#             for index in range(self.tabRawDataSettings.count()):
-#                 tab = self.tabRawDataSettings.widget(index)
-#                 if tab.objectName() == 'tab_rainfall':
-#                     self.tabRawDataSettings.setTabVisible(index, True)
-#                 else:
-#                     self.tabRawDataSettings.setTabVisible(index, False)
-
-#             self.doubleSpinBox_tipping_bucket.setValue(self.raw.rg_tb_depth)
-
-#             # Populate the table with DataFrame data
-#             if self.raw.rg_timing_corr is not None:
-#                 for row in range(len(self.raw.rg_timing_corr)):
-#                     # First column: DateTime widget
-#                     date_item = QtWidgets.QTableWidgetItem(
-#                         str(self.raw.rg_timing_corr.iat[row, 0]))
-#                     date_item.setFlags(
-#                         QtCore.Qt.ItemIsEditable)  # Allow editing
-#                     self.tableWidget_rainfall_timing.setItem(row, 0, date_item)
-#                     # Set a date/time editor for the first column
-#                     date_edit = QtWidgets.QDateTimeEdit()
-#                     # Allow calendar popup for easier date selection
-#                     date_edit.setCalendarPopup(True)
-#                     self.tableWidget_rainfall_timing.setCellWidget(
-#                         row, 0, date_edit)
-
-#                     # Second column: Float
-#                     float_item = QtWidgets.QTableWidgetItem(
-#                         str(self.raw.rg_timing_corr.iat[row, 1]))
-#                     float_item.setFlags(
-#                         QtCore.Qt.ItemIsEditable)  # Allow editing
-#                     self.tableWidget_rainfall_timing.setItem(
-#                         row, 1, float_item)
-
-#                     # Last column: String
-#                     string_item = QtWidgets.QTableWidgetItem(
-#                         str(self.raw.rg_timing_corr.iat[row, 2]))
-#                     string_item.setFlags(
-#                         QtCore.Qt.ItemIsEditable)  # Allow editing
-#                     self.tableWidget_rainfall_timing.setItem(
-#                         row, 2, string_item)
-
-#             self.addRainfallTimingEmptyRow()
-
-#         elif self.inst.install_type == 'Flow Monitor':
-#             for index in range(self.tabRawDataSettings.count()):
-#                 tab = self.tabRawDataSettings.widget(index)
-#                 if tab.objectName() == 'tab_rainfall':
-#                     self.tabRawDataSettings.setTabVisible(index, False)
-#                 else:
-#                     self.tabRawDataSettings.setTabVisible(index, True)
-#         elif self.inst.install_type == 'Depth Monitor':
-#             for index in range(self.tabRawDataSettings.count()):
-#                 tab = self.tabRawDataSettings.widget(index)
-#                 if tab.objectName() in ['tab_rainfall', 'tab_dv_timing']:
-#                     self.tabRawDataSettings.setTabVisible(index, False)
-#                 else:
-#                     self.tabRawDataSettings.setTabVisible(index, True)
-
-#     def addRainfallTimingEmptyRow(self):
-#         # Add a new blank row
-#         self.tableWidget_rainfall_timing.insertRow(
-#             self.tableWidget_rainfall_timing.rowCount())
-
-#         # First column: DateTime editor
-#         self.tableWidget_rainfall_timing.setCellWidget(
-#             self.tableWidget_rainfall_timing.rowCount() - 1, 0, QtWidgets.QDateTimeEdit())
-
-#         # Second column: Float (editable)
-#         float_item = QtWidgets.QTableWidgetItem("")
-#         float_item.setFlags(QtCore.Qt.ItemIsEditable)  # Allow editing
-#         self.tableWidget_rainfall_timing.setItem(
-#             self.tableWidget_rainfall_timing.rowCount() - 1, 1, float_item)
-
-#         # Last column: String (editable)
-#         string_item = QtWidgets.QTableWidgetItem("")
-#         string_item.setFlags(QtCore.Qt.ItemIsEditable)  # Allow editing
-#         self.tableWidget_rainfall_timing.setItem(
-#             self.tableWidget_rainfall_timing.rowCount() - 1, 2, string_item)
-
-#     def onRainfallTimingCellChanged(self, row, column):
-#         # Validate the data in the current row
-#         if all(self.tableWidget_rainfall_timing.item(row, col) is not None and
-#                self.tableWidget_rainfall_timing.item(row, col).text() != ""
-#                for col in range(3)):  # Assuming 3 columns
-#             self.addRainfallTimingEmptyRow()
-
-#     def onAccept(self):
-#         self.accept()
-
-#     def onReject(self):
-#         self.reject()

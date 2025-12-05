@@ -1,28 +1,28 @@
 from datetime import datetime
 from sqlmodel import Session, select
 from database import engine
-from domain.project import Project, Site, Install
-from domain.monitor import Monitor
+from domain.fsm import FsmProject, Site, Install, Monitor
 
 def seed_data():
     with Session(engine) as session:
         # 1. Check if project exists
-        existing_project = session.exec(select(Project).where(Project.job_number == "J1001")).first()
+        existing_project = session.exec(select(FsmProject).where(FsmProject.job_number == "J1001")).first()
         if existing_project:
             print("Data already seeded!")
             return
 
         # 2. Create Project
-        project = Project(
+        project = FsmProject(
+            name="Demo Project",
             job_number="J1001",
-            job_name="Demo Project",
             client="Acme Corp",
-            survey_start_date=datetime.now()
+            survey_start_date=datetime.now(),
+            owner_id=1  # Will be admin user
         )
         session.add(project)
         session.commit()
         session.refresh(project)
-        print(f"Created Project: {project.job_name}")
+        print(f"Created Project: {project.name}")
 
         # 3. Create Site
         site = Site(

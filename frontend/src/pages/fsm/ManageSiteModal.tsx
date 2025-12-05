@@ -99,7 +99,7 @@ const ManageSiteModal: React.FC<ManageSiteModalProps> = ({ isOpen, onClose, site
             if (site.site_type === 'Flow Monitor') {
                 return monitor.monitor_type === 'Flow Monitor';
             } else if (site.site_type === 'Rain Gauge') {
-                return monitor.monitor_type === 'Raingauge';
+                return monitor.monitor_type === 'Rain Gauge';
             }
             return true;
         });
@@ -308,9 +308,9 @@ const ManageSiteModal: React.FC<ManageSiteModalProps> = ({ isOpen, onClose, site
                                 </div>
                             )}
 
-                            {selectedMonitor && selectedMonitor.monitor_type === 'Raingauge' && (
+                            {selectedMonitor && selectedMonitor.monitor_type === 'Rain Gauge' && (
                                 <div className="space-y-3 pt-2 border-t border-blue-100">
-                                    <h4 className="font-medium text-blue-900 text-sm">Raingauge Details</h4>
+                                    <h4 className="font-medium text-blue-900 text-sm">Rain Gauge Details</h4>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
                                         <select

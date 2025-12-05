@@ -18,6 +18,8 @@ from domain.fsa import (
 from services.importers import import_fdv_file, import_r_file
 from services.fsa_services import FsaRainfallService, FsaEventService, FsaFDVService
 from pydantic import BaseModel
+from domain.auth import User
+from api.deps import get_current_active_user
 
 router = APIRouter(prefix="/fsa", tags=["Flow Survey Analysis"])
 
@@ -26,8 +28,13 @@ router = APIRouter(prefix="/fsa", tags=["Flow Survey Analysis"])
 # ==========================================
 
 @router.post("/projects/", response_model=FsaProjectRead)
-def create_project(project: FsaProjectCreate, session: Session = Depends(get_session)):
+def create_project(
+    project: FsaProjectCreate, 
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
     db_project = FsaProject(**project.model_dump())
+    db_project.owner_id = current_user.id
     session.add(db_project)
     session.commit()
     session.refresh(db_project)
@@ -37,16 +44,28 @@ def create_project(project: FsaProjectCreate, session: Session = Depends(get_ses
 def read_projects(
     offset: int = 0,
     limit: int = Query(default=100, le=100),
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
 ):
-    projects = session.exec(select(FsaProject).offset(offset).limit(limit)).all()
+    if current_user.is_superuser or current_user.role == 'Admin':
+        projects = session.exec(select(FsaProject).offset(offset).limit(limit)).all()
+    else:
+        projects = session.exec(select(FsaProject).where(FsaProject.owner_id == current_user.id).offset(offset).limit(limit)).all()
     return projects
 
 @router.get("/projects/{project_id}", response_model=FsaProjectRead)
-def read_project(project_id: int, session: Session = Depends(get_session)):
+def read_project(
+    project_id: int, 
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
     project = session.get(FsaProject, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+        
+    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized to view this project")
+        
     return project
 
 # ==========================================
@@ -635,3 +654,52 @@ def read_project_events(
     ).all()
     
     return events
+
+@router.put("/events/{event_id}")
+def update_survey_event(
+    event_id: int,
+    event_data: CaptureEventRequest,
+    session: Session = Depends(get_session)
+):
+    """Update an existing captured event"""
+    from domain.fsa import SurveyEvent
+    
+    event = session.get(SurveyEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Update fields
+    event.name = event_data.name
+    event.event_type = event_data.event_type
+    event.start_time = event_data.start_time
+    event.end_time = event_data.end_time
+    
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    
+    return {
+        "id": event.id,
+        "project_id": event.project_id,
+        "name": event.name,
+        "event_type": event.event_type,
+        "start_time": event.start_time.isoformat(),
+        "end_time": event.end_time.isoformat()
+    }
+
+@router.delete("/events/{event_id}")
+def delete_survey_event(
+    event_id: int,
+    session: Session = Depends(get_session)
+):
+    """Delete a captured event"""
+    from domain.fsa import SurveyEvent
+    
+    event = session.get(SurveyEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    session.delete(event)
+    session.commit()
+    
+    return {"message": "Event deleted successfully"}

@@ -1,6 +1,6 @@
 from typing import List
 from sqlmodel import Session, select
-from domain.qa import Note, Attachment
+from domain.fsm import Note, Attachment
 from repositories.base import BaseRepository
 
 class NoteRepository(BaseRepository[Note]):

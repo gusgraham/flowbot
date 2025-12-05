@@ -1,6 +1,6 @@
 from database import engine
 from sqlmodel import Session, select
-from domain.monitor import Monitor
+from domain.fsm import Monitor
 
 with Session(engine) as session:
     monitors = session.exec(select(Monitor)).all()

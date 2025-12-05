@@ -1,8 +1,6 @@
 from typing import List, Dict, Any
 from sqlmodel import Session, select
-from domain.project import Project, Install
-from domain.monitor import Monitor
-from domain.visit import Visit
+from domain.fsm import FsmProject, Install, Monitor, Visit
 
 class DashboardService:
     def __init__(self, session: Session):

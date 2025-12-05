@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useAnalysisProject, useAnalysisDatasets, useRainfallEvents, useDeleteAnalysisDataset, useProjectEvents } from '../../api/hooks';
-import { ArrowLeft, CloudRain, Activity, Loader2, Upload, FileText, Trash2, ChevronDown, LineChart as LineChartIcon, AlertCircle, Calendar } from 'lucide-react';
+import { useAnalysisProject, useAnalysisDatasets, useDeleteAnalysisDataset, useProjectEvents } from '../../api/hooks';
+import { ArrowLeft, CloudRain, Activity, Loader2, Upload, FileText, Trash2, ChevronDown, LineChart as LineChartIcon, AlertCircle, Calendar, Pencil } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import UploadDatasetModal from './UploadDatasetModal';
 import FDVChart from './FDVChart';
@@ -10,50 +10,50 @@ import ScatterChart from './ScatterChart';
 import { CumulativeDepthChart } from './CumulativeDepthChart';
 import RainfallEventsAnalysis from './RainfallEventsAnalysis';
 
-const RainfallTab = ({ datasetId }: { datasetId: number }) => {
-    const { data: events, isLoading } = useRainfallEvents(datasetId);
+// const RainfallTab = ({ datasetId }: { datasetId: number }) => {
+//     const { data: events, isLoading } = useRainfallEvents(datasetId);
 
-    if (isLoading) return <div className="animate-pulse h-32 bg-gray-50 rounded-lg"></div>;
+//     if (isLoading) return <div className="animate-pulse h-32 bg-gray-50 rounded-lg"></div>;
 
-    return (
-        <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Detected Rainfall Events</h3>
-            <div className="overflow-hidden border border-gray-200 rounded-lg">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Time</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Depth (mm)</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Peak Intensity (mm/hr)</th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {events?.map((event: any) => (
-                            <tr key={event.event_id}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                    {new Date(event.start_time).toLocaleString()}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {event.duration_hours} hrs
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{event.total_mm.toFixed(2)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{event.peak_intensity?.toFixed(2) || '-'}</td>
-                            </tr>
-                        ))}
-                        {events?.length === 0 && (
-                            <tr>
-                                <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
-                                    No rainfall events detected.
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
+//     return (
+//         <div className="space-y-4">
+//             <h3 className="text-lg font-semibold text-gray-900">Detected Rainfall Events</h3>
+//             <div className="overflow-hidden border border-gray-200 rounded-lg">
+//                 <table className="min-w-full divide-y divide-gray-200">
+//                     <thead className="bg-gray-50">
+//                         <tr>
+//                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Time</th>
+//                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+//                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Depth (mm)</th>
+//                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Peak Intensity (mm/hr)</th>
+//                         </tr>
+//                     </thead>
+//                     <tbody className="bg-white divide-y divide-gray-200">
+//                         {events?.map((event: any) => (
+//                             <tr key={event.event_id}>
+//                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+//                                     {new Date(event.start_time).toLocaleString()}
+//                                 </td>
+//                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+//                                     {event.duration_hours} hrs
+//                                 </td>
+//                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{event.total_mm.toFixed(2)}</td>
+//                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{event.peak_intensity?.toFixed(2) || '-'}</td>
+//                             </tr>
+//                         ))}
+//                         {events?.length === 0 && (
+//                             <tr>
+//                                 <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
+//                                     No rainfall events detected.
+//                                 </td>
+//                             </tr>
+//                         )}
+//                     </tbody>
+//                 </table>
+//             </div>
+//         </div>
+//     );
+// };
 
 const DWFTab = ({ datasetId: _datasetId }: { datasetId: number }) => (
     <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg border border-dashed border-gray-300">
@@ -227,15 +227,15 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
             )}
 
             <div className="flex-1 flex gap-6 overflow-hidden">
-                {/* Sidebar: Datasets */}
+                {/* Sidebar: Project Data */}
                 <div className="w-72 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden">
                     <div className="p-4 border-b border-gray-200 bg-gray-50">
-                        <h3 className="font-semibold text-gray-700">Datasets</h3>
+                        <h3 className="font-semibold text-gray-700">Project Data</h3>
                     </div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-3">
                         {datasets?.length === 0 ? (
-                            <div className="text-center py-8 px-4 text-gray-500 text-sm">
-                                <FileText size={32} className="mx-auto mb-2 opacity-20" />
+                            <div className="text-center py-6 px-4 text-gray-500 text-sm border-b border-gray-100 pb-6">
+                                <FileText size={24} className="mx-auto mb-2 opacity-20" />
                                 <p>No datasets uploaded yet.</p>
                                 <button
                                     onClick={() => setIsUploadModalOpen(true)}
@@ -443,68 +443,97 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                 )}
                             </>
                         )}
-                    </div>
-                </div>
 
-                {/* Sidebar: Events */}
-                <div className="w-72 bg-white border border-gray-200 rounded-xl flex flex-col overflow-hidden">
-                    <div className="p-4 border-b border-gray-200 bg-gray-50">
-                        <h3 className="font-semibold text-gray-700">Events</h3>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-3">
-                        {savedEvents?.length === 0 ? (
-                            <div className="text-center py-8 px-4 text-gray-500 text-sm">
-                                <Calendar size={32} className="mx-auto mb-2 opacity-20" />
-                                <p>No events captured yet.</p>
-                            </div>
-                        ) : (
-                            <div>
-                                <button
-                                    onClick={() => setEventsExpanded(!eventsExpanded)}
-                                    className="w-full flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <Calendar size={16} className="text-purple-600" />
-                                        <span>Saved Events</span>
-                                        <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                                            {savedEvents?.length || 0}
-                                        </span>
-                                    </div>
-                                    <ChevronDown
-                                        size={16}
-                                        className={cn(
-                                            "transition-transform",
-                                            eventsExpanded ? "rotate-180" : ""
-                                        )}
-                                    />
-                                </button>
-                                {eventsExpanded && (
-                                    <div className="mt-1 space-y-1">
-                                        {savedEvents?.map(event => (
-                                            <div
-                                                key={event.id}
-                                                className="text-left p-3 rounded-lg border bg-white border-transparent hover:bg-gray-50 hover:border-gray-200 transition-all flex items-start gap-3 group"
-                                            >
-                                                <div className="p-2 rounded-md flex-shrink-0 bg-purple-100 text-purple-600">
-                                                    <Calendar size={16} />
+                        {/* Events Section */}
+                        <div className="pt-2 border-t border-gray-100">
+                            {savedEvents?.length === 0 ? (
+                                <div className="text-center py-4 px-4 text-gray-500 text-sm">
+                                    <Calendar size={24} className="mx-auto mb-2 opacity-20" />
+                                    <p>No events captured yet.</p>
+                                </div>
+                            ) : (
+                                <div>
+                                    <button
+                                        onClick={() => setEventsExpanded(!eventsExpanded)}
+                                        className="w-full flex items-center justify-between px-2 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <Calendar size={16} className="text-purple-600" />
+                                            <span>Saved Events</span>
+                                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                                                {savedEvents?.length || 0}
+                                            </span>
+                                        </div>
+                                        <ChevronDown
+                                            size={16}
+                                            className={cn(
+                                                "transition-transform",
+                                                eventsExpanded ? "rotate-180" : ""
+                                            )}
+                                        />
+                                    </button>
+                                    {eventsExpanded && (
+                                        <div className="mt-1 space-y-1">
+                                            {savedEvents?.map(event => (
+                                                <div
+                                                    key={event.id}
+                                                    className="text-left p-3 rounded-lg border bg-white border-transparent hover:bg-gray-50 hover:border-gray-200 transition-all flex items-start gap-3 group"
+                                                >
+                                                    <div className="p-2 rounded-md flex-shrink-0 bg-purple-100 text-purple-600">
+                                                        <Calendar size={16} />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="font-medium text-gray-900 truncate" title={event.name}>
+                                                            {event.name}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500 mt-0.5">
+                                                            {new Date(event.start_time).toLocaleDateString()}
+                                                        </p>
+                                                        <p className="text-xs text-gray-400 mt-0.5">
+                                                            {event.event_type}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                // TODO: Open edit modal
+                                                                console.log('Edit event:', event.id);
+                                                            }}
+                                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                            title="Edit event"
+                                                        >
+                                                            <Pencil size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                if (confirm(`Delete event "${event.name}"?`)) {
+                                                                    try {
+                                                                        const response = await fetch(`/api/fsa/events/${event.id}`, {
+                                                                            method: 'DELETE'
+                                                                        });
+                                                                        if (response.ok) {
+                                                                            refetchEvents();
+                                                                        }
+                                                                    } catch (error) {
+                                                                        console.error('Failed to delete event:', error);
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                            title="Delete event"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="font-medium text-gray-900 truncate" title={event.name}>
-                                                        {event.name}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500 mt-0.5">
-                                                        {new Date(event.start_time).toLocaleDateString()}
-                                                    </p>
-                                                    <p className="text-xs text-gray-400 mt-0.5">
-                                                        {event.event_type}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -556,17 +585,7 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                         >
                                             Event Analysis
                                         </button>
-                                        <button
-                                            onClick={() => setActiveTab('rainfall')}
-                                            className={cn(
-                                                "py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
-                                                activeTab === 'rainfall'
-                                                    ? "border-purple-600 text-purple-600"
-                                                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                            )}
-                                        >
-                                            Rainfall Events
-                                        </button>
+
                                     </>
                                 )}
 
@@ -638,9 +657,9 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
 
                             {/* Content */}
                             <div className="flex-1 overflow-y-auto p-6">
-                                {activeTab === 'rainfall' && (
+                                {/* {activeTab === 'rainfall' && (
                                     <RainfallTab datasetId={selectedDatasetIds[0]} />
-                                )}
+                                )} */}
                                 {activeTab === 'event-analysis' && (
                                     <RainfallEventsAnalysis
                                         datasetIds={selectedDatasetIds}

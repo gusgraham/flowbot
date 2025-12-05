@@ -8,11 +8,13 @@ import Login from './pages/Login';
 import SurveyList from './pages/fsm/SurveyList';
 import SurveyDashboard from './pages/fsm/SurveyDashboard';
 import MonitorDetail from './pages/fsm/MonitorDetail';
+import InstallManagement from './pages/fsm/InstallManagement';
 import AnalysisProjectList from './pages/analysis/AnalysisProjectList';
 import AnalysisWorkbench from './pages/analysis/AnalysisWorkbench';
 import VerificationProjectList from './pages/verification/VerificationProjectList';
 import VerificationDashboard from './pages/verification/VerificationDashboard';
 import WQProjectList from './pages/wq/WQProjectList';
+import UserManagement from './pages/admin/UserManagement';
 
 // Placeholder components for other routes
 const Placeholder = ({ title }: { title: string }) => (
@@ -47,11 +49,13 @@ function App() {
               <Route path="fsm" element={<SurveyList />} />
               <Route path="fsm/:projectId" element={<SurveyDashboard />} />
               <Route path="fsm/monitor/:monitorId" element={<MonitorDetail />} />
+              <Route path="fsm/install/:installId" element={<InstallManagement />} />
               <Route path="analysis" element={<AnalysisProjectList />} />
               <Route path="analysis/:projectId" element={<AnalysisWorkbench />} />
               <Route path="verification" element={<VerificationProjectList />} />
               <Route path="verification/:projectId" element={<VerificationDashboard />} />
               <Route path="wq" element={<WQProjectList />} />
+              <Route path="admin/users" element={<UserManagement />} />
             </Route>
           </Route>
         </Routes>
