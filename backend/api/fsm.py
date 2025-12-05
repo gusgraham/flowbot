@@ -417,18 +417,14 @@ def get_install_timeseries(
     from domain.fsm import TimeSeries
     from sqlmodel import select
     
-    # Debug: Check all timeseries records first
-    all_ts = service.session.exec(select(TimeSeries)).all()
-    print(f"DEBUG: Total TimeSeries records in DB: {len(all_ts)}")
-    for ts in all_ts[:5]:  # Print first 5
-        print(f"  - install_id={ts.install_id}, data_type='{ts.data_type}', variable='{ts.variable}'")
+
     
     statement = select(TimeSeries).where(
         TimeSeries.install_id == install_id,
         TimeSeries.data_type == data_type
     )
     timeseries_records = service.session.exec(statement).all()
-    print(f"DEBUG: Found {len(timeseries_records)} records for install_id={install_id}, data_type='{data_type}'")
+
     
     if not timeseries_records:
         return {
@@ -442,19 +438,14 @@ def get_install_timeseries(
     all_data = []
     # Files are stored in data/fsm/timeseries/installs/{install_id}/
     data_dir = Path("data/fsm")
-    print(f"DEBUG: Looking for files in {data_dir.absolute()}")
-    
     for ts in timeseries_records:
-        print(f"DEBUG: Record - filename={ts.filename}, variable={ts.variable}")
         if ts.filename:
             file_path = data_dir / ts.filename
-            print(f"DEBUG: Checking file {file_path}, exists={file_path.exists()}")
             if file_path.exists():
                 try:
                     df = pd.read_parquet(file_path)
-                    print(f"DEBUG: Loaded {len(df)} rows from {file_path}")
                     df['variable'] = ts.variable
-                    df['unit'] = getattr(ts, 'unit', '') or ''  # Handle missing unit field
+                    df['unit'] = ts.unit or ''
                     all_data.append(df)
                 except Exception as e:
                     print(f"Error loading {file_path}: {e}")

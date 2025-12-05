@@ -29,32 +29,9 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
         endDate || undefined
     );
 
-    if (isLoading) {
-        return (
-            <div className="flex justify-center items-center py-12">
-                <Loader2 className="animate-spin text-blue-500" size={32} />
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="text-center py-12">
-                <p className="text-red-500">Error loading data: {(error as Error).message}</p>
-            </div>
-        );
-    }
-
-    if (!data || Object.keys(data.variables).length === 0) {
-        return (
-            <div className="text-center py-12">
-                <p className="text-gray-500">No data available for this install</p>
-            </div>
-        );
-    }
-
     // Prepare chart data by combining all variables with timestamps
     const prepareChartData = () => {
+        if (!data) return [];
         const timeMap = new Map<string, any>();
 
         Object.entries(data.variables).forEach(([varName, varData]) => {
@@ -72,6 +49,7 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
     const chartData = prepareChartData();
 
     const renderFlowMonitorCharts = () => {
+        if (!data) return null;
         const variables = Object.keys(data.variables);
         const hasDepth = variables.includes('Depth');
         const hasVelocity = variables.includes('Velocity');
@@ -244,6 +222,7 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
     };
 
     const renderRainGaugeChart = () => {
+        if (!data) return null;
         const varName = 'Rain';
         const varData = data.variables[varName];
 
@@ -295,6 +274,7 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
     };
 
     const renderPumpLoggerChart = () => {
+        if (!data) return null;
         const varName = 'PumpState';
         const varData = data.variables[varName];
 
@@ -332,6 +312,40 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                         </div>
                     </div>
                 </div>
+            </div>
+        );
+    };
+
+    const renderContent = () => {
+        if (isLoading) {
+            return (
+                <div className="flex justify-center items-center py-12">
+                    <Loader2 className="animate-spin text-blue-500" size={32} />
+                </div>
+            );
+        }
+
+        if (error) {
+            return (
+                <div className="text-center py-12">
+                    <p className="text-red-500">Error loading data: {(error as Error).message}</p>
+                </div>
+            );
+        }
+
+        if (!data || Object.keys(data.variables).length === 0) {
+            return (
+                <div className="text-center py-12">
+                    <p className="text-gray-500">No data available for this install</p>
+                </div>
+            );
+        }
+
+        return (
+            <div className="border-t pt-6">
+                {installType === 'Flow Monitor' && renderFlowMonitorCharts()}
+                {installType === 'Rain Gauge' && renderRainGaugeChart()}
+                {installType === 'Pump Logger' && renderPumpLoggerChart()}
             </div>
         );
     };
@@ -389,12 +403,8 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                 </div>
             </div>
 
-            {/* Charts */}
-            <div className="border-t pt-6">
-                {installType === 'Flow Monitor' && renderFlowMonitorCharts()}
-                {installType === 'Rain Gauge' && renderRainGaugeChart()}
-                {installType === 'Pump Logger' && renderPumpLoggerChart()}
-            </div>
+            {/* Charts or Status Message */}
+            {renderContent()}
         </div>
     );
 };

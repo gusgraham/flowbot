@@ -264,6 +264,7 @@ class TimeSeriesBase(SQLModel):
     end_time: datetime
     interval_minutes: int
     filename: Optional[str] = None
+    unit: Optional[str] = Field(default=None)
 
 class TimeSeries(TimeSeriesBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
