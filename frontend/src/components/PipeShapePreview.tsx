@@ -26,6 +26,17 @@ const PipeShapePreview: React.FC<PipeShapePreviewProps> = ({ shape, width, heigh
         }
     }, [width, height, intervals, shape]);
 
+    // Generate smooth background shape with many intervals for comparison
+    const smoothPoints = useMemo(() => {
+        if (!width || !height) return [];
+
+        try {
+            return generateShape(width, height, 100, shape); // Always use 100 intervals for smooth background
+        } catch (error) {
+            return [];
+        }
+    }, [width, height, shape]);
+
     const viewBoxSize = 400;
     const padding = 40;
     const maxDim = Math.max(width, height);
@@ -56,6 +67,29 @@ const PipeShapePreview: React.FC<PipeShapePreviewProps> = ({ shape, width, heigh
 
         return path;
     }, [points, scale, centerX, baseY]);
+
+    // Convert smooth points to SVG path for background
+    const smoothPathData = useMemo(() => {
+        if (smoothPoints.length === 0) return '';
+
+        const leftPoints = smoothPoints.map(p => ({
+            x: centerX - (p.w / 2) * scale,
+            y: baseY - p.h * scale
+        }));
+
+        const rightPoints = smoothPoints.map(p => ({
+            x: centerX + (p.w / 2) * scale,
+            y: baseY - p.h * scale
+        })).reverse();
+
+        const allPoints = [...leftPoints, ...rightPoints];
+
+        const path = allPoints.map((p, i) =>
+            `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
+        ).join(' ') + ' Z';
+
+        return path;
+    }, [smoothPoints, scale, centerX, baseY]);
 
     const errorMessage = useMemo(() => {
         const shapeUpper = shape.toUpperCase();
@@ -112,7 +146,17 @@ const PipeShapePreview: React.FC<PipeShapePreviewProps> = ({ shape, width, heigh
                     <line x1={padding} y1={baseY} x2={viewBoxSize - padding} y2={baseY} stroke="#E5E7EB" strokeWidth="1" />
                     <line x1={centerX} y1={padding} x2={centerX} y2={viewBoxSize - padding} stroke="#E5E7EB" strokeWidth="1" />
 
-                    {/* Shape */}
+                    {/* Smooth background shape (true shape) */}
+                    {smoothPathData && (
+                        <path
+                            d={smoothPathData}
+                            fill="none"
+                            stroke="#9CA3AF"
+                            strokeWidth="2.5"
+                        />
+                    )}
+
+                    {/* User's interval-based shape */}
                     {pathData && (
                         <>
                             <path
@@ -139,15 +183,16 @@ const PipeShapePreview: React.FC<PipeShapePreviewProps> = ({ shape, width, heigh
                     )}
 
                     {/* Dimension labels */}
-                    <text x={centerX} y={baseY + 25} textAnchor="middle" fill="#6B7280" fontSize="12">
+                    <text x={centerX} y={baseY + 25} textAnchor="middle" fill="#374151" fontSize="14" fontWeight="600">
                         {width}mm
                     </text>
                     <text
                         x={centerX - (width * scale / 2) - 25}
                         y={baseY - (height * scale / 2)}
                         textAnchor="middle"
-                        fill="#6B7280"
-                        fontSize="12"
+                        fill="#374151"
+                        fontSize="14"
+                        fontWeight="600"
                         transform={`rotate(-90 ${centerX - (width * scale / 2) - 25} ${baseY - (height * scale / 2)})`}
                     >
                         {height}mm

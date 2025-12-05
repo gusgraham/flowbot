@@ -3,6 +3,7 @@ import { Save } from 'lucide-react';
 import CorrectionTable from '../../components/CorrectionTable';
 import PipeShapePreview from '../../components/PipeShapePreview';
 import type { ColumnDef, CorrectionRow } from '../../components/CorrectionTable';
+import { useToast } from '../../contexts/ToastContext';
 
 interface FlowMonitorCalibrationProps {
     installId: number;
@@ -122,7 +123,41 @@ const FlowMonitorCalibration: React.FC<FlowMonitorCalibrationProps> = ({
         { name: 'comment', type: 'text', label: 'Comment', placeholder: 'Optional note' },
     ];
 
+    const { error: toastError } = useToast();
+
     const handleSave = useCallback(() => {
+        // Validation
+        if (pipeWidth <= 0 || pipeHeight <= 0) {
+            toastError('Pipe width and height must be greater than 0');
+            return;
+        }
+
+        if (pipeShape === 'CIRC' && pipeWidth !== pipeHeight) {
+            toastError('Circular pipes must have equal width and height');
+            return;
+        }
+
+        if (pipeShape === 'USER' && pipeShapeDef.length < 2) {
+            toastError('User defined shapes must have at least 2 points');
+            return;
+        }
+
+        // Validate table required fields
+        const validateTable = (data: CorrectionRow[], name: string) => {
+            for (const row of data) {
+                if (!row.datetime) {
+                    toastError(`Date/Time is required for all rows in ${name}`);
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        if (!validateTable(depthCorrections, 'Depth Corrections')) return;
+        if (!validateTable(velocityCorrections, 'Velocity Corrections')) return;
+        if (!validateTable(timingCorrections, 'Timing Corrections')) return;
+        if (!validateTable(siltLevels, 'Silt Levels')) return;
+
         onSave({
             pipe_shape: pipeShape,
             pipe_width: pipeWidth,
@@ -135,7 +170,7 @@ const FlowMonitorCalibration: React.FC<FlowMonitorCalibrationProps> = ({
             silt_levels: JSON.stringify(siltLevels),
         });
     }, [pipeShape, pipeWidth, pipeHeight, pipeShapeIntervals, pipeShapeDef,
-        depthCorrections, velocityCorrections, timingCorrections, siltLevels, onSave]);
+        depthCorrections, velocityCorrections, timingCorrections, siltLevels, onSave, toastError]);
 
     return (
         <div className="space-y-8">

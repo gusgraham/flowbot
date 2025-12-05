@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Folder, Info, Save, Check, X, AlertCircle } from 'lucide-react';
 import { useRawDataSettings, useUpdateRawDataSettings, useInstall } from '../../api/hooks';
+import { useToast } from '../../contexts/ToastContext';
 import api from '../../api/client';
 
 interface DataIngestionTabProps {
@@ -149,6 +150,7 @@ FileFormatInput.displayName = 'FileFormatInput';
 const DataIngestionTab: React.FC<DataIngestionTabProps> = ({ installId, installType }) => {
     const { data: settings, isLoading } = useRawDataSettings(installId);
     const { mutate: updateSettings, isPending } = useUpdateRawDataSettings();
+    const { showToast } = useToast();
 
     const [folderPath, setFolderPath] = useState('');
     const [rainfallFormat, setRainfallFormat] = useState('');
@@ -191,18 +193,29 @@ const DataIngestionTab: React.FC<DataIngestionTabProps> = ({ installId, installT
     }, []);
 
     const handleSave = useCallback(() => {
-        updateSettings({
-            installId,
-            settings: {
-                file_path: folderPath,
-                rainfall_file_format: rainfallFormat,
-                depth_file_format: depthFormat,
-                velocity_file_format: velocityFormat,
-                battery_file_format: batteryFormat,
-                pumplogger_file_format: pumpLoggerFormat,
+        updateSettings(
+            {
+                installId,
+                settings: {
+                    file_path: folderPath,
+                    rainfall_file_format: rainfallFormat,
+                    depth_file_format: depthFormat,
+                    velocity_file_format: velocityFormat,
+                    battery_file_format: batteryFormat,
+                    pumplogger_file_format: pumpLoggerFormat,
+                },
             },
-        });
-    }, [installId, folderPath, rainfallFormat, depthFormat, velocityFormat, batteryFormat, pumpLoggerFormat, updateSettings]);
+            {
+                onSuccess: () => {
+                    showToast('Ingestion settings saved successfully', 'success');
+                },
+                onError: (error) => {
+                    console.error('Failed to save ingestion settings:', error);
+                    showToast('Failed to save ingestion settings', 'error');
+                }
+            }
+        );
+    }, [installId, folderPath, rainfallFormat, depthFormat, velocityFormat, batteryFormat, pumpLoggerFormat, updateSettings, showToast]);
 
     if (isLoading) {
         return <div className="text-center py-8 text-gray-400">Loading settings...</div>;

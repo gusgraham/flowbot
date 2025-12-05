@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Database, Settings, FileText, Camera, Calendar, Loader2 } from 'lucide-react';
 import { useInstall, useRawDataSettings, useUpdateRawDataSettings } from '../../api/hooks';
+import { useToast } from '../../contexts/ToastContext';
 import DataIngestionTab from './DataIngestionTab';
 import RainGaugeCalibration from './RainGaugeCalibration';
 import PumpLoggerCalibration from './PumpLoggerCalibration';
@@ -15,10 +16,22 @@ const InstallManagement: React.FC = () => {
     const { data: install, isLoading } = useInstall(id);
     const { data: rawSettings } = useRawDataSettings(id);
     const { mutate: updateSettings, isPending: isUpdating } = useUpdateRawDataSettings();
+    const { showToast } = useToast();
 
     const handleCalibrationSave = useCallback((data: any) => {
-        updateSettings({ installId: id, settings: data });
-    }, [id, updateSettings]);
+        updateSettings(
+            { installId: id, settings: data },
+            {
+                onSuccess: () => {
+                    showToast('Calibration settings saved successfully', 'success');
+                },
+                onError: (error) => {
+                    console.error('Failed to save settings:', error);
+                    showToast('Failed to save calibration settings', 'error');
+                }
+            }
+        );
+    }, [id, updateSettings, showToast]);
 
     const tabs = [
         { id: 'data-ingestion', label: 'Data Ingestion', icon: Database, color: 'green' },

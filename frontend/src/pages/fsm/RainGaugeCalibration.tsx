@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Save } from 'lucide-react';
 import CorrectionTable from '../../components/CorrectionTable';
 import type { ColumnDef, CorrectionRow } from '../../components/CorrectionTable';
+import { useToast } from '../../contexts/ToastContext';
 
 interface RainGaugeCalibrationProps {
     installId: number;
@@ -43,12 +44,27 @@ const RainGaugeCalibration: React.FC<RainGaugeCalibrationProps> = ({
         { name: 'comment', type: 'text', label: 'Comment', placeholder: 'Optional note' },
     ];
 
+    const { error: toastError } = useToast();
+
     const handleSave = useCallback(() => {
+        if (tippingBucketDepth <= 0) {
+            toastError('Tipping bucket depth must be greater than 0');
+            return;
+        }
+
+        // Validate table entries
+        for (const row of timingCorrections) {
+            if (!row.datetime) {
+                toastError('Date/Time is required for all timing corrections');
+                return;
+            }
+        }
+
         onSave({
             rg_tb_depth: tippingBucketDepth,
             rg_timing_corr: JSON.stringify(timingCorrections),
         });
-    }, [tippingBucketDepth, timingCorrections, onSave]);
+    }, [tippingBucketDepth, timingCorrections, onSave, toastError]);
 
     return (
         <div className="space-y-6">

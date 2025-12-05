@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Save } from 'lucide-react';
 import CorrectionTable from '../../components/CorrectionTable';
 import type { ColumnDef, CorrectionRow } from '../../components/CorrectionTable';
+import { useToast } from '../../contexts/ToastContext';
 
 interface PumpLoggerCalibrationProps {
     installId: number;
@@ -57,12 +58,37 @@ const PumpLoggerCalibration: React.FC<PumpLoggerCalibrationProps> = ({
         { name: 'comment', type: 'text', label: 'Comment', placeholder: 'Optional note' },
     ];
 
+    const { error: toastError } = useToast();
+
     const handleSave = useCallback(() => {
+        // Validate table required fields
+        const validateTable = (data: CorrectionRow[], name: string) => {
+            for (const row of data) {
+                if (!row.datetime) {
+                    toastError(`Date/Time is required for all rows in ${name}`);
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        if (!validateTable(timingCorrections, 'Timing Corrections')) return;
+        if (!validateTable(addedOnOffs, 'Added On/Off Events')) return;
+
+        // Validate On/Off state
+        for (const row of addedOnOffs) {
+            const state = String(row.state || '').toUpperCase();
+            if (state && state !== 'ON' && state !== 'OFF') {
+                toastError('State must be either ON or OFF');
+                return;
+            }
+        }
+
         onSave({
             pl_timing_corr: JSON.stringify(timingCorrections),
             pl_added_onoffs: JSON.stringify(addedOnOffs),
         });
-    }, [timingCorrections, addedOnOffs, onSave]);
+    }, [timingCorrections, addedOnOffs, onSave, toastError]);
 
     return (
         <div className="space-y-6">

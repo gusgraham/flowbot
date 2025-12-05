@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToastProvider } from './contexts/ToastContext';
 import MainLayout from './layouts/MainLayout';
 import AuthLayout from './layouts/AuthLayout';
 import Hub from './pages/Hub';
@@ -37,29 +38,31 @@ const queryClient = new QueryClient();
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<AuthLayout />}>
-            <Route index element={<Login />} />
-          </Route>
-
-          <Route element={<ProtectedRoute />}>
-            <Route path="/" element={<MainLayout />}>
-              <Route index element={<Hub />} />
-              <Route path="fsm" element={<SurveyList />} />
-              <Route path="fsm/:projectId" element={<SurveyDashboard />} />
-              <Route path="fsm/monitor/:monitorId" element={<MonitorDetail />} />
-              <Route path="fsm/install/:installId" element={<InstallManagement />} />
-              <Route path="analysis" element={<AnalysisProjectList />} />
-              <Route path="analysis/:projectId" element={<AnalysisWorkbench />} />
-              <Route path="verification" element={<VerificationProjectList />} />
-              <Route path="verification/:projectId" element={<VerificationDashboard />} />
-              <Route path="wq" element={<WQProjectList />} />
-              <Route path="admin/users" element={<UserManagement />} />
+      <ToastProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<AuthLayout />}>
+              <Route index element={<Login />} />
             </Route>
-          </Route>
-        </Routes>
-      </BrowserRouter>
+
+            <Route element={<ProtectedRoute />}>
+              <Route path="/" element={<MainLayout />}>
+                <Route index element={<Hub />} />
+                <Route path="fsm" element={<SurveyList />} />
+                <Route path="fsm/:projectId" element={<SurveyDashboard />} />
+                <Route path="fsm/monitor/:monitorId" element={<MonitorDetail />} />
+                <Route path="fsm/install/:installId" element={<InstallManagement />} />
+                <Route path="analysis" element={<AnalysisProjectList />} />
+                <Route path="analysis/:projectId" element={<AnalysisWorkbench />} />
+                <Route path="verification" element={<VerificationProjectList />} />
+                <Route path="verification/:projectId" element={<VerificationDashboard />} />
+                <Route path="wq" element={<WQProjectList />} />
+                <Route path="admin/users" element={<UserManagement />} />
+              </Route>
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }
