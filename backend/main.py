@@ -31,6 +31,9 @@ app.include_router(fsa.router, prefix="/api")
 app.include_router(verification.router, prefix="/api", tags=["verification"])
 app.include_router(wq.router, prefix="/api", tags=["wq"])
 
+from api import ingestion
+app.include_router(ingestion.router, prefix="/api", tags=["ingestion"])
+
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()

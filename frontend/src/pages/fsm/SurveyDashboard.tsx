@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall } from '../../api/hooks';
+import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall, useIngestProject } from '../../api/hooks';
+import { useToast } from '../../contexts/ToastContext';
 import type { Site, Monitor, Install } from '../../api/hooks';
 import {
     ArrowLeft, MapPin, Loader2, Plus, Building2, CloudRain,
-    ChevronDown, ChevronRight, Activity, Droplets, Trash2
+    ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive
 } from 'lucide-react';
 import AddSiteModal from './AddSiteModal';
 import EditProjectModal from './EditProjectModal';
@@ -32,8 +33,8 @@ const SurveyDashboard: React.FC = () => {
     const [deletingInstall, setDeletingInstall] = useState<Install | null>(null);
 
     // Section Collapse State
-    const [isMonitorsOpen, setIsMonitorsOpen] = useState(true);
-    const [isSitesOpen, setIsSitesOpen] = useState(true);
+    const [isMonitorsOpen, setIsMonitorsOpen] = useState(false);
+    const [isSitesOpen, setIsSitesOpen] = useState(false);
     const [isInstallsOpen, setIsInstallsOpen] = useState(true);
 
     // Group sites by type
@@ -48,6 +49,8 @@ const SurveyDashboard: React.FC = () => {
     // Delete and uninstall mutations
     const { mutate: deleteInstall } = useDeleteInstall();
     const { mutate: uninstallInstall } = useUninstallInstall();
+    const { mutate: ingestProject, isPending: isIngesting } = useIngestProject();
+    const { showToast } = useToast();
 
     if (projectLoading || sitesLoading) {
         return (
@@ -91,6 +94,61 @@ const SurveyDashboard: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column: Project Overview */}
                 <div className="lg:col-span-2 space-y-6">
+
+                    {/* Data Ingestion */}
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <div className="p-6">
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                        <Database size={20} className="text-gray-400" />
+                                        Data Ingestion
+                                    </h2>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                        Import raw data files from local network storage.
+                                    </p>
+                                </div>
+                                {project.last_ingestion_date && (
+                                    <div className="text-right">
+                                        <p className="text-xs text-gray-500 mb-1">Last Ingestion</p>
+                                        <p className="text-sm font-medium text-gray-900">
+                                            {new Date(project.last_ingestion_date).toLocaleString()}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="bg-gray-50 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="flex-1 w-full relative">
+                                    <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Source Path</p>
+                                    <div className="flex items-center gap-2 text-sm text-gray-700 font-mono bg-white border border-gray-200 px-3 py-2 rounded">
+                                        <HardDrive size={14} className="text-gray-400 shrink-0" />
+                                        <span className="truncate" title={project.default_download_path || "Not configured"}>
+                                            {project.default_download_path || "No default path configured"}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={() => ingestProject(project.id, {
+                                        onSuccess: () => showToast('Ingestion started successfully', 'success'),
+                                        onError: () => showToast('Failed to start ingestion', 'error')
+                                    })}
+                                    disabled={isIngesting || !project.default_download_path}
+                                    className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {isIngesting ? <Loader2 size={18} className="animate-spin" /> : <CloudRain size={18} />}
+                                    Run Ingestion
+                                </button>
+                            </div>
+                            {!project.default_download_path && (
+                                <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                                    <Activity size={12} />
+                                    Please configure a Default Ingestion Path in Project Settings to enable ingestion.
+                                </p>
+                            )}
+                        </div>
+                    </div>
 
                     {/* Project Monitors */}
                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">

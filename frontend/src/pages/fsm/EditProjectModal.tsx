@@ -22,7 +22,8 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ isOpen, onClose, pr
                 client: project.client,
                 client_job_ref: project.client_job_ref,
                 survey_start_date: project.survey_start_date,
-                survey_end_date: project.survey_end_date
+                survey_end_date: project.survey_end_date,
+                default_download_path: project.default_download_path
             });
         }
     }, [project, reset, isOpen]);
@@ -81,6 +82,15 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ isOpen, onClose, pr
                         <label className="block text-sm font-medium text-gray-700 mb-1">Client Job Ref</label>
                         <input
                             {...register('client_job_ref')}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Default Ingestion Path</label>
+                        <input
+                            {...register('default_download_path')}
+                            placeholder="e.g. C:\SurveyData\ProjectData"
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                     </div>

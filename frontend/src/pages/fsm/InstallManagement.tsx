@@ -1,17 +1,18 @@
 import React, { useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Database, Settings, FileText, Camera, Calendar, Loader2 } from 'lucide-react';
+import { ArrowLeft, Database, Settings, FileText, Camera, Calendar, Loader2, LineChart } from 'lucide-react';
 import { useInstall, useRawDataSettings, useUpdateRawDataSettings } from '../../api/hooks';
 import { useToast } from '../../contexts/ToastContext';
 import DataIngestionTab from './DataIngestionTab';
 import RainGaugeCalibration from './RainGaugeCalibration';
 import PumpLoggerCalibration from './PumpLoggerCalibration';
 import FlowMonitorCalibration from './FlowMonitorCalibration';
+import DataViewerTab from './DataViewerTab';
 
 const InstallManagement: React.FC = () => {
     const { installId } = useParams<{ installId: string }>();
     const id = parseInt(installId || '0');
-    const [activeTab, setActiveTab] = useState<'data-ingestion' | 'calibration' | 'inspections' | 'photos' | 'schedule'>('data-ingestion');
+    const [activeTab, setActiveTab] = useState<'data-ingestion' | 'calibration' | 'data-viewer' | 'inspections' | 'photos' | 'schedule'>('data-ingestion');
 
     const { data: install, isLoading } = useInstall(id);
     const { data: rawSettings } = useRawDataSettings(id);
@@ -36,6 +37,7 @@ const InstallManagement: React.FC = () => {
     const tabs = [
         { id: 'data-ingestion', label: 'Data Ingestion', icon: Database, color: 'green' },
         { id: 'calibration', label: 'Calibration', icon: Settings, color: 'orange' },
+        { id: 'data-viewer', label: 'Data Viewer', icon: LineChart, color: 'indigo' },
         { id: 'inspections', label: 'Inspections', icon: FileText, color: 'blue' },
         { id: 'photos', label: 'Photographs', icon: Camera, color: 'purple' },
         { id: 'schedule', label: 'Visit Schedule', icon: Calendar, color: 'cyan' },
@@ -144,6 +146,16 @@ const InstallManagement: React.FC = () => {
                                 isSaving={isUpdating}
                             />
                         )}
+                    </div>
+                )}
+
+                {activeTab === 'data-viewer' && (
+                    <div className="p-6">
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">Data Viewer</h2>
+                        <p className="text-gray-500 mb-6">
+                            View raw and processed time series data for this install.
+                        </p>
+                        <DataViewerTab installId={id} installType={install.install_type} />
                     </div>
                 )}
 

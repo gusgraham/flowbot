@@ -12,6 +12,8 @@ export interface Project {
     survey_end_date?: string;
     owner_id?: number;
     created_at?: string;
+    default_download_path?: string;
+    last_ingestion_date?: string;
 }
 
 export interface Site {
@@ -243,6 +245,7 @@ export interface ProjectCreate {
     description?: string;
     survey_start_date?: string;
     survey_end_date?: string;
+    default_download_path?: string;
 }
 
 export const useCreateProject = () => {
@@ -281,6 +284,15 @@ export const useDeleteProject = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['projects'] });
+        },
+    });
+};
+
+export const useIngestProject = () => {
+    return useMutation({
+        mutationFn: async (projectId: number) => {
+            const { data } = await api.post(`/projects/${projectId}/ingest`);
+            return data;
         },
     });
 };
@@ -751,3 +763,41 @@ export const useUpdateUser = () => {
     });
 };
 
+// Install Timeseries Data
+export interface TimeseriesVariable {
+    data: Array<{ time: string; value: number | null }>;
+    stats: {
+        min: number | null;
+        max: number | null;
+        mean: number | null;
+        count: number;
+    };
+    unit: string;
+}
+
+export interface InstallTimeseriesData {
+    install_id: number;
+    install_type: string;
+    data_type: string;
+    variables: Record<string, TimeseriesVariable>;
+}
+
+export const useInstallTimeseries = (
+    installId: number,
+    dataType: string = "Raw",
+    startDate?: string,
+    endDate?: string,
+    maxPoints: number = 5000
+) => {
+    return useQuery({
+        queryKey: ['install_timeseries', installId, dataType, startDate, endDate, maxPoints],
+        queryFn: async () => {
+            const params = new URLSearchParams({ data_type: dataType, max_points: maxPoints.toString() });
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            const { data } = await api.get<InstallTimeseriesData>(`/installs/${installId}/timeseries?${params}`);
+            return data;
+        },
+        enabled: !!installId,
+    });
+};

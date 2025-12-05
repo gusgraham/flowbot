@@ -2,7 +2,7 @@ from typing import List, Optional
 from datetime import datetime
 from sqlmodel import Session
 from domain.fsm import (
-    FsmProject, FsmProjectCreate, Site, SiteCreate, Install, InstallCreate, 
+    FsmProject, FsmProjectCreate, FsmProjectUpdate, Site, SiteCreate, Install, InstallCreate, 
     Monitor, MonitorCreate, RawDataSettings, RawDataSettingsCreate, RawDataSettingsUpdate
 )
 from repositories.project import ProjectRepository, SiteRepository, InstallRepository
@@ -25,7 +25,7 @@ class ProjectService:
     def get_project(self, project_id: int) -> Optional[FsmProject]:
         return self.project_repo.get(project_id)
 
-    def update_project(self, project_id: int, project_update: FsmProjectCreate) -> Optional[FsmProject]:
+    def update_project(self, project_id: int, project_update: FsmProjectUpdate) -> Optional[FsmProject]:
         # Basic update logic - in a real app, use a dedicated Update schema
         project = self.project_repo.get(project_id)
         if not project:
@@ -35,7 +35,7 @@ class ProjectService:
         for key, value in project_data.items():
             setattr(project, key, value)
             
-        return self.project_repo.update(project)
+        return self.project_repo.update(project_id, project)
 
     def list_projects(self, offset: int = 0, limit: int = 100, owner_id: Optional[int] = None) -> List[FsmProject]:
         # If owner_id is provided, filter by it.

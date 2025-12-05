@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 
 class StorageService:
-    def __init__(self, base_path: str = "data_store"):
+    def __init__(self, base_path: str = "data/fsm"):
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
 

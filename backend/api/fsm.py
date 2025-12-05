@@ -2,12 +2,12 @@
 Field Survey Management (FSM) API Endpoints
 All API endpoints related to field survey management are consolidated here.
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlmodel import Session
 from database import get_session
 from domain.fsm import (
-    FsmProjectRead, FsmProjectCreate, 
+    FsmProjectRead, FsmProjectCreate, FsmProjectUpdate, 
     SiteRead, SiteCreate, 
     InstallRead, InstallCreate,
     MonitorRead, MonitorCreate,
@@ -71,7 +71,7 @@ def get_project(
 @router.put("/projects/{project_id}", response_model=FsmProjectRead)
 def update_project(
     project_id: int, 
-    project: FsmProjectCreate, 
+    project: FsmProjectUpdate, 
     service: ProjectService = Depends(get_project_service),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -384,3 +384,180 @@ def validate_file(
     
     exists = service.validate_file_exists(file_path, file_format, install)
     return {"exists": exists, "resolved_path": service.resolve_file_format(file_format, install, project)}
+
+# ==========================================
+# INSTALL TIMESERIES DATA
+# ==========================================
+
+@router.get("/installs/{install_id}/timeseries")
+def get_install_timeseries(
+    install_id: int,
+    data_type: str = "Raw",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    max_points: int = 5000,
+    service: ProjectService = Depends(get_project_service),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get timeseries data for an install with optional filtering and downsampling."""
+    import pandas as pd
+    from pathlib import Path
+    from datetime import datetime as dt
+    
+    install = service.get_install(install_id)
+    if not install:
+        raise HTTPException(status_code=404, detail="Install not found")
+    
+    # Check project ownership
+    project = service.get_project(install.project_id)
+    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Get timeseries records for this install
+    from domain.fsm import TimeSeries
+    from sqlmodel import select
+    
+    # Debug: Check all timeseries records first
+    all_ts = service.session.exec(select(TimeSeries)).all()
+    print(f"DEBUG: Total TimeSeries records in DB: {len(all_ts)}")
+    for ts in all_ts[:5]:  # Print first 5
+        print(f"  - install_id={ts.install_id}, data_type='{ts.data_type}', variable='{ts.variable}'")
+    
+    statement = select(TimeSeries).where(
+        TimeSeries.install_id == install_id,
+        TimeSeries.data_type == data_type
+    )
+    timeseries_records = service.session.exec(statement).all()
+    print(f"DEBUG: Found {len(timeseries_records)} records for install_id={install_id}, data_type='{data_type}'")
+    
+    if not timeseries_records:
+        return {
+            "install_id": install_id,
+            "install_type": install.install_type,
+            "data_type": data_type,
+            "variables": {}
+        }
+    
+    # Load data from parquet files
+    all_data = []
+    # Files are stored in data/fsm/timeseries/installs/{install_id}/
+    data_dir = Path("data/fsm")
+    print(f"DEBUG: Looking for files in {data_dir.absolute()}")
+    
+    for ts in timeseries_records:
+        print(f"DEBUG: Record - filename={ts.filename}, variable={ts.variable}")
+        if ts.filename:
+            file_path = data_dir / ts.filename
+            print(f"DEBUG: Checking file {file_path}, exists={file_path.exists()}")
+            if file_path.exists():
+                try:
+                    df = pd.read_parquet(file_path)
+                    print(f"DEBUG: Loaded {len(df)} rows from {file_path}")
+                    df['variable'] = ts.variable
+                    df['unit'] = getattr(ts, 'unit', '') or ''  # Handle missing unit field
+                    all_data.append(df)
+                except Exception as e:
+                    print(f"Error loading {file_path}: {e}")
+    
+    if not all_data:
+        return {
+            "install_id": install_id,
+            "install_type": install.install_type,
+            "data_type": data_type,
+            "variables": {}
+        }
+    
+    combined = pd.concat(all_data, ignore_index=True)
+    
+    # Apply date filtering
+    if 'timestamp' in combined.columns:
+        time_col = 'timestamp'
+    elif 'time' in combined.columns:
+        time_col = 'time'
+    else:
+        time_col = combined.columns[0]
+    
+    combined[time_col] = pd.to_datetime(combined[time_col])
+    
+    if start_date:
+        combined = combined[combined[time_col] >= pd.to_datetime(start_date)]
+    if end_date:
+        combined = combined[combined[time_col] <= pd.to_datetime(end_date)]
+    
+    # Process each variable
+    result_variables = {}
+    
+    for var_name in combined['variable'].unique():
+        var_df = combined[combined['variable'] == var_name].copy()
+        var_df = var_df.sort_values(time_col)
+        
+        # Determine value column
+        value_col = 'value' if 'value' in var_df.columns else var_df.columns[1]
+        unit = var_df['unit'].iloc[0] if 'unit' in var_df.columns else ''
+        
+        # Downsample if needed
+        if len(var_df) > max_points:
+            var_df = downsample_with_peaks(var_df, time_col, value_col, max_points)
+        
+        # Calculate stats
+        numeric_values = pd.to_numeric(var_df[value_col], errors='coerce')
+        stats = {
+            "min": float(numeric_values.min()) if not numeric_values.isna().all() else None,
+            "max": float(numeric_values.max()) if not numeric_values.isna().all() else None,
+            "mean": float(numeric_values.mean()) if not numeric_values.isna().all() else None,
+            "count": len(var_df)
+        }
+        
+        # Format data for frontend
+        data_points = []
+        for _, row in var_df.iterrows():
+            val = row[value_col]
+            data_points.append({
+                "time": row[time_col].isoformat(),
+                "value": float(val) if pd.notna(val) else None
+            })
+        
+        result_variables[var_name] = {
+            "data": data_points,
+            "stats": stats,
+            "unit": unit
+        }
+    
+    return {
+        "install_id": install_id,
+        "install_type": install.install_type,
+        "data_type": data_type,
+        "variables": result_variables
+    }
+
+
+def downsample_with_peaks(df, time_col, value_col, max_points):
+    """Downsample data while preserving peaks and troughs."""
+    if len(df) <= max_points:
+        return df
+    
+    # Calculate segment size
+    segment_size = len(df) // (max_points // 3)
+    if segment_size < 2:
+        return df.iloc[::len(df)//max_points]
+    
+    indices = []
+    for i in range(0, len(df), segment_size):
+        segment = df.iloc[i:i+segment_size]
+        if len(segment) == 0:
+            continue
+        
+        indices.append(segment.index[0])  # First point
+        
+        try:
+            numeric_vals = pd.to_numeric(segment[value_col], errors='coerce')
+            if not numeric_vals.isna().all():
+                indices.append(numeric_vals.idxmax())  # Peak
+                indices.append(numeric_vals.idxmin())  # Trough
+        except:
+            pass
+    
+    indices.append(df.index[-1])  # Last point
+    unique_indices = sorted(set(indices))
+    
+    return df.loc[unique_indices]

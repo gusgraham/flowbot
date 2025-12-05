@@ -90,6 +90,57 @@ class TimeSeriesService:
             print(f"Error processing file {file_path}: {e}")
             raise e
 
+
+    def save_dataframe(self, df: pd.DataFrame, install_id: int, variable: str, data_type: str = "Raw", filename_suffix: str = "") -> TimeSeries:
+        """
+        Saves a generic DataFrame (must have 'time' and 'value' columns) as a TimeSeries record.
+        """
+        if 'time' not in df.columns or 'value' not in df.columns:
+             # Try to map case insensitive
+             df.columns = [c.lower() for c in df.columns]
+             if 'timestamp' in df.columns:
+                 df.rename(columns={'timestamp': 'time'}, inplace=True)
+             
+        if 'time' not in df.columns or 'value' not in df.columns:
+            raise ValueError("DataFrame must have 'time' and 'value' columns")
+            
+        start_time = df['time'].min().to_pydatetime()
+        end_time = df['time'].max().to_pydatetime()
+        
+        # Calculate interval (mode of diff)
+        try:
+            interval = int(df['time'].diff().mode()[0].total_seconds() / 60)
+        except:
+            interval = 0
+            
+        # Subfolder for storage
+        subfolder_id = f"installs/{install_id}"
+        
+        # Save as Parquet
+        parquet_filename = f"ts_{install_id}_{variable}_{start_time.strftime('%Y%m%d%H%M')}{filename_suffix}.parquet"
+        
+        buf = io.BytesIO()
+        df.to_parquet(buf, index=False)
+        buf.seek(0)
+        
+        saved_path = self.storage.save_file(
+            buf.getvalue(), 
+            parquet_filename, 
+            subfolder=f"timeseries/{subfolder_id}"
+        )
+        
+        # Create TimeSeries record
+        ts = TimeSeries(
+            install_id=install_id,
+            variable=variable,
+            data_type=data_type,
+            start_time=start_time,
+            end_time=end_time,
+            interval_minutes=interval,
+            filename=saved_path
+        )
+        return self.repo.create(ts)
+
     def list_by_install(self, install_id: int) -> List[TimeSeries]:
         return self.repo.list_by_install(install_id)
 
