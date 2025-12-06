@@ -158,6 +158,7 @@ flowbot_qgis_bundle_env.tar.gz
 # User requested ignores
 _TestData/
 backend/data/
+data/
 
 # Frontend (Merged from frontend/.gitignore)
 node_modules/

@@ -4,8 +4,16 @@ from pathlib import Path
 import pandas as pd
 
 class StorageService:
-    def __init__(self, base_path: str = "data/fsm"):
-        self.base_path = Path(base_path)
+    def __init__(self, base_path: str = None):
+        if base_path:
+            self.base_path = Path(base_path)
+        else:
+            # Default to backend/data/fsm relative to this file
+            # This file is in backend/infra/storage.py
+            # We want backend/data/fsm
+            current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+            self.base_path = current_dir.parent / "data" / "fsm"
+            
         self.base_path.mkdir(parents=True, exist_ok=True)
 
     def save_file(self, content: bytes, filename: str, subfolder: str = "") -> str:

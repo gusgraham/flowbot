@@ -35,7 +35,8 @@ const SurveyDashboard: React.FC = () => {
     // Section Collapse State
     const [isMonitorsOpen, setIsMonitorsOpen] = useState(false);
     const [isSitesOpen, setIsSitesOpen] = useState(false);
-    const [isInstallsOpen, setIsInstallsOpen] = useState(true);
+    const [isInstallsOpen, setIsInstallsOpen] = useState(false);
+    const [isDataProcessingOpen, setIsDataProcessingOpen] = useState(false);
 
     // Group sites by type
     const networkAssets = sites?.filter(s => s.site_type === 'Flow Monitor' || s.site_type === 'Pump Station') || [];
@@ -95,101 +96,6 @@ const SurveyDashboard: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column: Project Overview */}
                 <div className="lg:col-span-2 space-y-6">
-
-                    {/* Data Processing */}
-                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                        <div className="p-6">
-                            <div className="flex justify-between items-start mb-6">
-                                <div>
-                                    <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                                        <Database size={20} className="text-gray-400" />
-                                        Data Processing
-                                    </h2>
-                                    <p className="text-sm text-gray-500 mt-1">
-                                        Ingest raw data and run processing pipelines.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="space-y-6">
-                                {/* Ingestion Section */}
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <h3 className="text-sm font-semibold text-gray-900">1. Data Ingestion</h3>
-                                        {project.last_ingestion_date && (
-                                            <span className="text-xs text-gray-500">
-                                                Last: {new Date(project.last_ingestion_date).toLocaleString()}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                                        <div className="flex-1 w-full relative">
-                                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Source Path</p>
-                                            <div className="flex items-center gap-2 text-sm text-gray-700 font-mono bg-white border border-gray-200 px-3 py-2 rounded">
-                                                <HardDrive size={14} className="text-gray-400 shrink-0" />
-                                                <span className="truncate" title={project.default_download_path || "Not configured"}>
-                                                    {project.default_download_path || "No default path configured"}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <button
-                                            onClick={() => ingestProject(project.id, {
-                                                onSuccess: () => showToast('Ingestion started successfully', 'success'),
-                                                onError: () => showToast('Failed to start ingestion', 'error')
-                                            })}
-                                            disabled={isIngesting || !project.default_download_path}
-                                            className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                        >
-                                            {isIngesting ? <Loader2 size={18} className="animate-spin" /> : <CloudRain size={18} />}
-                                            Run Ingestion
-                                        </button>
-                                    </div>
-                                    {!project.default_download_path && (
-                                        <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
-                                            <Activity size={12} />
-                                            Please configure a Default Ingestion Path in Project Settings to enable ingestion.
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div className="border-t border-gray-100"></div>
-
-                                {/* Processing Section */}
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <h3 className="text-sm font-semibold text-gray-900">2. Data Processing</h3>
-                                    </div>
-                                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                                        <div className="flex-1">
-                                            <p className="text-sm text-gray-600">
-                                                Process raw data for all installs in this project. This calculates flow rates and applies calibrations.
-                                            </p>
-                                        </div>
-                                        <button
-                                            onClick={() => processProject(project.id, {
-                                                onSuccess: (data: any) => {
-                                                    const successCount = data.success || 0;
-                                                    const failedCount = data.failed || 0;
-                                                    if (failedCount > 0) {
-                                                        showToast(`Processed ${successCount} successfully. ${failedCount} failed.`, 'error');
-                                                    } else {
-                                                        showToast(`Successfully processed ${successCount} installs.`, 'success');
-                                                    }
-                                                },
-                                                onError: (err) => showToast(`Processing failed: ${err.message}`, 'error')
-                                            })}
-                                            disabled={isProcessing}
-                                            className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                        >
-                                            {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
-                                            Run Processing
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
 
                     {/* Project Monitors */}
                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -472,6 +378,108 @@ const SurveyDashboard: React.FC = () => {
                             </div>
                         )}
                     </div>
+
+                    {/* Data Processing */}
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <div
+                            className="p-6 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors"
+                            onClick={() => setIsDataProcessingOpen(!isDataProcessingOpen)}
+                        >
+                            <div className="flex items-center gap-2">
+                                {isDataProcessingOpen ? <ChevronDown size={20} className="text-gray-400" /> : <ChevronRight size={20} className="text-gray-400" />}
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                        <Database size={20} className="text-gray-400" />
+                                        Data Processing
+                                    </h2>
+                                    <p className="text-sm text-gray-500 mt-1 font-normal">
+                                        Ingest raw data and run processing pipelines.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {isDataProcessingOpen && (
+                            <div className="px-6 pb-6 space-y-6 border-t border-gray-100 pt-4">
+                                {/* Ingestion Section */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h3 className="text-sm font-semibold text-gray-900">1. Data Ingestion</h3>
+                                        {project.last_ingestion_date && (
+                                            <span className="text-xs text-gray-500">
+                                                Last: {new Date(project.last_ingestion_date).toLocaleString()}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div className="flex-1 w-full relative">
+                                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Source Path</p>
+                                            <div className="flex items-center gap-2 text-sm text-gray-700 font-mono bg-white border border-gray-200 px-3 py-2 rounded">
+                                                <HardDrive size={14} className="text-gray-400 shrink-0" />
+                                                <span className="truncate" title={project.default_download_path || "Not configured"}>
+                                                    {project.default_download_path || "No default path configured"}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            onClick={() => ingestProject(project.id, {
+                                                onSuccess: () => showToast('Ingestion started successfully', 'success'),
+                                                onError: () => showToast('Failed to start ingestion', 'error')
+                                            })}
+                                            disabled={isIngesting || !project.default_download_path}
+                                            className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {isIngesting ? <Loader2 size={18} className="animate-spin" /> : <CloudRain size={18} />}
+                                            Run Ingestion
+                                        </button>
+                                    </div>
+                                    {!project.default_download_path && (
+                                        <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                                            <Activity size={12} />
+                                            Please configure a Default Ingestion Path in Project Settings to enable ingestion.
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="border-t border-gray-100"></div>
+
+                                {/* Processing Section */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h3 className="text-sm font-semibold text-gray-900">2. Data Processing</h3>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div className="flex-1">
+                                            <p className="text-sm text-gray-600">
+                                                Process raw data for all installs in this project. This calculates flow rates and applies calibrations.
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => processProject(project.id, {
+                                                onSuccess: (data: any) => {
+                                                    const successCount = data.success || 0;
+                                                    const failedCount = data.failed || 0;
+                                                    if (failedCount > 0) {
+                                                        showToast(`Processed ${successCount} successfully. ${failedCount} failed.`, 'error');
+                                                    } else {
+                                                        showToast(`Successfully processed ${successCount} installs.`, 'success');
+                                                    }
+                                                },
+                                                onError: (err) => showToast(`Processing failed: ${err.message}`, 'error')
+                                            })}
+                                            disabled={isProcessing}
+                                            className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
+                                            Run Processing
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                 </div>
 
                 {/* Right Column: Map & Stats */}

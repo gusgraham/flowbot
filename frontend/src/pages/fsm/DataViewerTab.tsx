@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useInstallTimeseries, useProcessInstall } from '../../api/hooks';
-import { Loader2, Calendar, Play, X } from 'lucide-react';
+import { Loader2, Calendar, Play, X, ZoomOut } from 'lucide-react';
 import {
     LineChart,
     Line,
@@ -10,6 +10,7 @@ import {
     Tooltip,
     Legend,
     ResponsiveContainer,
+    ReferenceArea,
 } from 'recharts';
 
 interface DataViewerTabProps {
@@ -58,6 +59,87 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
 
     const chartData = prepareChartData();
 
+    const [refAreaLeft, setRefAreaLeft] = useState<string | number | null>(null);
+    const [refAreaRight, setRefAreaRight] = useState<string | number | null>(null);
+    const [left, setLeft] = useState<string | number | null>('dataMin');
+    const [right, setRight] = useState<string | number | null>('dataMax');
+
+    // Reset zoom when data changes
+    React.useEffect(() => {
+        setLeft('dataMin');
+        setRight('dataMax');
+        setRefAreaLeft(null);
+        setRefAreaRight(null);
+    }, [data, dataType]);
+
+    // Zoom handlers
+    const zoom = () => {
+        if (refAreaLeft === refAreaRight || refAreaRight === null) {
+            setRefAreaLeft(null);
+            setRefAreaRight(null);
+            return;
+        }
+
+        // Determine min and max
+        let min = refAreaLeft;
+        let max = refAreaRight;
+
+        if (typeof min === 'number' && typeof max === 'number') {
+            if (min > max) [min, max] = [max, min];
+        }
+
+        setRefAreaLeft(null);
+        setRefAreaRight(null);
+        setLeft(min);
+        setRight(max);
+    };
+
+    const zoomOut = () => {
+        setLeft('dataMin');
+        setRight('dataMax');
+        setRefAreaLeft(null);
+        setRefAreaRight(null);
+    };
+
+    // Determine appropriate date format based on data range
+    const getXAxisFormatter = () => {
+        if (chartData.length === 0) return (time: number) => new Date(time).toLocaleDateString();
+
+        let minTime = chartData[0].time;
+        let maxTime = chartData[chartData.length - 1].time;
+
+        // If zoomed in, use the zoom range
+        if (typeof left === 'number' && typeof right === 'number') {
+            minTime = left;
+            maxTime = right;
+        }
+
+        const duration = maxTime - minTime;
+        const DAY = 86400000;
+
+        if (duration > 365 * DAY) {
+            // > 1 year: mm/yy
+            return (time: number) => {
+                const d = new Date(time);
+                return `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear().toString().slice(2)}`;
+            };
+        } else if (duration > 30 * DAY) {
+            // > 1 month: dd/mm/yyyy
+            return (time: number) => {
+                const d = new Date(time);
+                return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+            };
+        } else {
+            // <= 1 month: dd/mm HH:MM
+            return (time: number) => {
+                const d = new Date(time);
+                return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+            };
+        }
+    };
+
+    const dateFormatter = getXAxisFormatter();
+
     const renderFlowMonitorCharts = () => {
         if (!data) return null;
         const variables = Object.keys(data.variables);
@@ -72,20 +154,29 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                     <div>
                         <h3 className="text-lg font-semibold mb-2">Depth</h3>
                         <div className="flex gap-4">
-                            <div className="flex-1">
+                            <div className="flex-1 select-none">
                                 <ResponsiveContainer width="100%" height={250}>
-                                    <LineChart data={chartData}>
+                                    <LineChart
+                                        data={chartData}
+                                        onMouseDown={(e: any) => e && setRefAreaLeft(e.activeLabel)}
+                                        onMouseMove={(e: any) => refAreaLeft && e && setRefAreaRight(e.activeLabel)}
+                                        onMouseUp={zoom}
+                                    >
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis
                                             dataKey="time"
                                             type="number"
-                                            domain={['dataMin', 'dataMax']}
-                                            tickFormatter={(time) => new Date(time).toLocaleTimeString()}
+                                            domain={[left, right]}
+                                            allowDataOverflow
+                                            tickFormatter={dateFormatter}
                                         />
                                         <YAxis label={{ value: data.variables.Depth.unit, angle: -90, position: 'insideLeft' }} />
                                         <Tooltip labelFormatter={(time) => new Date(time).toLocaleString()} />
                                         <Legend />
                                         <Line type="monotone" dataKey="Depth" stroke="#ef4444" dot={false} strokeWidth={1.5} />
+                                        {refAreaLeft && refAreaRight ? (
+                                            <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} />
+                                        ) : null}
                                     </LineChart>
                                 </ResponsiveContainer>
                             </div>
@@ -104,10 +195,10 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                                         <span className="text-gray-600">Mean:</span>
                                         <span className="font-medium">{data.variables.Depth.stats.mean?.toFixed(2)} {data.variables.Depth.unit}</span>
                                     </div>
-                                    <div className="flex justify-between">
+                                    {/* <div className="flex justify-between">
                                         <span className="text-gray-600">Points:</span>
                                         <span className="font-medium">{data.variables.Depth.stats.count}</span>
-                                    </div>
+                                    </div> */}
                                 </div>
                             </div>
                         </div>
@@ -118,20 +209,29 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                     <div>
                         <h3 className="text-lg font-semibold mb-2">Velocity</h3>
                         <div className="flex gap-4">
-                            <div className="flex-1">
+                            <div className="flex-1 select-none">
                                 <ResponsiveContainer width="100%" height={250}>
-                                    <LineChart data={chartData}>
+                                    <LineChart
+                                        data={chartData}
+                                        onMouseDown={(e: any) => e && setRefAreaLeft(e.activeLabel)}
+                                        onMouseMove={(e: any) => refAreaLeft && e && setRefAreaRight(e.activeLabel)}
+                                        onMouseUp={zoom}
+                                    >
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis
                                             dataKey="time"
                                             type="number"
-                                            domain={['dataMin', 'dataMax']}
-                                            tickFormatter={(time) => new Date(time).toLocaleTimeString()}
+                                            domain={[left, right]}
+                                            allowDataOverflow
+                                            tickFormatter={dateFormatter}
                                         />
                                         <YAxis label={{ value: data.variables.Velocity.unit, angle: -90, position: 'insideLeft' }} />
                                         <Tooltip labelFormatter={(time) => new Date(time).toLocaleString()} />
                                         <Legend />
                                         <Line type="monotone" dataKey="Velocity" stroke="#10b981" dot={false} strokeWidth={1.5} />
+                                        {refAreaLeft && refAreaRight ? (
+                                            <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} />
+                                        ) : null}
                                     </LineChart>
                                 </ResponsiveContainer>
                             </div>
@@ -150,10 +250,10 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                                         <span className="text-gray-600">Mean:</span>
                                         <span className="font-medium">{data.variables.Velocity.stats.mean?.toFixed(2)} {data.variables.Velocity.unit}</span>
                                     </div>
-                                    <div className="flex justify-between">
+                                    {/* <div className="flex justify-between">
                                         <span className="text-gray-600">Points:</span>
                                         <span className="font-medium">{data.variables.Velocity.stats.count}</span>
-                                    </div>
+                                    </div> */}
                                 </div>
                             </div>
                         </div>
@@ -164,20 +264,29 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                     <div>
                         <h3 className="text-lg font-semibold mb-2">{hasFlow ? 'Flow' : 'Voltage'}</h3>
                         <div className="flex gap-4">
-                            <div className="flex-1">
+                            <div className="flex-1 select-none">
                                 <ResponsiveContainer width="100%" height={250}>
-                                    <LineChart data={chartData}>
+                                    <LineChart
+                                        data={chartData}
+                                        onMouseDown={(e: any) => e && setRefAreaLeft(e.activeLabel)}
+                                        onMouseMove={(e: any) => refAreaLeft && e && setRefAreaRight(e.activeLabel)}
+                                        onMouseUp={zoom}
+                                    >
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis
                                             dataKey="time"
                                             type="number"
-                                            domain={['dataMin', 'dataMax']}
-                                            tickFormatter={(time) => new Date(time).toLocaleTimeString()}
+                                            domain={[left, right]}
+                                            allowDataOverflow
+                                            tickFormatter={dateFormatter}
                                         />
                                         <YAxis label={{ value: hasFlow ? data.variables.Flow.unit : data.variables.Voltage.unit, angle: -90, position: 'insideLeft' }} />
                                         <Tooltip labelFormatter={(time) => new Date(time).toLocaleString()} />
                                         <Legend />
                                         <Line type="monotone" dataKey={hasFlow ? 'Flow' : 'Voltage'} stroke="#3b82f6" dot={false} strokeWidth={1.5} />
+                                        {refAreaLeft && refAreaRight ? (
+                                            <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} />
+                                        ) : null}
                                     </LineChart>
                                 </ResponsiveContainer>
                             </div>
@@ -197,10 +306,10 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                                             <span className="text-gray-600">Mean:</span>
                                             <span className="font-medium">{data.variables.Flow.stats.mean?.toFixed(2)} {data.variables.Flow.unit}</span>
                                         </div>
-                                        <div className="flex justify-between">
+                                        {/* <div className="flex justify-between">
                                             <span className="text-gray-600">Points:</span>
                                             <span className="font-medium">{data.variables.Flow.stats.count}</span>
-                                        </div>
+                                        </div> */}
                                     </div>
                                 )}
                                 {hasVoltage && (
@@ -217,10 +326,10 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                                             <span className="text-gray-600">Mean:</span>
                                             <span className="font-medium">{data.variables.Voltage.stats.mean?.toFixed(2)} {data.variables.Voltage.unit}</span>
                                         </div>
-                                        <div className="flex justify-between">
+                                        {/* <div className="flex justify-between">
                                             <span className="text-gray-600">Points:</span>
                                             <span className="font-medium">{data.variables.Voltage.stats.count}</span>
-                                        </div>
+                                        </div> */}
                                     </div>
                                 )}
                             </div>
@@ -240,20 +349,29 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
             <div>
                 <h3 className="text-lg font-semibold mb-2">{dataType === 'Raw' ? 'Tips' : 'Intensity'}</h3>
                 <div className="flex gap-4">
-                    <div className="flex-1">
+                    <div className="flex-1 select-none">
                         <ResponsiveContainer width="100%" height={400}>
-                            <LineChart data={chartData}>
+                            <LineChart
+                                data={chartData}
+                                onMouseDown={(e: any) => e && setRefAreaLeft(e.activeLabel)}
+                                onMouseMove={(e: any) => refAreaLeft && e && setRefAreaRight(e.activeLabel)}
+                                onMouseUp={zoom}
+                            >
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis
                                     dataKey="time"
                                     type="number"
-                                    domain={['dataMin', 'dataMax']}
-                                    tickFormatter={(time) => new Date(time).toLocaleTimeString()}
+                                    domain={[left, right]}
+                                    allowDataOverflow
+                                    tickFormatter={dateFormatter}
                                 />
                                 <YAxis label={{ value: varData.unit, angle: -90, position: 'insideLeft' }} />
                                 <Tooltip labelFormatter={(time) => new Date(time).toLocaleString()} />
                                 <Legend />
                                 <Line type="monotone" dataKey="Rain" stroke="#0ea5e9" dot={false} strokeWidth={1.5} />
+                                {refAreaLeft && refAreaRight ? (
+                                    <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} />
+                                ) : null}
                             </LineChart>
                         </ResponsiveContainer>
                     </div>
@@ -272,10 +390,10 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                                 <span className="text-gray-600">Mean:</span>
                                 <span className="font-medium">{varData.stats.mean?.toFixed(2)} {varData.unit}</span>
                             </div>
-                            <div className="flex justify-between">
+                            {/* <div className="flex justify-between">
                                 <span className="text-gray-600">Points:</span>
                                 <span className="font-medium">{varData.stats.count}</span>
-                            </div>
+                            </div> */}
                         </div>
                     </div>
                 </div>
@@ -311,8 +429,20 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                 new Date(a.time).getTime() - new Date(b.time).getTime()
             );
 
-            const times = sortedPoints.map(p => new Date(p.time).getTime());
-            const values = sortedPoints.map(p => p.value);
+            // Filter points based on zoom range if active
+            const zoomedPoints = (typeof left === 'number' && typeof right === 'number')
+                ? sortedPoints.filter(p => {
+                    const t = new Date(p.time).getTime();
+                    return t >= left && t <= right;
+                })
+                : sortedPoints;
+
+            // If zoomedPoints is empty (e.g. zoomed area has no data points), metrics might be misleading.
+            // But usually zoom area has points.
+            if (zoomedPoints.length === 0) return { nOn: 0, nOff: 0, runtimeSeconds: 0, measurementDurationSeconds: 0 };
+
+            const times = zoomedPoints.map(p => new Date(p.time).getTime());
+            const values = zoomedPoints.map(p => p.value);
 
             // Calculate transitions
             let nOn = 0;
@@ -339,7 +469,7 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                 }
             }
 
-            // Measurement duration (from first to last data point)
+            // Measurement duration (from first to last data point within zoom)
             const measurementDurationMs = times.length > 1
                 ? times[times.length - 1] - times[0]
                 : 0;
@@ -364,15 +494,21 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
             <div>
                 <h3 className="text-lg font-semibold mb-2">Pump State</h3>
                 <div className="flex gap-4">
-                    <div className="flex-1">
+                    <div className="flex-1 select-none">
                         <ResponsiveContainer width="100%" height={400}>
-                            <LineChart data={chartData}>
+                            <LineChart
+                                data={chartData}
+                                onMouseDown={(e: any) => e && setRefAreaLeft(e.activeLabel)}
+                                onMouseMove={(e: any) => refAreaLeft && e && setRefAreaRight(e.activeLabel)}
+                                onMouseUp={zoom}
+                            >
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis
                                     dataKey="time"
                                     type="number"
-                                    domain={['dataMin', 'dataMax']}
-                                    tickFormatter={(time) => new Date(time).toLocaleTimeString()}
+                                    domain={[left, right]}
+                                    allowDataOverflow
+                                    tickFormatter={dateFormatter}
                                 />
                                 <YAxis domain={[0, 1]} ticks={[0, 1]} tickFormatter={(val) => val === 1 ? 'On' : 'Off'} />
                                 <Tooltip
@@ -381,11 +517,14 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                                 />
                                 <Legend />
                                 <Line type="stepAfter" dataKey="Pump_State" stroke="#8b5cf6" dot={false} strokeWidth={2} />
+                                {refAreaLeft && refAreaRight ? (
+                                    <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} />
+                                ) : null}
                             </LineChart>
                         </ResponsiveContainer>
                     </div>
                     <div className="w-56 bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-semibold text-sm mb-3">Pump Statistics</h4>
+                        <h4 className="font-semibold text-sm mb-3">Pump Statistics {typeof left === 'number' ? '(Zoomed)' : ''}</h4>
                         <div className="space-y-2 text-sm">
                             <div className="flex justify-between">
                                 <span className="text-gray-600">Ons:</span>
@@ -414,10 +553,10 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                                 <span className="font-medium">{avgRuntimePerActivation}</span>
                             </div>
                             <div className="border-t border-gray-200 my-2"></div>
-                            <div className="flex justify-between">
+                            {/* <div className="flex justify-between">
                                 <span className="text-gray-600">Points:</span>
                                 <span className="font-medium">{varData.stats?.count || varData.data?.length || 0}</span>
-                            </div>
+                            </div> */}
                         </div>
                     </div>
                 </div>
@@ -532,14 +671,25 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
-                    <button
-                        onClick={handleProcess}
-                        disabled={isProcessing}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
-                    >
-                        {isProcessing ? <Loader2 className="animate-spin" size={16} /> : <Play size={16} />}
-                        {isProcessing ? 'Processing...' : 'Run Processing'}
-                    </button>
+                    <div className="flex gap-2">
+                        {left !== 'dataMin' && (
+                            <button
+                                onClick={zoomOut}
+                                className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                            >
+                                <ZoomOut size={16} />
+                                Zoom Out
+                            </button>
+                        )}
+                        <button
+                            onClick={handleProcess}
+                            disabled={isProcessing}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                        >
+                            {isProcessing ? <Loader2 className="animate-spin" size={16} /> : <Play size={16} />}
+                            {isProcessing ? 'Processing...' : 'Run Processing'}
+                        </button>
+                    </div>
                 </div>
             </div>
 
