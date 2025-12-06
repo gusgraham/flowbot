@@ -91,7 +91,7 @@ class TimeSeriesService:
             raise e
 
 
-    def save_dataframe(self, df: pd.DataFrame, install_id: int, variable: str, data_type: str = "Raw", filename_suffix: str = "") -> TimeSeries:
+    def save_dataframe(self, df: pd.DataFrame, install_id: int, variable: str, data_type: str = "Raw", filename_suffix: str = "", monitor_id: Optional[int] = None, unit: Optional[str] = None) -> TimeSeries:
         """
         Saves a generic DataFrame (must have 'time' and 'value' columns) as a TimeSeries record.
         """
@@ -123,21 +123,28 @@ class TimeSeriesService:
         df.to_parquet(buf, index=False)
         buf.seek(0)
         
+        # We want to store relative path in DB (relative to base_path)
+        relative_path_folder = f"timeseries/{subfolder_id}"
+        
         saved_path = self.storage.save_file(
             buf.getvalue(), 
             parquet_filename, 
-            subfolder=f"timeseries/{subfolder_id}"
+            subfolder=relative_path_folder
         )
+        
+        db_filename = f"{relative_path_folder}/{parquet_filename}"
         
         # Create TimeSeries record
         ts = TimeSeries(
             install_id=install_id,
+            monitor_id=monitor_id,
             variable=variable,
             data_type=data_type,
             start_time=start_time,
             end_time=end_time,
             interval_minutes=interval,
-            filename=saved_path
+            filename=db_filename,
+            unit=unit
         )
         return self.repo.create(ts)
 

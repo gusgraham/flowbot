@@ -13,15 +13,15 @@ interface FlowMonitorCalibrationProps {
 }
 
 const PIPE_SHAPES = [
-    { value: 'ARCH', label: 'Arch' },
-    { value: 'CIRC', label: 'Circular' },
-    { value: 'CNET', label: 'Circular with Net' },
-    { value: 'EGG', label: 'Egg' },
-    { value: 'EGG2', label: 'Egg 2' },
-    { value: 'OVAL', label: 'Oval' },
-    { value: 'RECT', label: 'Rectangular' },
-    { value: 'UTOP', label: 'U-Top' },
-    { value: 'USER', label: 'User Defined' },
+    { value: 'ARCH', label: 'ARCH' },
+    { value: 'CIRC', label: 'CIRC' },
+    { value: 'CNET', label: 'CNET' },
+    { value: 'EGG', label: 'EGG' },
+    { value: 'EGG2', label: 'EGG2' },
+    { value: 'OVAL', label: 'OVAL' },
+    { value: 'RECT', label: 'RECT' },
+    { value: 'UTOP', label: 'UTOP' },
+    { value: 'USER', label: 'USER' },
 ];
 
 const FlowMonitorCalibration: React.FC<FlowMonitorCalibrationProps> = ({

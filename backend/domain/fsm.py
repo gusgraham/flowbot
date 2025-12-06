@@ -156,6 +156,8 @@ class InstallRead(InstallBase):
     project_id: int
     site_id: int
     monitor_id: int
+    last_data_ingested: Optional[datetime] = None
+    last_data_processed: Optional[datetime] = None
 
 # ==========================================
 # VISIT

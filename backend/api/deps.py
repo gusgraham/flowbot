@@ -9,8 +9,12 @@ from database import get_session
 from domain.auth import TokenData, User
 from repositories.auth import UserRepository
 from services.auth import SECRET_KEY, ALGORITHM
+from infra.storage import StorageService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
+
+def get_storage_service() -> StorageService:
+    return StorageService()
 
 def get_current_user(
     session: Session = Depends(get_session),

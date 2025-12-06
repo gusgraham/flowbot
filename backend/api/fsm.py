@@ -17,11 +17,12 @@ from domain.fsm import (
     RawDataSettingsRead, RawDataSettingsCreate, RawDataSettingsUpdate
 )
 from domain.auth import User
-from api.deps import get_current_active_user
+from api.deps import get_current_active_user, get_storage_service
 from services.project import ProjectService
 from services.install import InstallService
 from services.qa import QAService
 from services.dashboard import DashboardService
+from infra.storage import StorageService
 
 router = APIRouter()
 
@@ -175,7 +176,36 @@ def create_install(install: InstallCreate, service: ProjectService = Depends(get
 
 @router.get("/projects/{project_id}/installs", response_model=List[InstallRead])
 def list_project_installs(project_id: int, service: ProjectService = Depends(get_project_service)):
-    return service.list_installs(project_id)
+    installs = service.list_installs(project_id)
+    
+    # Enrich with status info
+    from domain.fsm import TimeSeries
+    from sqlmodel import select, func
+    
+    result_installs = []
+    for install in installs:
+        # Get last ingested (Raw)
+        last_ingested = service.session.exec(
+            select(func.max(TimeSeries.end_time))
+            .where(TimeSeries.install_id == install.id)
+            .where(TimeSeries.data_type == 'Raw')
+        ).first()
+        
+        # Get last processed (Processed)
+        last_processed = service.session.exec(
+            select(func.max(TimeSeries.end_time))
+            .where(TimeSeries.install_id == install.id)
+            .where(TimeSeries.data_type == 'Processed')
+        ).first()
+        
+        # Convert to InstallRead and set fields
+        # Note: distinct from database model Install, utilizing InstallRead schema
+        install_read = InstallRead.model_validate(install)
+        install_read.last_data_ingested = last_ingested
+        install_read.last_data_processed = last_processed
+        result_installs.append(install_read)
+        
+    return result_installs
 
 @router.get("/sites/{site_id}/installs", response_model=List[InstallRead])
 def list_site_installs(site_id: int, service: ProjectService = Depends(get_project_service)):
@@ -552,3 +582,45 @@ def downsample_with_peaks(df, time_col, value_col, max_points):
     unique_indices = sorted(set(indices))
     
     return df.loc[unique_indices]
+from services.processing import ProcessingService
+
+@router.post("/installs/{install_id}/process")
+def process_install_data(
+    install_id: int,
+    session: Session = Depends(get_session),
+    storage: StorageService = Depends(get_storage_service)
+):
+    """
+    Run data processing for a specific install.
+    Applies calibrations and calculates derived variables (Flow).
+    """
+    service = ProcessingService(session, storage)
+    try:
+        service.process_install(install_id)
+        return {"status": "success", "message": "Processing complete"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"Processing error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+@router.post("/projects/{project_id}/process")
+def process_project_data(
+    project_id: int,
+    session: Session = Depends(get_session),
+    storage: StorageService = Depends(get_storage_service)
+):
+    """
+    Run data processing for all installs in a project.
+    """
+    service = ProcessingService(session, storage)
+    try:
+        results = service.process_project(project_id)
+        return results
+    except Exception as e:
+        print(f"Project processing error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Project processing failed: {str(e)}")

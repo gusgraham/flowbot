@@ -364,14 +364,24 @@ class IngestionService:
             
             # Parse
             try:
-                df, *rest = parser_func(full_path, since=since, **parsing_args)
+                result = parser_func(full_path, since=since, **parsing_args)
                 # Unwrap tuple if parser returns (df, units)
-                if isinstance(df, tuple):
-                    df = df[0]
+                units = None
+                if isinstance(result, tuple):
+                    df = result[0]
+                    units = result[1]
+                else:
+                    df = result
                     
                 if not df.empty:
                     # Save
-                    self.ts_service.save_dataframe(df, install.id, variable)
+                    self.ts_service.save_dataframe(
+                        df, 
+                        install.id, 
+                        variable, 
+                        monitor_id=install.monitor_id, 
+                        unit=units
+                    )
             except Exception as e:
                 print(f"Error ingesting {variable} for install {install.id}: {e}")
 

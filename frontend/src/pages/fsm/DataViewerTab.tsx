@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useInstallTimeseries } from '../../api/hooks';
-import { Loader2, Calendar } from 'lucide-react';
+import { useInstallTimeseries, useProcessInstall } from '../../api/hooks';
+import { Loader2, Calendar, Play, X } from 'lucide-react';
 import {
     LineChart,
     Line,
@@ -28,6 +28,16 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
         startDate || undefined,
         endDate || undefined
     );
+
+    const { mutate: processInstall, isLoading: isProcessing } = useProcessInstall();
+
+    const handleProcess = () => {
+        processInstall(installId, {
+            onSuccess: () => {
+                setDataType('Processed');
+            }
+        });
+    };
 
     // Prepare chart data by combining all variables with timestamps
     const prepareChartData = () => {
@@ -275,8 +285,80 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
 
     const renderPumpLoggerChart = () => {
         if (!data) return null;
-        const varName = 'PumpState';
+        const varName = 'Pump_State';
         const varData = data.variables[varName];
+
+        if (!varData) return null;
+
+        // Helper function to format duration in human-readable format
+        const formatDuration = (seconds: number): string => {
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hours}h ${mins}m`;
+        };
+
+        // Calculate pump logger statistics
+        const calculatePumpStats = () => {
+            const points = varData.data;
+            if (!points || points.length === 0) {
+                return { nOn: 0, nOff: 0, runtimeSeconds: 0, measurementDurationSeconds: 0 };
+            }
+
+            // Sort by time
+            const sortedPoints = [...points].sort((a, b) =>
+                new Date(a.time).getTime() - new Date(b.time).getTime()
+            );
+
+            const times = sortedPoints.map(p => new Date(p.time).getTime());
+            const values = sortedPoints.map(p => p.value);
+
+            // Calculate transitions
+            let nOn = 0;
+            let nOff = 0;
+            for (let i = 1; i < values.length; i++) {
+                const diff = values[i] - values[i - 1];
+                if (diff === 1) nOn++;
+                if (diff === -1) nOff++;
+            }
+
+            // Count starting state
+            if (values.length > 0) {
+                if (values[0] === 1) {
+                    nOn++;
+                }
+            }
+
+            // Calculate runtime
+            let runtimeMs = 0;
+            for (let i = 0; i < times.length - 1; i++) {
+                const dt = times[i + 1] - times[i];
+                if (values[i] === 1) {
+                    runtimeMs += dt;
+                }
+            }
+
+            // Measurement duration (from first to last data point)
+            const measurementDurationMs = times.length > 1
+                ? times[times.length - 1] - times[0]
+                : 0;
+
+            return {
+                nOn,
+                nOff,
+                runtimeSeconds: runtimeMs / 1000,
+                measurementDurationSeconds: measurementDurationMs / 1000
+            };
+        };
+
+        const stats = calculatePumpStats();
+        const activationsPerHour = stats.measurementDurationSeconds > 0
+            ? (stats.nOn / (stats.measurementDurationSeconds / 3600)).toFixed(2)
+            : '0.00';
+        const avgRuntimePerActivation = stats.nOn > 0
+            ? formatDuration(stats.runtimeSeconds / stats.nOn)
+            : 'N/A';
 
         return (
             <div>
@@ -298,16 +380,43 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                                     formatter={(value: any) => [value === 1 ? 'On' : 'Off', 'State']}
                                 />
                                 <Legend />
-                                <Line type="stepAfter" dataKey="PumpState" stroke="#8b5cf6" dot={false} strokeWidth={2} />
+                                <Line type="stepAfter" dataKey="Pump_State" stroke="#8b5cf6" dot={false} strokeWidth={2} />
                             </LineChart>
                         </ResponsiveContainer>
                     </div>
-                    <div className="w-48 bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-semibold text-sm mb-2">Statistics</h4>
-                        <div className="space-y-1 text-sm">
+                    <div className="w-56 bg-gray-50 p-4 rounded-lg">
+                        <h4 className="font-semibold text-sm mb-3">Pump Statistics</h4>
+                        <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Ons:</span>
+                                <span className="font-medium text-green-600">{stats.nOn}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Offs:</span>
+                                <span className="font-medium text-red-600">{stats.nOff}</span>
+                            </div>
+                            <div className="border-t border-gray-200 my-2"></div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Runtime:</span>
+                                <span className="font-medium">{formatDuration(stats.runtimeSeconds)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Measured:</span>
+                                <span className="font-medium">{formatDuration(stats.measurementDurationSeconds)}</span>
+                            </div>
+                            <div className="border-t border-gray-200 my-2"></div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Act./hour:</span>
+                                <span className="font-medium">{activationsPerHour}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Avg runtime:</span>
+                                <span className="font-medium">{avgRuntimePerActivation}</span>
+                            </div>
+                            <div className="border-t border-gray-200 my-2"></div>
                             <div className="flex justify-between">
                                 <span className="text-gray-600">Points:</span>
-                                <span className="font-medium">{varData.stats.count}</span>
+                                <span className="font-medium">{varData.stats?.count || varData.data?.length || 0}</span>
                             </div>
                         </div>
                     </div>
@@ -359,24 +468,44 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                         <Calendar size={16} className="inline mr-1" />
                         Start Date
                     </label>
-                    <input
-                        type="datetime-local"
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
+                    <div className="relative">
+                        <input
+                            type="datetime-local"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-8"
+                        />
+                        {startDate && (
+                            <button
+                                onClick={() => setStartDate('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                                <X size={16} />
+                            </button>
+                        )}
+                    </div>
                 </div>
                 <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                         <Calendar size={16} className="inline mr-1" />
                         End Date
                     </label>
-                    <input
-                        type="datetime-local"
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
+                    <div className="relative">
+                        <input
+                            type="datetime-local"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-8"
+                        />
+                        {endDate && (
+                            <button
+                                onClick={() => setEndDate('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                                <X size={16} />
+                            </button>
+                        )}
+                    </div>
                 </div>
                 <div className="flex-1">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
@@ -400,6 +529,17 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                             Processed
                         </button>
                     </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
+                    <button
+                        onClick={handleProcess}
+                        disabled={isProcessing}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    >
+                        {isProcessing ? <Loader2 className="animate-spin" size={16} /> : <Play size={16} />}
+                        {isProcessing ? 'Processing...' : 'Run Processing'}
+                    </button>
                 </div>
             </div>
 

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall, useIngestProject } from '../../api/hooks';
+import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall, useIngestProject, useProcessProject } from '../../api/hooks';
 import { useToast } from '../../contexts/ToastContext';
 import type { Site, Monitor, Install } from '../../api/hooks';
 import {
     ArrowLeft, MapPin, Loader2, Plus, Building2, CloudRain,
-    ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive
+    ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive, Play
 } from 'lucide-react';
 import AddSiteModal from './AddSiteModal';
 import EditProjectModal from './EditProjectModal';
@@ -50,6 +50,7 @@ const SurveyDashboard: React.FC = () => {
     const { mutate: deleteInstall } = useDeleteInstall();
     const { mutate: uninstallInstall } = useUninstallInstall();
     const { mutate: ingestProject, isPending: isIngesting } = useIngestProject();
+    const { mutate: processProject, isPending: isProcessing } = useProcessProject();
     const { showToast } = useToast();
 
     if (projectLoading || sitesLoading) {
@@ -95,58 +96,98 @@ const SurveyDashboard: React.FC = () => {
                 {/* Left Column: Project Overview */}
                 <div className="lg:col-span-2 space-y-6">
 
-                    {/* Data Ingestion */}
+                    {/* Data Processing */}
                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                         <div className="p-6">
-                            <div className="flex justify-between items-start mb-4">
+                            <div className="flex justify-between items-start mb-6">
                                 <div>
                                     <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                                         <Database size={20} className="text-gray-400" />
-                                        Data Ingestion
+                                        Data Processing
                                     </h2>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        Import raw data files from local network storage.
+                                        Ingest raw data and run processing pipelines.
                                     </p>
                                 </div>
-                                {project.last_ingestion_date && (
-                                    <div className="text-right">
-                                        <p className="text-xs text-gray-500 mb-1">Last Ingestion</p>
-                                        <p className="text-sm font-medium text-gray-900">
-                                            {new Date(project.last_ingestion_date).toLocaleString()}
-                                        </p>
-                                    </div>
-                                )}
                             </div>
 
-                            <div className="bg-gray-50 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                                <div className="flex-1 w-full relative">
-                                    <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Source Path</p>
-                                    <div className="flex items-center gap-2 text-sm text-gray-700 font-mono bg-white border border-gray-200 px-3 py-2 rounded">
-                                        <HardDrive size={14} className="text-gray-400 shrink-0" />
-                                        <span className="truncate" title={project.default_download_path || "Not configured"}>
-                                            {project.default_download_path || "No default path configured"}
-                                        </span>
+                            <div className="space-y-6">
+                                {/* Ingestion Section */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h3 className="text-sm font-semibold text-gray-900">1. Data Ingestion</h3>
+                                        {project.last_ingestion_date && (
+                                            <span className="text-xs text-gray-500">
+                                                Last: {new Date(project.last_ingestion_date).toLocaleString()}
+                                            </span>
+                                        )}
                                     </div>
+                                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div className="flex-1 w-full relative">
+                                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Source Path</p>
+                                            <div className="flex items-center gap-2 text-sm text-gray-700 font-mono bg-white border border-gray-200 px-3 py-2 rounded">
+                                                <HardDrive size={14} className="text-gray-400 shrink-0" />
+                                                <span className="truncate" title={project.default_download_path || "Not configured"}>
+                                                    {project.default_download_path || "No default path configured"}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            onClick={() => ingestProject(project.id, {
+                                                onSuccess: () => showToast('Ingestion started successfully', 'success'),
+                                                onError: () => showToast('Failed to start ingestion', 'error')
+                                            })}
+                                            disabled={isIngesting || !project.default_download_path}
+                                            className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {isIngesting ? <Loader2 size={18} className="animate-spin" /> : <CloudRain size={18} />}
+                                            Run Ingestion
+                                        </button>
+                                    </div>
+                                    {!project.default_download_path && (
+                                        <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                                            <Activity size={12} />
+                                            Please configure a Default Ingestion Path in Project Settings to enable ingestion.
+                                        </p>
+                                    )}
                                 </div>
 
-                                <button
-                                    onClick={() => ingestProject(project.id, {
-                                        onSuccess: () => showToast('Ingestion started successfully', 'success'),
-                                        onError: () => showToast('Failed to start ingestion', 'error')
-                                    })}
-                                    disabled={isIngesting || !project.default_download_path}
-                                    className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    {isIngesting ? <Loader2 size={18} className="animate-spin" /> : <CloudRain size={18} />}
-                                    Run Ingestion
-                                </button>
+                                <div className="border-t border-gray-100"></div>
+
+                                {/* Processing Section */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h3 className="text-sm font-semibold text-gray-900">2. Data Processing</h3>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div className="flex-1">
+                                            <p className="text-sm text-gray-600">
+                                                Process raw data for all installs in this project. This calculates flow rates and applies calibrations.
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => processProject(project.id, {
+                                                onSuccess: (data: any) => {
+                                                    const successCount = data.success || 0;
+                                                    const failedCount = data.failed || 0;
+                                                    if (failedCount > 0) {
+                                                        showToast(`Processed ${successCount} successfully. ${failedCount} failed.`, 'error');
+                                                    } else {
+                                                        showToast(`Successfully processed ${successCount} installs.`, 'success');
+                                                    }
+                                                },
+                                                onError: (err) => showToast(`Processing failed: ${err.message}`, 'error')
+                                            })}
+                                            disabled={isProcessing}
+                                            className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
+                                            Run Processing
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                            {!project.default_download_path && (
-                                <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
-                                    <Activity size={12} />
-                                    Please configure a Default Ingestion Path in Project Settings to enable ingestion.
-                                </p>
-                            )}
                         </div>
                     </div>
 
@@ -400,6 +441,26 @@ const SurveyDashboard: React.FC = () => {
                                                     >
                                                         <Trash2 size={16} />
                                                     </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Data Status Indicators */}
+                                            <div className="mt-3 pt-2 border-t border-gray-100 flex gap-4 text-xs">
+                                                <div className="flex items-center gap-1.5 text-gray-500" title="Last Data Ingested (Raw)">
+                                                    <CloudRain size={12} className="text-blue-400" />
+                                                    {install.last_data_ingested
+                                                        ? new Date(install.last_data_ingested).toLocaleString(undefined, {
+                                                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                                                        })
+                                                        : <span className="text-gray-400">No data</span>}
+                                                </div>
+                                                <div className="flex items-center gap-1.5 text-gray-500" title="Last Data Processed">
+                                                    <Play size={12} className="text-green-500" />
+                                                    {install.last_data_processed
+                                                        ? new Date(install.last_data_processed).toLocaleString(undefined, {
+                                                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                                                        })
+                                                        : <span className="text-gray-400">Not processed</span>}
                                                 </div>
                                             </div>
                                         </div>

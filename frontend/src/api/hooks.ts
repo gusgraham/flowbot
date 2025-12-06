@@ -58,6 +58,10 @@ export interface Install {
     fm_sensor_offset_mm?: number;
     // RG Specific
     rg_position?: string;
+
+    // Status
+    last_data_ingested?: string;
+    last_data_processed?: string;
 }
 
 export interface Visit {
@@ -799,5 +803,28 @@ export const useInstallTimeseries = (
             return data;
         },
         enabled: !!installId,
+        keepPreviousData: true,
+    });
+};
+
+export const useProcessInstall = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (installId: number) => {
+            const { data } = await api.post(`/installs/${installId}/process`);
+            return data;
+        },
+        onSuccess: (_, installId) => {
+            queryClient.invalidateQueries({ queryKey: ['install_timeseries', installId] });
+        },
+    });
+};
+
+export const useProcessProject = () => {
+    return useMutation({
+        mutationFn: async (projectId: number) => {
+            const { data } = await api.post(`/projects/${projectId}/process`);
+            return data;
+        },
     });
 };
