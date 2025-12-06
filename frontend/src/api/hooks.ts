@@ -828,3 +828,209 @@ export const useProcessProject = () => {
         },
     });
 };
+
+// ==========================================
+// INTERIM REVIEW TYPES & HOOKS
+// ==========================================
+
+export interface Interim {
+    id: number;
+    project_id: number;
+    start_date: string;
+    end_date: string;
+    status: 'draft' | 'in_progress' | 'complete' | 'locked';
+    revision_of?: number;
+    created_at: string;
+    locked_at?: string;
+    review_count?: number;
+    reviews_complete?: number;
+}
+
+export interface InterimReview {
+    id: number;
+    interim_id: number;
+    install_id: number;
+    monitor_id?: number;
+    install_type: string;
+    // Stage 1
+    data_coverage_pct?: number;
+    gaps_json?: string;
+    data_import_acknowledged: boolean;
+    data_import_notes?: string;
+    data_import_reviewer?: string;
+    data_import_reviewed_at?: string;
+    // Stage 2
+    classification_complete: boolean;
+    classification_comment?: string;
+    classification_reviewer?: string;
+    classification_reviewed_at?: string;
+    // Stage 3
+    events_complete: boolean;
+    events_comment?: string;
+    events_reviewer?: string;
+    events_reviewed_at?: string;
+    // Stage 4
+    review_complete: boolean;
+    review_comment?: string;
+    review_reviewer?: string;
+    review_reviewed_at?: string;
+    annotation_count?: number;
+}
+
+export interface ReviewAnnotation {
+    id: number;
+    interim_review_id: number;
+    variable: string;
+    start_time: string;
+    end_time: string;
+    issue_type: 'anomaly' | 'suspect' | 'gap' | 'calibration' | 'other';
+    description?: string;
+    created_by?: string;
+    created_at: string;
+}
+
+// Interim hooks
+export const useProjectInterims = (projectId: number) => {
+    return useQuery({
+        queryKey: ['interims', projectId],
+        queryFn: async () => {
+            const { data } = await api.get<Interim[]>(`/projects/${projectId}/interims`);
+            return data;
+        },
+        enabled: !!projectId,
+    });
+};
+
+export const useInterim = (interimId: number) => {
+    return useQuery({
+        queryKey: ['interim', interimId],
+        queryFn: async () => {
+            const { data } = await api.get<Interim>(`/interims/${interimId}`);
+            return data;
+        },
+        enabled: !!interimId,
+    });
+};
+
+export const useCreateInterim = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, startDate, endDate }: { projectId: number; startDate: string; endDate: string }) => {
+            const { data } = await api.post<Interim>(`/projects/${projectId}/interims`, {
+                project_id: projectId,
+                start_date: startDate,
+                end_date: endDate,
+            });
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['interims', variables.projectId] });
+        },
+    });
+};
+
+export const useUpdateInterim = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ interimId, ...update }: { interimId: number; start_date?: string; end_date?: string; status?: string }) => {
+            const { data } = await api.put<Interim>(`/interims/${interimId}`, update);
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['interim', data.id] });
+            queryClient.invalidateQueries({ queryKey: ['interims', data.project_id] });
+        },
+    });
+};
+
+export const useDeleteInterim = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (interimId: number) => {
+            const { data } = await api.delete(`/interims/${interimId}`);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['interims'] });
+        },
+    });
+};
+
+// Interim Review hooks
+export const useInterimReviews = (interimId: number) => {
+    return useQuery({
+        queryKey: ['interim_reviews', interimId],
+        queryFn: async () => {
+            const { data } = await api.get<InterimReview[]>(`/interims/${interimId}/reviews`);
+            return data;
+        },
+        enabled: !!interimId,
+    });
+};
+
+export const useInterimReview = (reviewId: number) => {
+    return useQuery({
+        queryKey: ['interim_review', reviewId],
+        queryFn: async () => {
+            const { data } = await api.get<InterimReview>(`/reviews/${reviewId}`);
+            return data;
+        },
+        enabled: !!reviewId,
+    });
+};
+
+export const useSignoffReviewStage = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ reviewId, stage, comment, reviewer }: { reviewId: number; stage: string; comment?: string; reviewer: string }) => {
+            const { data } = await api.put(`/reviews/${reviewId}/signoff/${stage}`, { comment, reviewer });
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['interim_review', variables.reviewId] });
+            queryClient.invalidateQueries({ queryKey: ['interim_reviews'] });
+        },
+    });
+};
+
+// Annotation hooks
+export const useReviewAnnotations = (reviewId: number) => {
+    return useQuery({
+        queryKey: ['review_annotations', reviewId],
+        queryFn: async () => {
+            const { data } = await api.get<ReviewAnnotation[]>(`/reviews/${reviewId}/annotations`);
+            return data;
+        },
+        enabled: !!reviewId,
+    });
+};
+
+export const useCreateAnnotation = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ reviewId, ...annotation }: { reviewId: number; variable: string; start_time: string; end_time: string; issue_type: string; description?: string }) => {
+            const { data } = await api.post<ReviewAnnotation>(`/reviews/${reviewId}/annotations`, {
+                interim_review_id: reviewId,
+                ...annotation,
+            });
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['review_annotations', variables.reviewId] });
+            queryClient.invalidateQueries({ queryKey: ['interim_review', variables.reviewId] });
+        },
+    });
+};
+
+export const useDeleteAnnotation = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (annotationId: number) => {
+            const { data } = await api.delete(`/annotations/${annotationId}`);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['review_annotations'] });
+        },
+    });
+};

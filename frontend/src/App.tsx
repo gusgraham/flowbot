@@ -10,6 +10,7 @@ import SurveyList from './pages/fsm/SurveyList';
 import SurveyDashboard from './pages/fsm/SurveyDashboard';
 import MonitorDetail from './pages/fsm/MonitorDetail';
 import InstallManagement from './pages/fsm/InstallManagement';
+import InterimReviewPage from './pages/fsm/InterimReviewPage';
 import AnalysisProjectList from './pages/analysis/AnalysisProjectList';
 import AnalysisWorkbench from './pages/analysis/AnalysisWorkbench';
 import VerificationProjectList from './pages/verification/VerificationProjectList';
@@ -52,6 +53,7 @@ function App() {
                 <Route path="fsm/:projectId" element={<SurveyDashboard />} />
                 <Route path="fsm/monitor/:monitorId" element={<MonitorDetail />} />
                 <Route path="fsm/install/:installId" element={<InstallManagement />} />
+                <Route path="fsm/interim/:interimId" element={<InterimReviewPage />} />
                 <Route path="analysis" element={<AnalysisProjectList />} />
                 <Route path="analysis/:projectId" element={<AnalysisWorkbench />} />
                 <Route path="verification" element={<VerificationProjectList />} />

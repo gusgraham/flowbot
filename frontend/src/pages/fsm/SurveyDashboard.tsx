@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall, useIngestProject, useProcessProject } from '../../api/hooks';
+import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall, useIngestProject, useProcessProject, useProjectInterims } from '../../api/hooks';
 import { useToast } from '../../contexts/ToastContext';
-import type { Site, Monitor, Install } from '../../api/hooks';
+import type { Site, Monitor, Install, Interim } from '../../api/hooks';
 import {
     ArrowLeft, MapPin, Loader2, Plus, Building2, CloudRain,
-    ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive, Play
+    ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive, Play, Calendar, FileText
 } from 'lucide-react';
 import AddSiteModal from './AddSiteModal';
 import EditProjectModal from './EditProjectModal';
@@ -14,6 +14,7 @@ import ManageSiteModal from './ManageSiteModal';
 import ManageMonitorModal from './ManageMonitorModal';
 import AddInstallModal from './AddInstallModal';
 import DeleteInstallModal from './DeleteInstallModal';
+import CreateInterimModal from './CreateInterimModal';
 
 const SurveyDashboard: React.FC = () => {
     const { projectId } = useParams<{ projectId: string }>();
@@ -23,6 +24,7 @@ const SurveyDashboard: React.FC = () => {
     const { data: sites, isLoading: sitesLoading } = useSites(id);
     const { data: monitors } = useProjectMonitors(id);
     const { data: installs } = useProjectInstalls(id);
+    const { data: interims } = useProjectInterims(id);
 
     const [isAddSiteModalOpen, setIsAddSiteModalOpen] = useState(false);
     const [isEditProjectModalOpen, setIsEditProjectModalOpen] = useState(false);
@@ -37,6 +39,8 @@ const SurveyDashboard: React.FC = () => {
     const [isSitesOpen, setIsSitesOpen] = useState(false);
     const [isInstallsOpen, setIsInstallsOpen] = useState(false);
     const [isDataProcessingOpen, setIsDataProcessingOpen] = useState(false);
+    const [isInterimsOpen, setIsInterimsOpen] = useState(true);
+    const [isCreateInterimModalOpen, setIsCreateInterimModalOpen] = useState(false);
 
     // Group sites by type
     const networkAssets = sites?.filter(s => s.site_type === 'Flow Monitor' || s.site_type === 'Pump Station') || [];
@@ -480,6 +484,107 @@ const SurveyDashboard: React.FC = () => {
                         )}
                     </div>
 
+                    {/* Interims */}
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <div
+                            className="p-6 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors"
+                            onClick={() => setIsInterimsOpen(!isInterimsOpen)}
+                        >
+                            <div className="flex items-center gap-2">
+                                {isInterimsOpen ? <ChevronDown size={20} className="text-gray-400" /> : <ChevronRight size={20} className="text-gray-400" />}
+                                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                    <Calendar size={20} className="text-purple-500" />
+                                    Interims
+                                </h2>
+                                {interims && interims.length > 0 && (
+                                    <span className="text-sm text-gray-500">({interims.length})</span>
+                                )}
+                            </div>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsCreateInterimModalOpen(true);
+                                }}
+                                className="flex items-center gap-1 text-sm bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700"
+                            >
+                                <Plus size={16} />
+                                New Interim
+                            </button>
+                        </div>
+
+                        {isInterimsOpen && (
+                            <div className="px-6 pb-6 border-t border-gray-100 pt-4">
+                                {interims && interims.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {interims.map((interim) => {
+                                            const reviewCount = interim.review_count || 0;
+                                            const reviewsComplete = interim.reviews_complete || 0;
+                                            const progressPct = reviewCount > 0 ? Math.round((reviewsComplete / reviewCount) * 100) : 0;
+
+                                            const statusColors: Record<string, string> = {
+                                                draft: 'bg-gray-100 text-gray-600',
+                                                in_progress: 'bg-blue-100 text-blue-700',
+                                                complete: 'bg-green-100 text-green-700',
+                                                locked: 'bg-purple-100 text-purple-700',
+                                            };
+
+                                            return (
+                                                <div
+                                                    key={interim.id}
+                                                    className="border border-gray-200 rounded-lg p-4 bg-purple-50/30 hover:bg-purple-50/50 transition-colors"
+                                                >
+                                                    <div className="flex justify-between items-start mb-3">
+                                                        <div>
+                                                            <p className="font-medium text-gray-900">
+                                                                {new Date(interim.start_date).toLocaleDateString()} - {new Date(interim.end_date).toLocaleDateString()}
+                                                            </p>
+                                                            <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[interim.status] || statusColors.draft}`}>
+                                                                {interim.status.replace('_', ' ')}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <Link
+                                                                to={`/fsm/interim/${interim.id}`}
+                                                                className="text-sm text-purple-600 hover:underline"
+                                                            >
+                                                                Manage
+                                                            </Link>
+                                                            {interim.status === 'complete' && (
+                                                                <button className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+                                                                    <FileText size={14} />
+                                                                    Report
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Progress bar */}
+                                                    <div className="mb-2">
+                                                        <div className="flex justify-between text-xs text-gray-500 mb-1">
+                                                            <span>Reviews</span>
+                                                            <span>{reviewsComplete}/{reviewCount}</span>
+                                                        </div>
+                                                        <div className="w-full bg-gray-200 rounded-full h-2">
+                                                            <div
+                                                                className={`h-2 rounded-full transition-all ${progressPct === 100 ? 'bg-green-500' : 'bg-purple-500'
+                                                                    }`}
+                                                                style={{ width: `${progressPct}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-gray-400 italic text-center py-4">
+                                        No interims created yet. Click "New Interim" to start a review period.
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
                 </div>
 
                 {/* Right Column: Map & Stats */}
@@ -642,6 +747,12 @@ const SurveyDashboard: React.FC = () => {
                     }}
                 />
             )}
+
+            <CreateInterimModal
+                isOpen={isCreateInterimModalOpen}
+                onClose={() => setIsCreateInterimModalOpen(false)}
+                projectId={id}
+            />
         </div>
     );
 };

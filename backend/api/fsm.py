@@ -16,6 +16,12 @@ from domain.fsm import (
     AttachmentRead, AttachmentCreate,
     RawDataSettingsRead, RawDataSettingsCreate, RawDataSettingsUpdate
 )
+from domain.interim import (
+    Interim, InterimCreate, InterimUpdate, InterimRead,
+    InterimReview, InterimReviewCreate, InterimReviewRead,
+    ReviewAnnotation, ReviewAnnotationCreate, ReviewAnnotationRead,
+    StageSignoff
+)
 from domain.auth import User
 from api.deps import get_current_active_user, get_storage_service
 from services.project import ProjectService
@@ -624,3 +630,355 @@ def process_project_data(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Project processing failed: {str(e)}")
+
+# ==========================================
+# INTERIMS
+# ==========================================
+
+@router.post("/projects/{project_id}/interims", response_model=InterimRead)
+def create_interim(
+    project_id: int,
+    interim: InterimCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Create a new interim for a project."""
+    from domain.fsm import FsmProject, Install
+    
+    # Verify project exists
+    project = session.get(FsmProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Create interim
+    db_interim = Interim(
+        project_id=project_id,
+        start_date=interim.start_date,
+        end_date=interim.end_date
+    )
+    session.add(db_interim)
+    session.commit()
+    session.refresh(db_interim)
+    
+    # Auto-create InterimReview for each active install
+    installs = session.query(Install).filter(
+        Install.project_id == project_id,
+        Install.removal_date == None
+    ).all()
+    
+    for install in installs:
+        review = InterimReview(
+            interim_id=db_interim.id,
+            install_id=install.id,
+            monitor_id=install.monitor_id,
+            install_type=install.install_type
+        )
+        session.add(review)
+    
+    session.commit()
+    session.refresh(db_interim)
+    
+    return db_interim
+
+
+@router.get("/projects/{project_id}/interims", response_model=List[InterimRead])
+def list_project_interims(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """List all interims for a project."""
+    interims = session.query(Interim).filter(Interim.project_id == project_id).all()
+    
+    # Add review counts
+    result = []
+    for interim in interims:
+        interim_dict = InterimRead(
+            id=interim.id,
+            project_id=interim.project_id,
+            start_date=interim.start_date,
+            end_date=interim.end_date,
+            status=interim.status,
+            revision_of=interim.revision_of,
+            created_at=interim.created_at,
+            locked_at=interim.locked_at,
+            review_count=len(interim.reviews),
+            reviews_complete=sum(1 for r in interim.reviews if r.review_complete)
+        )
+        result.append(interim_dict)
+    
+    return result
+
+
+@router.get("/interims/{interim_id}", response_model=InterimRead)
+def get_interim(
+    interim_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get an interim by ID."""
+    interim = session.get(Interim, interim_id)
+    if not interim:
+        raise HTTPException(status_code=404, detail="Interim not found")
+    
+    return InterimRead(
+        id=interim.id,
+        project_id=interim.project_id,
+        start_date=interim.start_date,
+        end_date=interim.end_date,
+        status=interim.status,
+        revision_of=interim.revision_of,
+        created_at=interim.created_at,
+        locked_at=interim.locked_at,
+        review_count=len(interim.reviews),
+        reviews_complete=sum(1 for r in interim.reviews if r.review_complete)
+    )
+
+
+@router.put("/interims/{interim_id}", response_model=InterimRead)
+def update_interim(
+    interim_id: int,
+    update: InterimUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Update an interim."""
+    interim = session.get(Interim, interim_id)
+    if not interim:
+        raise HTTPException(status_code=404, detail="Interim not found")
+    
+    if interim.status == "locked":
+        raise HTTPException(status_code=400, detail="Cannot modify a locked interim")
+    
+    update_data = update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(interim, key, value)
+    
+    session.add(interim)
+    session.commit()
+    session.refresh(interim)
+    
+    return interim
+
+
+@router.delete("/interims/{interim_id}")
+def delete_interim(
+    interim_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Delete an interim."""
+    interim = session.get(Interim, interim_id)
+    if not interim:
+        raise HTTPException(status_code=404, detail="Interim not found")
+    
+    if interim.status == "locked":
+        raise HTTPException(status_code=400, detail="Cannot delete a locked interim")
+    
+    session.delete(interim)
+    session.commit()
+    
+    return {"status": "success", "message": "Interim deleted"}
+
+
+# ==========================================
+# INTERIM REVIEWS
+# ==========================================
+
+@router.get("/interims/{interim_id}/reviews", response_model=List[InterimReviewRead])
+def list_interim_reviews(
+    interim_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """List all reviews for an interim."""
+    reviews = session.query(InterimReview).filter(
+        InterimReview.interim_id == interim_id
+    ).all()
+    
+    result = []
+    for review in reviews:
+        review_dict = InterimReviewRead(
+            id=review.id,
+            interim_id=review.interim_id,
+            install_id=review.install_id,
+            monitor_id=review.monitor_id,
+            install_type=review.install_type,
+            data_coverage_pct=review.data_coverage_pct,
+            gaps_json=review.gaps_json,
+            data_import_acknowledged=review.data_import_acknowledged,
+            data_import_notes=review.data_import_notes,
+            data_import_reviewer=review.data_import_reviewer,
+            data_import_reviewed_at=review.data_import_reviewed_at,
+            classification_complete=review.classification_complete,
+            classification_comment=review.classification_comment,
+            classification_reviewer=review.classification_reviewer,
+            classification_reviewed_at=review.classification_reviewed_at,
+            events_complete=review.events_complete,
+            events_comment=review.events_comment,
+            events_reviewer=review.events_reviewer,
+            events_reviewed_at=review.events_reviewed_at,
+            review_complete=review.review_complete,
+            review_comment=review.review_comment,
+            review_reviewer=review.review_reviewer,
+            review_reviewed_at=review.review_reviewed_at,
+            annotation_count=len(review.annotations)
+        )
+        result.append(review_dict)
+    
+    return result
+
+
+@router.get("/reviews/{review_id}", response_model=InterimReviewRead)
+def get_interim_review(
+    review_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get an interim review by ID."""
+    review = session.get(InterimReview, review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    return InterimReviewRead(
+        id=review.id,
+        interim_id=review.interim_id,
+        install_id=review.install_id,
+        monitor_id=review.monitor_id,
+        install_type=review.install_type,
+        data_coverage_pct=review.data_coverage_pct,
+        gaps_json=review.gaps_json,
+        data_import_acknowledged=review.data_import_acknowledged,
+        data_import_notes=review.data_import_notes,
+        data_import_reviewer=review.data_import_reviewer,
+        data_import_reviewed_at=review.data_import_reviewed_at,
+        classification_complete=review.classification_complete,
+        classification_comment=review.classification_comment,
+        classification_reviewer=review.classification_reviewer,
+        classification_reviewed_at=review.classification_reviewed_at,
+        events_complete=review.events_complete,
+        events_comment=review.events_comment,
+        events_reviewer=review.events_reviewer,
+        events_reviewed_at=review.events_reviewed_at,
+        review_complete=review.review_complete,
+        review_comment=review.review_comment,
+        review_reviewer=review.review_reviewer,
+        review_reviewed_at=review.review_reviewed_at,
+        annotation_count=len(review.annotations)
+    )
+
+
+@router.put("/reviews/{review_id}/signoff/{stage}")
+def signoff_review_stage(
+    review_id: int,
+    stage: str,
+    signoff: StageSignoff,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Sign off a review stage (data_import, classification, events, review)."""
+    from datetime import datetime
+    
+    review = session.get(InterimReview, review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    # Check interim is not locked
+    interim = session.get(Interim, review.interim_id)
+    if interim and interim.status == "locked":
+        raise HTTPException(status_code=400, detail="Cannot modify a locked interim")
+    
+    valid_stages = ["data_import", "classification", "events", "review"]
+    if stage not in valid_stages:
+        raise HTTPException(status_code=400, detail=f"Invalid stage. Must be one of: {valid_stages}")
+    
+    now = datetime.now()
+    
+    if stage == "data_import":
+        review.data_import_acknowledged = True
+        review.data_import_notes = signoff.comment
+        review.data_import_reviewer = signoff.reviewer
+        review.data_import_reviewed_at = now
+    elif stage == "classification":
+        review.classification_complete = True
+        review.classification_comment = signoff.comment
+        review.classification_reviewer = signoff.reviewer
+        review.classification_reviewed_at = now
+    elif stage == "events":
+        review.events_complete = True
+        review.events_comment = signoff.comment
+        review.events_reviewer = signoff.reviewer
+        review.events_reviewed_at = now
+    elif stage == "review":
+        review.review_complete = True
+        review.review_comment = signoff.comment
+        review.review_reviewer = signoff.reviewer
+        review.review_reviewed_at = now
+    
+    session.add(review)
+    session.commit()
+    
+    return {"status": "success", "message": f"Stage '{stage}' signed off"}
+
+
+# ==========================================
+# REVIEW ANNOTATIONS
+# ==========================================
+
+@router.get("/reviews/{review_id}/annotations", response_model=List[ReviewAnnotationRead])
+def list_review_annotations(
+    review_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """List all annotations for a review."""
+    annotations = session.query(ReviewAnnotation).filter(
+        ReviewAnnotation.interim_review_id == review_id
+    ).all()
+    return annotations
+
+
+@router.post("/reviews/{review_id}/annotations", response_model=ReviewAnnotationRead)
+def create_review_annotation(
+    review_id: int,
+    annotation: ReviewAnnotationCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Create an annotation for a review."""
+    review = session.get(InterimReview, review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    db_annotation = ReviewAnnotation(
+        interim_review_id=review_id,
+        variable=annotation.variable,
+        start_time=annotation.start_time,
+        end_time=annotation.end_time,
+        issue_type=annotation.issue_type,
+        description=annotation.description,
+        created_by=current_user.username if current_user else None
+    )
+    session.add(db_annotation)
+    session.commit()
+    session.refresh(db_annotation)
+    
+    return db_annotation
+
+
+@router.delete("/annotations/{annotation_id}")
+def delete_annotation(
+    annotation_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Delete an annotation."""
+    annotation = session.get(ReviewAnnotation, annotation_id)
+    if not annotation:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    
+    session.delete(annotation)
+    session.commit()
+    
+    return {"status": "success", "message": "Annotation deleted"}
+
