@@ -107,7 +107,13 @@ const InterimReviewPage: React.FC = () => {
             case 'events':
                 return <EventsTab review={selectedReview} username={username} onRefresh={handleRefresh} />;
             case 'review':
-                return <ProcessedReviewTab review={selectedReview} username={username} onRefresh={handleRefresh} />;
+                return <ProcessedReviewTab
+                    review={selectedReview}
+                    username={username}
+                    onRefresh={handleRefresh}
+                    startDate={interim?.start_date}
+                    endDate={interim?.end_date}
+                />;
             default:
                 return null;
         }
@@ -166,8 +172,8 @@ const InterimReviewPage: React.FC = () => {
                                         key={review.id}
                                         onClick={() => setSelectedReviewId(review.id)}
                                         className={`p-3 border-b border-gray-100 cursor-pointer transition-colors ${selectedReviewId === review.id
-                                                ? 'bg-purple-50 border-l-4 border-l-purple-500'
-                                                : 'hover:bg-gray-50'
+                                            ? 'bg-purple-50 border-l-4 border-l-purple-500'
+                                            : 'hover:bg-gray-50'
                                             }`}
                                     >
                                         <div className="flex items-center justify-between">
@@ -215,8 +221,8 @@ const InterimReviewPage: React.FC = () => {
                                         key={tab.key}
                                         onClick={() => setActiveTab(tab.key)}
                                         className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${activeTab === tab.key
-                                                ? 'bg-purple-50 text-purple-700 border-b-2 border-purple-500'
-                                                : 'text-gray-500 hover:bg-gray-50'
+                                            ? 'bg-purple-50 text-purple-700 border-b-2 border-purple-500'
+                                            : 'text-gray-500 hover:bg-gray-50'
                                             }`}
                                     >
                                         {getStatusIcon(tabStatus)}

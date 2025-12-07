@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useSignoffReviewStage } from '../../../api/hooks';
+import { useSignoffReviewStage, useCalculateCoverage } from '../../../api/hooks';
 import type { InterimReview } from '../../../api/hooks';
 import { useToast } from '../../../contexts/ToastContext';
-import { CheckCircle2, AlertTriangle, Loader2, Database, Clock } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Loader2, Database, Clock, RefreshCw } from 'lucide-react';
 
 interface DataImportTabProps {
     review: InterimReview;
@@ -13,6 +13,7 @@ interface DataImportTabProps {
 const DataImportTab: React.FC<DataImportTabProps> = ({ review, username, onRefresh }) => {
     const [notes, setNotes] = useState(review.data_import_notes || '');
     const { mutate: signoff, isPending } = useSignoffReviewStage();
+    const { mutate: calculateCoverage, isPending: isCalculating } = useCalculateCoverage();
     const { showToast } = useToast();
 
     const coveragePct = review.data_coverage_pct ?? 0;
@@ -31,6 +32,18 @@ const DataImportTab: React.FC<DataImportTabProps> = ({ review, username, onRefre
                 },
             }
         );
+    };
+
+    const handleCalculateCoverage = () => {
+        calculateCoverage(review.id, {
+            onSuccess: (result: any) => {
+                showToast(`Coverage calculated: ${result.coverage_pct?.toFixed(1)}%`, 'success');
+                onRefresh();
+            },
+            onError: (err) => {
+                showToast(`Coverage calculation failed: ${err.message}`, 'error');
+            },
+        });
     };
 
     const isComplete = review.data_import_acknowledged;
@@ -65,10 +78,24 @@ const DataImportTab: React.FC<DataImportTabProps> = ({ review, username, onRefre
 
             {/* Coverage Metrics */}
             <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Database size={20} className="text-blue-500" />
-                    Data Coverage
-                </h3>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <Database size={20} className="text-blue-500" />
+                        Data Coverage
+                    </h3>
+                    <button
+                        onClick={handleCalculateCoverage}
+                        disabled={isCalculating}
+                        className="flex items-center gap-2 text-sm bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-200 disabled:opacity-50"
+                    >
+                        {isCalculating ? (
+                            <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                            <RefreshCw size={14} />
+                        )}
+                        Calculate Coverage
+                    </button>
+                </div>
 
                 <div className="grid grid-cols-2 gap-6">
                     <div>
@@ -77,7 +104,7 @@ const DataImportTab: React.FC<DataImportTabProps> = ({ review, username, onRefre
                             <div className="flex-1 bg-gray-200 rounded-full h-4">
                                 <div
                                     className={`h-4 rounded-full ${coveragePct >= 95 ? 'bg-green-500' :
-                                            coveragePct >= 80 ? 'bg-amber-500' : 'bg-red-500'
+                                        coveragePct >= 80 ? 'bg-amber-500' : 'bg-red-500'
                                         }`}
                                     style={{ width: `${coveragePct}%` }}
                                 />

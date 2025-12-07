@@ -10,3 +10,6 @@ passlib[bcrypt]
 pandas
 pyarrow
 scipy
+scikit-learn
+joblib
+catboost

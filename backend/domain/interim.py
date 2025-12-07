@@ -184,8 +184,8 @@ class ReviewAnnotationRead(ReviewAnnotationBase):
 
 class DailyClassificationBase(SQLModel):
     date: datetime
-    ml_classification: str
-    ml_confidence: float
+    ml_classification: Optional[str] = None  # Null for pump loggers (no ML model)
+    ml_confidence: Optional[float] = None
     manual_classification: Optional[str] = None
     override_reason: Optional[str] = None
     override_by: Optional[str] = None

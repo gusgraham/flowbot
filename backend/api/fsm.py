@@ -921,6 +921,53 @@ def signoff_review_stage(
     return {"status": "success", "message": f"Stage '{stage}' signed off"}
 
 
+@router.post("/reviews/{review_id}/calculate-coverage")
+def calculate_review_coverage(
+    review_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Calculate and update data coverage for a review."""
+    from services.data_coverage import update_review_coverage
+    from infra.storage import StorageService
+    
+    storage = StorageService()
+    result = update_review_coverage(session, review_id, storage)
+    
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    
+    return result
+
+
+@router.post("/interims/{interim_id}/calculate-all-coverage")
+def calculate_interim_coverage(
+    interim_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Calculate data coverage for all reviews in an interim."""
+    from services.data_coverage import update_review_coverage
+    from infra.storage import StorageService
+    
+    interim = session.get(Interim, interim_id)
+    if not interim:
+        raise HTTPException(status_code=404, detail="Interim not found")
+    
+    storage = StorageService()
+    results = []
+    
+    for review in interim.reviews:
+        result = update_review_coverage(session, review.id, storage)
+        results.append({
+            "review_id": review.id,
+            "install_id": review.install_id,
+            **result
+        })
+    
+    return {"message": f"Calculated coverage for {len(results)} reviews", "results": results}
+
+
 # ==========================================
 # REVIEW ANNOTATIONS
 # ==========================================
@@ -982,3 +1029,211 @@ def delete_annotation(
     
     return {"status": "success", "message": "Annotation deleted"}
 
+
+# ==========================================
+# CLASSIFICATION
+# ==========================================
+
+@router.get("/reviews/{review_id}/classifications")
+def get_review_classifications(
+    review_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get daily classifications for a review."""
+    from domain.interim import DailyClassification
+    
+    review = session.get(InterimReview, review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    classifications = session.query(DailyClassification).filter(
+        DailyClassification.interim_review_id == review_id
+    ).order_by(DailyClassification.date).all()
+    
+    return [
+        {
+            "id": c.id,
+            "date": c.date.isoformat() if c.date else None,
+            "ml_classification": c.ml_classification,
+            "ml_confidence": c.ml_confidence,
+            "manual_classification": c.manual_classification,
+            "override_reason": c.override_reason,
+            "override_by": c.override_by,
+            "override_at": c.override_at.isoformat() if c.override_at else None,
+        }
+        for c in classifications
+    ]
+
+
+@router.post("/reviews/{review_id}/classify")
+def run_classification_for_review(
+    review_id: int,
+    session: Session = Depends(get_session),
+    storage: StorageService = Depends(get_storage_service),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Run ML classification for a review."""
+    from domain.interim import DailyClassification, Interim
+    from domain.fsm import Install, TimeSeries
+    from services.classification import run_classification, check_models_available
+    import pandas as pd
+    
+    review = session.get(InterimReview, review_id)
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    interim = session.get(Interim, review.interim_id)
+    if not interim:
+        raise HTTPException(status_code=404, detail="Interim not found")
+    
+    install = session.get(Install, review.install_id)
+    if not install:
+        raise HTTPException(status_code=404, detail="Install not found")
+    
+    # Check models are available
+    models_available = check_models_available()
+    model_type = 'FM' if install.install_type == 'Flow Monitor' else 'RG' if install.install_type == 'Rain Gauge' else 'DM'
+    
+    if not models_available.get(model_type, False):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"ML model for {install.install_type} not found. Please add {model_type}_model to backend/resources/classifier/models/"
+        )
+    
+    # Load timeseries data for the interim period
+    timeseries = session.query(TimeSeries).filter(
+        TimeSeries.install_id == review.install_id
+    ).all()
+    
+    if not timeseries:
+        raise HTTPException(status_code=400, detail="No timeseries data found for this install")
+    
+    # Load and combine data
+    all_data = []
+    for ts in timeseries:
+        try:
+            if not ts.filename:
+                continue
+            ts_data = storage.read_parquet(ts.filename)
+            if ts_data is not None and not ts_data.empty:
+                # Find time column and standardize
+                time_col = None
+                for col in ['time', 'timestamp', 'Date']:
+                    if col in ts_data.columns:
+                        time_col = col
+                        break
+                if time_col and time_col != 'timestamp':
+                    ts_data = ts_data.rename(columns={time_col: 'timestamp'})
+                
+                # Rename value column to expected name
+                if 'value' in ts_data.columns:
+                    col_name = f"{ts.variable}Data"
+                    ts_data = ts_data.rename(columns={'value': col_name})
+                all_data.append(ts_data)
+        except Exception as e:
+            print(f"Error loading timeseries {ts.variable}: {e}")
+    
+    if not all_data:
+        raise HTTPException(status_code=400, detail="Could not load timeseries data")
+    
+    # Merge all data on timestamp
+    try:
+        combined = all_data[0]
+        for df in all_data[1:]:
+            combined = pd.merge(combined, df, on='timestamp', how='outer')
+        
+        combined = combined.rename(columns={'timestamp': 'Date'})
+        print(f"Combined data shape: {combined.shape}, columns: {list(combined.columns)}")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to merge timeseries data: {str(e)}")
+    
+    # Prepare install data for feature extraction
+    install_data = {
+        'fm_pipe_height_mm': install.fm_pipe_height_mm,
+        'fm_pipe_width_mm': install.fm_pipe_width_mm,
+        'fm_pipe_depth_to_invert_mm': install.fm_pipe_depth_to_invert_mm,
+        'fm_pipe_letter': install.fm_pipe_letter,
+        'fm_pipe_shape': install.fm_pipe_shape,
+    }
+    
+    # Run classification
+    try:
+        results = run_classification(
+            install_type=install.install_type,
+            data=combined,
+            start_date=interim.start_date,
+            end_date=interim.end_date,
+            install_data=install_data
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
+    
+    # Delete existing classifications for this review
+    session.query(DailyClassification).filter(
+        DailyClassification.interim_review_id == review_id
+    ).delete()
+    
+    # Save new classifications
+    for result in results:
+        # Parse date string back to datetime
+        date_val = result['date']
+        if isinstance(date_val, str):
+            from datetime import datetime
+            date_val = datetime.fromisoformat(date_val)
+        
+        classification = DailyClassification(
+            interim_review_id=review_id,
+            date=date_val,
+            ml_classification=result['classification'],
+            ml_confidence=result['confidence']
+        )
+        session.add(classification)
+    
+    session.commit()
+    
+    return {
+        "status": "success",
+        "message": f"Classified {len(results)} days",
+        "results_count": len(results)
+    }
+
+
+@router.put("/classifications/{classification_id}/override")
+def override_classification(
+    classification_id: int,
+    override_data: dict,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Override a classification manually."""
+    from domain.interim import DailyClassification
+    from datetime import datetime
+    
+    classification = session.get(DailyClassification, classification_id)
+    if not classification:
+        raise HTTPException(status_code=404, detail="Classification not found")
+    
+    classification.manual_classification = override_data.get('manual_classification')
+    classification.override_reason = override_data.get('override_reason')
+    classification.override_by = current_user.username if current_user else 'Unknown'
+    classification.override_at = datetime.now()
+    
+    session.add(classification)
+    session.commit()
+    
+    return {"status": "success", "message": "Classification overridden"}
+
+
+@router.get("/classification/models-status")
+def get_models_status(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Check which ML models are available."""
+    from services.classification import check_models_available
+    
+    return check_models_available()

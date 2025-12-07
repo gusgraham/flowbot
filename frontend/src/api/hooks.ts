@@ -993,6 +993,33 @@ export const useSignoffReviewStage = () => {
     });
 };
 
+export const useCalculateCoverage = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (reviewId: number) => {
+            const { data } = await api.post(`/reviews/${reviewId}/calculate-coverage`);
+            return data;
+        },
+        onSuccess: (_, reviewId) => {
+            queryClient.invalidateQueries({ queryKey: ['interim_review', reviewId] });
+            queryClient.invalidateQueries({ queryKey: ['interim_reviews'] });
+        },
+    });
+};
+
+export const useCalculateAllCoverage = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (interimId: number) => {
+            const { data } = await api.post(`/interims/${interimId}/calculate-all-coverage`);
+            return data;
+        },
+        onSuccess: (_, interimId) => {
+            queryClient.invalidateQueries({ queryKey: ['interim_reviews', interimId] });
+        },
+    });
+};
+
 // Annotation hooks
 export const useReviewAnnotations = (reviewId: number) => {
     return useQuery({
@@ -1031,6 +1058,71 @@ export const useDeleteAnnotation = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['review_annotations'] });
+        },
+    });
+};
+
+// ==========================================
+// CLASSIFICATION HOOKS
+// ==========================================
+
+export interface DailyClassification {
+    id: number;
+    date: string;
+    ml_classification: string;
+    ml_confidence: number;
+    manual_classification?: string;
+    override_reason?: string;
+    override_by?: string;
+    override_at?: string;
+}
+
+export const useReviewClassifications = (reviewId: number) => {
+    return useQuery({
+        queryKey: ['review_classifications', reviewId],
+        queryFn: async () => {
+            const { data } = await api.get<DailyClassification[]>(`/reviews/${reviewId}/classifications`);
+            return data;
+        },
+        enabled: !!reviewId,
+    });
+};
+
+export const useRunClassification = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (reviewId: number) => {
+            const { data } = await api.post(`/reviews/${reviewId}/classify`);
+            return data;
+        },
+        onSuccess: (_, reviewId) => {
+            queryClient.invalidateQueries({ queryKey: ['review_classifications', reviewId] });
+        },
+    });
+};
+
+export const useOverrideClassification = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ classificationId, manual_classification, override_reason }: { classificationId: number; manual_classification: string; override_reason?: string }) => {
+            const { data } = await api.put(`/classifications/${classificationId}/override`, {
+                manual_classification,
+                override_reason,
+            });
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['review_classifications'] });
+        },
+    });
+};
+
+export const useModelsStatus = () => {
+    return useQuery({
+        queryKey: ['classification_models_status'],
+        queryFn: async () => {
+            const { data } = await api.get<Record<string, boolean>>(`/classification/models-status`);
+            return data;
         },
     });
 };

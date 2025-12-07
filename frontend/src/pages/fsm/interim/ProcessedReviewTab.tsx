@@ -3,14 +3,20 @@ import { useSignoffReviewStage, useReviewAnnotations, useCreateAnnotation, useDe
 import type { InterimReview, ReviewAnnotation } from '../../../api/hooks';
 import { useToast } from '../../../contexts/ToastContext';
 import { CheckCircle2, AlertTriangle, Loader2, LineChart, Plus, Trash2, X } from 'lucide-react';
+import FlowMonitorChart from './FlowMonitorChart';
+import RainGaugeChart from './RainGaugeChart';
+import PumpLoggerChart from './PumpLoggerChart';
 
 interface ProcessedReviewTabProps {
     review: InterimReview;
     username: string;
     onRefresh: () => void;
+    startDate?: string;
+    endDate?: string;
+    pipeHeight?: number;
 }
 
-const ProcessedReviewTab: React.FC<ProcessedReviewTabProps> = ({ review, username, onRefresh }) => {
+const ProcessedReviewTab: React.FC<ProcessedReviewTabProps> = ({ review, username, onRefresh, startDate, endDate, pipeHeight }) => {
     const [comment, setComment] = useState(review.review_comment || '');
     const [showAddAnnotation, setShowAddAnnotation] = useState(false);
     const [newAnnotation, setNewAnnotation] = useState({
@@ -136,24 +142,44 @@ const ProcessedReviewTab: React.FC<ProcessedReviewTabProps> = ({ review, usernam
                 </div>
             )}
 
-            {/* Chart Placeholder */}
+            {/* Monitor-Specific Charts */}
             <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                     <LineChart size={20} className="text-green-500" />
                     Processed Data Charts
                 </h3>
 
-                <div className="bg-gray-50 rounded-lg p-8 text-center">
-                    <LineChart size={48} className="text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500 mb-2">
-                        Monitor-specific charts will be implemented in Phase 5.
-                    </p>
-                    <p className="text-sm text-gray-400">
-                        {review.install_type === 'Flow Monitor' && 'FDV vs Rainfall, DWF Analysis, Log Scatter Plot'}
-                        {review.install_type === 'Rain Gauge' && 'Intensity Graph with RG comparisons'}
-                        {review.install_type === 'Pump Logger' && 'On/Off State Graph'}
-                    </p>
-                </div>
+                {review.install_type === 'Flow Monitor' && (
+                    <FlowMonitorChart
+                        installId={review.install_id}
+                        startDate={startDate}
+                        endDate={endDate}
+                        pipeHeight={pipeHeight}
+                    />
+                )}
+
+                {review.install_type === 'Rain Gauge' && (
+                    <RainGaugeChart
+                        installId={review.install_id}
+                        startDate={startDate}
+                        endDate={endDate}
+                    />
+                )}
+
+                {(review.install_type === 'Pump Logger' || review.install_type === 'Pump Station') && (
+                    <PumpLoggerChart
+                        installId={review.install_id}
+                        startDate={startDate}
+                        endDate={endDate}
+                    />
+                )}
+
+                {!['Flow Monitor', 'Rain Gauge', 'Pump Logger', 'Pump Station'].includes(review.install_type) && (
+                    <div className="bg-gray-50 rounded-lg p-8 text-center">
+                        <LineChart size={48} className="text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-500">No specific chart available for {review.install_type}</p>
+                    </div>
+                )}
             </div>
 
             {/* Annotations */}

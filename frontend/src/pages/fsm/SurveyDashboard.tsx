@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import type { Site, Monitor, Install, Interim } from '../../api/hooks';
 import {
     ArrowLeft, MapPin, Loader2, Plus, Building2, CloudRain,
-    ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive, Play, Calendar, FileText
+    ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive, Play, Calendar, FileText, Pencil
 } from 'lucide-react';
 import AddSiteModal from './AddSiteModal';
 import EditProjectModal from './EditProjectModal';
@@ -15,6 +15,8 @@ import ManageMonitorModal from './ManageMonitorModal';
 import AddInstallModal from './AddInstallModal';
 import DeleteInstallModal from './DeleteInstallModal';
 import CreateInterimModal from './CreateInterimModal';
+import EditInterimModal from './EditInterimModal';
+import DeleteInterimConfirmModal from './DeleteInterimConfirmModal';
 
 const SurveyDashboard: React.FC = () => {
     const { projectId } = useParams<{ projectId: string }>();
@@ -41,6 +43,8 @@ const SurveyDashboard: React.FC = () => {
     const [isDataProcessingOpen, setIsDataProcessingOpen] = useState(false);
     const [isInterimsOpen, setIsInterimsOpen] = useState(true);
     const [isCreateInterimModalOpen, setIsCreateInterimModalOpen] = useState(false);
+    const [editingInterim, setEditingInterim] = useState<Interim | null>(null);
+    const [deletingInterimConfirm, setDeletingInterimConfirm] = useState<Interim | null>(null);
 
     // Group sites by type
     const networkAssets = sites?.filter(s => s.site_type === 'Flow Monitor' || s.site_type === 'Pump Station') || [];
@@ -549,6 +553,24 @@ const SurveyDashboard: React.FC = () => {
                                                             >
                                                                 Manage
                                                             </Link>
+                                                            {interim.status !== 'locked' && (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => setEditingInterim(interim)}
+                                                                        className="text-gray-400 hover:text-purple-600"
+                                                                        title="Edit dates"
+                                                                    >
+                                                                        <Pencil size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setDeletingInterimConfirm(interim)}
+                                                                        className="text-gray-400 hover:text-red-600"
+                                                                        title="Delete interim"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                </>
+                                                            )}
                                                             {interim.status === 'complete' && (
                                                                 <button className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
                                                                     <FileText size={14} />
@@ -753,6 +775,22 @@ const SurveyDashboard: React.FC = () => {
                 onClose={() => setIsCreateInterimModalOpen(false)}
                 projectId={id}
             />
+
+            {editingInterim && (
+                <EditInterimModal
+                    isOpen={!!editingInterim}
+                    onClose={() => setEditingInterim(null)}
+                    interim={editingInterim}
+                />
+            )}
+
+            {deletingInterimConfirm && (
+                <DeleteInterimConfirmModal
+                    isOpen={!!deletingInterimConfirm}
+                    onClose={() => setDeletingInterimConfirm(null)}
+                    interim={deletingInterimConfirm}
+                />
+            )}
         </div>
     );
 };
