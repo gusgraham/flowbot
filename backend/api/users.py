@@ -16,7 +16,7 @@ def read_user_me(
 ):
     return current_user
 
-@router.get("/", response_model=List[UserRead])
+@router.get("", response_model=List[UserRead])
 def read_users(
     skip: int = 0,
     limit: int = 100,
@@ -31,7 +31,7 @@ def read_users(
     users = session.exec(statement).all()
     return users
 
-@router.post("/", response_model=UserRead)
+@router.post("", response_model=UserRead)
 def create_user(
     user_in: UserCreate,
     session: Session = Depends(get_session),

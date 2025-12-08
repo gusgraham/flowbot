@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import "gantt-task-react/dist/index.css"; // Keeping css for now if needed elsewhere, or remove if specific to lib
+
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Play, AlertCircle, Loader2, Plus } from 'lucide-react';
 import RainfallEventsGantt from './RainfallEventsGantt';

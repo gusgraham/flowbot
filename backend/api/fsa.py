@@ -27,7 +27,7 @@ router = APIRouter(prefix="/fsa", tags=["Flow Survey Analysis"])
 # PROJECTS
 # ==========================================
 
-@router.post("/projects/", response_model=FsaProjectRead)
+@router.post("/projects", response_model=FsaProjectRead)
 def create_project(
     project: FsaProjectCreate, 
     session: Session = Depends(get_session),
@@ -40,7 +40,7 @@ def create_project(
     session.refresh(db_project)
     return db_project
 
-@router.get("/projects/", response_model=List[FsaProjectRead])
+@router.get("/projects", response_model=List[FsaProjectRead])
 def read_projects(
     offset: int = 0,
     limit: int = Query(default=100, le=100),
