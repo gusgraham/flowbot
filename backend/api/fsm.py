@@ -71,8 +71,11 @@ def get_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Access Control
-    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+    # Access Control: Owner, Admin, or Collaborator
+    if not (current_user.is_superuser or 
+            current_user.role == 'Admin' or 
+            project.owner_id == current_user.id or 
+            service.is_collaborator(project_id, current_user.id)):
         raise HTTPException(status_code=403, detail="Not authorized to view this project")
         
     return project
@@ -88,7 +91,10 @@ def update_project(
     if not existing:
         raise HTTPException(status_code=404, detail="Project not found")
         
-    if not (current_user.is_superuser or current_user.role == 'Admin' or existing.owner_id == current_user.id):
+    if not (current_user.is_superuser or 
+            current_user.role == 'Admin' or 
+            existing.owner_id == current_user.id or 
+            service.is_collaborator(project_id, current_user.id)):
         raise HTTPException(status_code=403, detail="Not authorized to update this project")
 
     updated_project = service.update_project(project_id, project)
@@ -632,6 +638,83 @@ def process_project_data(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Project processing failed: {str(e)}")
+
+# ==========================================
+# COLLABORATORS
+# ==========================================
+from pydantic import BaseModel
+from domain.auth import UserRead
+
+class CollaboratorAdd(BaseModel):
+    username_or_email: str
+
+@router.get("/projects/{project_id}/collaborators", response_model=List[UserRead])
+def read_collaborators(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """List all collaborators for a project."""
+    service = ProjectService(session)
+    project = service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Check permissions? Collaborators can see other collaborators? Yes.
+    if project.owner_id != current_user.id:
+        collabs = service.get_collaborators(project_id)
+        if current_user.id not in [u.id for u in collabs] and not current_user.is_superuser:
+             raise HTTPException(status_code=403, detail="Not authorized")
+
+    return service.get_collaborators(project_id)
+
+@router.post("/projects/{project_id}/collaborators", response_model=UserRead)
+def add_collaborator(
+    project_id: int,
+    body: CollaboratorAdd,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Add a collaborator to a project."""
+    service = ProjectService(session)
+    project = service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    if project.owner_id != current_user.id and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Only the owner can add collaborators")
+        
+    # Find user
+    from sqlmodel import select, or_
+    stmt = select(User).where(or_(User.username == body.username_or_email, User.email == body.username_or_email))
+    user_to_add = session.exec(stmt).first()
+    
+    if not user_to_add:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    service.add_collaborator(project_id, user_to_add.id)
+    return user_to_add
+
+@router.delete("/projects/{project_id}/collaborators/{user_id}")
+def remove_collaborator(
+    project_id: int,
+    user_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Remove a collaborator from a project."""
+    service = ProjectService(session)
+    project = service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    if project.owner_id != current_user.id and not current_user.is_superuser:
+        # Collaborators can remove themselves? Optional quality of life.
+        if current_user.id != user_id:
+             raise HTTPException(status_code=403, detail="Only the owner can remove collaborators")
+    
+    service.remove_collaborator(project_id, user_id)
+    return {"status": "success"}
 
 # ==========================================
 # INTERIMS

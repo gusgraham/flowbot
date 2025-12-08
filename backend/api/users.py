@@ -48,15 +48,9 @@ def create_user(
     auth_service = AuthService()
     hashed_password = auth_service.get_password_hash(user_in.password)
     
-    db_user = User(
-        username=user_in.username,
-        email=user_in.email,
-        full_name=user_in.full_name,
-        hashed_password=hashed_password,
-        role=user_in.role,
-        is_superuser=user_in.is_superuser,
-        is_active=user_in.is_active,
-    )
+    # Create user dict excluding password, then add hashed_password
+    user_data = user_in.model_dump(exclude={"password"})
+    db_user = User(**user_data, hashed_password=hashed_password)
     
     session.add(db_user)
     session.commit()
@@ -78,21 +72,15 @@ def update_user(
             detail="The user with this id does not exist in the system",
         )
     
-    if user_in.password:
-        auth_service = AuthService()
-        hashed_password = auth_service.get_password_hash(user_in.password)
-        user.hashed_password = hashed_password
+    user_data = user_in.model_dump(exclude_unset=True)
     
-    if user_in.email is not None:
-        user.email = user_in.email
-    if user_in.full_name is not None:
-        user.full_name = user_in.full_name
-    if user_in.is_active is not None:
-        user.is_active = user_in.is_active
-    if user_in.is_superuser is not None:
-        user.is_superuser = user_in.is_superuser
-    if user_in.role is not None:
-        user.role = user_in.role
+    if "password" in user_data:
+        auth_service = AuthService()
+        password = user_data.pop("password")
+        user.hashed_password = auth_service.get_password_hash(password)
+        
+    for key, value in user_data.items():
+        setattr(user, key, value)
         
     session.add(user)
     session.commit()

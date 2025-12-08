@@ -15,14 +15,20 @@ const MainLayout: React.FC = () => {
 
     const navItems = [
         { name: 'Hub', path: '/', icon: LayoutDashboard },
-        { name: 'FSM', path: '/fsm', icon: Database },
-        { name: 'Analysis', path: '/analysis', icon: Activity },
-        { name: 'Verification', path: '/verification', icon: CheckCircle },
-        { name: 'Water Quality', path: '/wq', icon: Droplets },
+        { name: 'FSM', path: '/fsm', icon: Database, hasAccess: user?.access_fsm },
+        { name: 'Analysis', path: '/analysis', icon: Activity, hasAccess: user?.access_fsa },
+        { name: 'Verification', path: '/verification', icon: CheckCircle, hasAccess: user?.access_verification },
+        { name: 'Water Quality', path: '/wq', icon: Droplets, hasAccess: user?.access_wq },
     ];
 
+    const filteredNavItems = navItems.filter(item =>
+        item.name === 'Hub' || // Hub is always accessible
+        user?.is_superuser || // Superuser sees all
+        item.hasAccess // Check permission
+    );
+
     if (user?.is_superuser || user?.role === 'Admin') {
-        navItems.push({ name: 'Users', path: '/admin/users', icon: Users });
+        filteredNavItems.push({ name: 'Users', path: '/admin/users', icon: Users });
     }
 
     const handleSignOut = () => {
@@ -57,7 +63,7 @@ const MainLayout: React.FC = () => {
                 </div>
 
                 <nav className="flex-1 p-4 space-y-1">
-                    {navItems.map((item) => {
+                    {filteredNavItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
 
@@ -100,7 +106,7 @@ const MainLayout: React.FC = () => {
             <main className="flex-1 overflow-auto">
                 <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8">
                     <h2 className="text-lg font-semibold text-gray-800">
-                        {navItems.find(i => location.pathname.startsWith(i.path) && i.path !== '/')?.name || 'Hub'}
+                        {filteredNavItems.find(i => location.pathname.startsWith(i.path) && i.path !== '/')?.name || 'Hub'}
                     </h2>
                     <div className="flex items-center gap-4">
                         <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs">

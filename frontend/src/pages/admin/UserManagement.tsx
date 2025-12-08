@@ -20,7 +20,11 @@ const UserManagement = () => {
         password: '',
         role: 'Engineer',
         is_active: true,
-        is_superuser: false
+        is_superuser: false,
+        access_fsm: true,
+        access_fsa: true,
+        access_wq: true,
+        access_verification: true
     });
 
     const handleAddUser = async (e: React.FormEvent) => {
@@ -35,7 +39,11 @@ const UserManagement = () => {
                 password: '',
                 role: 'Engineer',
                 is_active: true,
-                is_superuser: false
+                is_superuser: false,
+                access_fsm: true,
+                access_fsa: true,
+                access_wq: true,
+                access_verification: true
             });
         } catch (err) {
             console.error("Failed to create user", err);
@@ -46,21 +54,18 @@ const UserManagement = () => {
         e.preventDefault();
         if (!selectedUser) return;
 
-        console.log("Updating user:", selectedUser.id);
-
         try {
-            // Only send fields that are relevant for update
             const updates: UserUpdate = {
                 role: formData.role,
                 is_active: formData.is_active,
-                is_superuser: formData.is_superuser
+                is_superuser: formData.is_superuser,
+                access_fsm: formData.access_fsm,
+                access_fsa: formData.access_fsa,
+                access_wq: formData.access_wq,
+                access_verification: formData.access_verification
             };
 
-            console.log("Update payload:", updates);
-
             await updateUser.mutateAsync({ id: selectedUser.id, updates });
-            console.log("Update successful");
-
             setIsEditModalOpen(false);
             setSelectedUser(null);
         } catch (err) {
@@ -72,10 +77,14 @@ const UserManagement = () => {
     const openEditModal = (user: User) => {
         setSelectedUser(user);
         setFormData({
-            ...formData, // Keep other defaults
+            ...formData,
             role: user.role,
             is_active: user.is_active,
-            is_superuser: user.is_superuser
+            is_superuser: user.is_superuser,
+            access_fsm: user.access_fsm ?? true,
+            access_fsa: user.access_fsa ?? true,
+            access_wq: user.access_wq ?? true,
+            access_verification: user.access_verification ?? true
         });
         setIsEditModalOpen(true);
     };
@@ -107,6 +116,7 @@ const UserManagement = () => {
                             <th className="px-6 py-4 font-medium">Role</th>
                             <th className="px-6 py-4 font-medium">Status</th>
                             <th className="px-6 py-4 font-medium">Admin</th>
+                            <th className="px-6 py-4 font-medium">Module Access</th>
                             <th className="px-6 py-4 font-medium text-right">Actions</th>
                         </tr>
                     </thead>
@@ -144,6 +154,17 @@ const UserManagement = () => {
                                     {user.is_superuser && (
                                         <Shield size={18} className="text-purple-400" />
                                     )}
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="flex gap-1 flex-wrap">
+                                        {user.access_fsm && <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">FSM</span>}
+                                        {user.access_fsa && <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">FSA</span>}
+                                        {user.access_wq && <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">WQ</span>}
+                                        {user.access_verification && <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">Verif</span>}
+                                        {(!user.access_fsm && !user.access_fsa && !user.access_wq && !user.access_verification) &&
+                                            <span className="text-xs text-gray-600 italic">None</span>
+                                        }
+                                    </div>
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                     <button
@@ -220,6 +241,52 @@ const UserManagement = () => {
                                 </div>
                             </div>
 
+                            <div className="space-y-2 border-t border-gray-700 pt-4 mt-4">
+                                <label className="block text-sm font-medium text-gray-400">Module Access</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="access_fsm"
+                                            checked={formData.access_fsm}
+                                            onChange={(e) => setFormData({ ...formData, access_fsm: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="access_fsm" className="text-sm text-gray-400">FSM</label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="access_fsa"
+                                            checked={formData.access_fsa}
+                                            onChange={(e) => setFormData({ ...formData, access_fsa: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="access_fsa" className="text-sm text-gray-400">FSA</label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="access_wq"
+                                            checked={formData.access_wq}
+                                            onChange={(e) => setFormData({ ...formData, access_wq: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="access_wq" className="text-sm text-gray-400">WQ</label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="access_verification"
+                                            checked={formData.access_verification}
+                                            onChange={(e) => setFormData({ ...formData, access_verification: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="access_verification" className="text-sm text-gray-400">Verification</label>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="flex justify-end gap-3 mt-6">
                                 <button
                                     type="button"
@@ -280,6 +347,52 @@ const UserManagement = () => {
                                         className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
                                     />
                                     <label htmlFor="edit_is_superuser" className="text-sm text-gray-400">Superuser Access</label>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 border-t border-gray-700 pt-4 mt-2">
+                                <label className="block text-sm font-medium text-gray-400">Module Access</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="edit_access_fsm"
+                                            checked={formData.access_fsm}
+                                            onChange={(e) => setFormData({ ...formData, access_fsm: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="edit_access_fsm" className="text-sm text-gray-400">FSM</label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="edit_access_fsa"
+                                            checked={formData.access_fsa}
+                                            onChange={(e) => setFormData({ ...formData, access_fsa: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="edit_access_fsa" className="text-sm text-gray-400">FSA</label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="edit_access_wq"
+                                            checked={formData.access_wq}
+                                            onChange={(e) => setFormData({ ...formData, access_wq: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="edit_access_wq" className="text-sm text-gray-400">WQ</label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="edit_access_verification"
+                                            checked={formData.access_verification}
+                                            onChange={(e) => setFormData({ ...formData, access_verification: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="edit_access_verification" className="text-sm text-gray-400">Verification</label>
+                                    </div>
                                 </div>
                             </div>
 

@@ -279,6 +279,44 @@ export const useUpdateProject = () => {
     });
 };
 
+// Collaborators
+export const useProjectCollaborators = (projectId: number) => {
+    return useQuery({
+        queryKey: ['project_collaborators', projectId],
+        queryFn: async () => {
+            const { data } = await api.get<User[]>(`/projects/${projectId}/collaborators`);
+            return data;
+        },
+        enabled: !!projectId,
+    });
+};
+
+export const useAddCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, usernameOrEmail }: { projectId: number; usernameOrEmail: string }) => {
+            const { data } = await api.post<User>(`/projects/${projectId}/collaborators`, { username_or_email: usernameOrEmail });
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['project_collaborators', variables.projectId] });
+            queryClient.invalidateQueries({ queryKey: ['projects'] }); // In case list changes? Maybe not needed but safe.
+        },
+    });
+};
+
+export const useRemoveCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, userId }: { projectId: number; userId: number }) => {
+            await api.delete(`/projects/${projectId}/collaborators/${userId}`);
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['project_collaborators', variables.projectId] });
+        },
+    });
+};
+
 export const useDeleteProject = () => {
     const queryClient = useQueryClient();
     return useMutation({
@@ -713,6 +751,10 @@ export interface User {
     is_active: boolean;
     is_superuser: boolean;
     role: string;
+    access_fsm?: boolean;
+    access_fsa?: boolean;
+    access_wq?: boolean;
+    access_verification?: boolean;
 }
 
 export interface UserCreate {
@@ -723,6 +765,10 @@ export interface UserCreate {
     role: string;
     is_superuser?: boolean;
     is_active?: boolean;
+    access_fsm?: boolean;
+    access_fsa?: boolean;
+    access_wq?: boolean;
+    access_verification?: boolean;
 }
 
 export interface UserUpdate {
@@ -732,6 +778,10 @@ export interface UserUpdate {
     role?: string;
     is_active?: boolean;
     is_superuser?: boolean;
+    access_fsm?: boolean;
+    access_fsa?: boolean;
+    access_wq?: boolean;
+    access_verification?: boolean;
 }
 
 export const useUsers = () => {

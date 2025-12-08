@@ -38,12 +38,21 @@ class ProjectService:
         return self.project_repo.update(project_id, project)
 
     def list_projects(self, offset: int = 0, limit: int = 100, owner_id: Optional[int] = None) -> List[FsmProject]:
-        # If owner_id is provided, filter by it.
-        # BaseRepository.list doesn't support filtering, so we might need to do it manually or add a method to repo.
-        # For now, let's do it here or use a custom query.
+        # If owner_id (user_id) is provided, filter by Owner OR Collaborator.
         if owner_id:
-            from sqlmodel import select
-            statement = select(FsmProject).where(FsmProject.owner_id == owner_id).offset(offset).limit(limit)
+            from sqlmodel import select, or_, col
+            from domain.fsm import ProjectCollaborator
+            
+            # Query: Projects where owner_id matches OR project_id is in (select project_id from collaborators where user_id matches)
+            # Subquery approach is cleaner for Many-to-Many
+            collab_subquery = select(ProjectCollaborator.project_id).where(ProjectCollaborator.user_id == owner_id)
+            
+            statement = select(FsmProject).where(
+                or_(
+                    FsmProject.owner_id == owner_id,
+                    col(FsmProject.id).in_(collab_subquery)
+                )
+            ).offset(offset).limit(limit)
             return self.session.exec(statement).all()
         return self.project_repo.list(offset, limit)
 
@@ -51,6 +60,52 @@ class ProjectService:
         # TODO: Add cascade delete logic if needed (though DB FKs might handle it)
         # For now, just delete the project
         return self.project_repo.delete(project_id)
+
+    # Collaborators
+    def add_collaborator(self, project_id: int, user_id: int):
+        from domain.fsm import ProjectCollaborator
+        from sqlmodel import select
+        # Check if already exists
+        statement = select(ProjectCollaborator).where(
+            ProjectCollaborator.project_id == project_id,
+            ProjectCollaborator.user_id == user_id
+        )
+        existing = self.session.exec(statement).first()
+        if not existing:
+            link = ProjectCollaborator(project_id=project_id, user_id=user_id)
+            self.session.add(link)
+            self.session.commit()
+            
+    def remove_collaborator(self, project_id: int, user_id: int):
+        from domain.fsm import ProjectCollaborator
+        from sqlmodel import select
+        statement = select(ProjectCollaborator).where(
+            ProjectCollaborator.project_id == project_id,
+            ProjectCollaborator.user_id == user_id
+        )
+        link = self.session.exec(statement).first()
+        if link:
+            self.session.delete(link)
+            self.session.commit()
+            
+    def get_collaborators(self, project_id: int):
+        # Return list of User objects
+        from domain.auth import User
+        from domain.fsm import ProjectCollaborator
+        from sqlmodel import select
+        
+        statement = select(User).join(ProjectCollaborator).where(ProjectCollaborator.project_id == project_id)
+        return self.session.exec(statement).all()
+
+    def is_collaborator(self, project_id: int, user_id: int) -> bool:
+        from domain.fsm import ProjectCollaborator
+        from sqlmodel import select
+        
+        statement = select(ProjectCollaborator).where(
+            ProjectCollaborator.project_id == project_id,
+            ProjectCollaborator.user_id == user_id
+        )
+        return self.session.exec(statement).first() is not None
 
     # Sites
     def create_site(self, site_in: SiteCreate) -> Site:

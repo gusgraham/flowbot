@@ -1,8 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Database, Activity, CheckCircle, Droplets, ArrowRight } from 'lucide-react';
+import { useCurrentUser } from '../api/hooks';
 
 const Hub: React.FC = () => {
+    const { data: user } = useCurrentUser();
+
     const modules = [
         {
             name: 'Field Survey Management',
@@ -11,7 +14,8 @@ const Hub: React.FC = () => {
             icon: Database,
             color: 'bg-blue-500',
             bg: 'bg-blue-50',
-            text: 'text-blue-700'
+            text: 'text-blue-700',
+            hasAccess: user?.access_fsm
         },
         {
             name: 'Analysis Services',
@@ -20,7 +24,8 @@ const Hub: React.FC = () => {
             icon: Activity,
             color: 'bg-purple-500',
             bg: 'bg-purple-50',
-            text: 'text-purple-700'
+            text: 'text-purple-700',
+            hasAccess: user?.access_fsa
         },
         {
             name: 'Verification',
@@ -29,7 +34,8 @@ const Hub: React.FC = () => {
             icon: CheckCircle,
             color: 'bg-green-500',
             bg: 'bg-green-50',
-            text: 'text-green-700'
+            text: 'text-green-700',
+            hasAccess: user?.access_verification
         },
         {
             name: 'Water Quality',
@@ -38,7 +44,8 @@ const Hub: React.FC = () => {
             icon: Droplets,
             color: 'bg-cyan-500',
             bg: 'bg-cyan-50',
-            text: 'text-cyan-700'
+            text: 'text-cyan-700',
+            hasAccess: user?.access_wq
         }
     ];
 
@@ -50,7 +57,7 @@ const Hub: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {modules.map((module) => {
+                {modules.filter(m => m.hasAccess || user?.is_superuser).map((module) => {
                     const Icon = module.icon;
                     return (
                         <Link

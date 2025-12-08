@@ -22,6 +22,11 @@ class FsmProjectBase(SQLModel):
     default_download_path: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
+class ProjectCollaborator(SQLModel, table=True):
+    project_id: int = Field(foreign_key="fsmproject.id", primary_key=True)
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    # can_edit: bool = True # Future extension
+
 class FsmProject(FsmProjectBase, table=True):
     __tablename__ = "fsmproject"
     
@@ -33,6 +38,13 @@ class FsmProject(FsmProjectBase, table=True):
     sites: List["Site"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     installs: List["Install"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     monitors: List["Monitor"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    
+    # Collaborators (Many-to-Many via ProjectCollaborator)
+    # We import User from domain.auth but to avoid circular import at top level, usage in List["User"] is string.
+    # However, SQLModel needs the class available in the registry. 
+    # Usually we can do: use `from domain.auth import User` inside methods or avoid explicit type if string used?
+    # Actually Link models need to be defined.
+    collaborators: List["User"] = Relationship(link_model=ProjectCollaborator)
 
 class FsmProjectCreate(SQLModel):
     name: str
