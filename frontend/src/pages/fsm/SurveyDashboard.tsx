@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall, useIngestProject, useProcessProject, useProjectInterims } from '../../api/hooks';
+import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall, useIngestProject, useProcessProject, useProjectInterims, useFsmProjectEvents, useDetectEvents, useUpdateEvent } from '../../api/hooks';
 import { useToast } from '../../contexts/ToastContext';
-import type { Site, Monitor, Install, Interim } from '../../api/hooks';
+import type { Site, Monitor, Install, Interim, FsmEvent } from '../../api/hooks';
 import {
     ArrowLeft, MapPin, Loader2, Plus, Building2, CloudRain,
     ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive, Play, Calendar, FileText, Pencil
@@ -41,6 +41,7 @@ const SurveyDashboard: React.FC = () => {
     const [isSitesOpen, setIsSitesOpen] = useState(false);
     const [isInstallsOpen, setIsInstallsOpen] = useState(false);
     const [isDataProcessingOpen, setIsDataProcessingOpen] = useState(false);
+    const [isEventsOpen, setIsEventsOpen] = useState(false);
     const [isInterimsOpen, setIsInterimsOpen] = useState(true);
     const [isCreateInterimModalOpen, setIsCreateInterimModalOpen] = useState(false);
     const [editingInterim, setEditingInterim] = useState<Interim | null>(null);
@@ -60,6 +61,9 @@ const SurveyDashboard: React.FC = () => {
     const { mutate: uninstallInstall } = useUninstallInstall();
     const { mutate: ingestProject, isPending: isIngesting } = useIngestProject();
     const { mutate: processProject, isPending: isProcessing } = useProcessProject();
+    const { data: events } = useFsmProjectEvents(id);
+    const detectEvents = useDetectEvents();
+    const updateEvent = useUpdateEvent();
     const { showToast } = useToast();
 
     if (projectLoading || sitesLoading) {
@@ -484,6 +488,102 @@ const SurveyDashboard: React.FC = () => {
                                         </button>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Project Events */}
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <div
+                            className="p-6 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors"
+                            onClick={() => setIsEventsOpen(!isEventsOpen)}
+                        >
+                            <div className="flex items-center gap-2">
+                                {isEventsOpen ? <ChevronDown size={20} className="text-gray-400" /> : <ChevronRight size={20} className="text-gray-400" />}
+                                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                                    <CloudRain size={20} className="text-blue-500" />
+                                    Project Events
+                                </h2>
+                                {events && events.length > 0 && (
+                                    <span className="text-sm text-gray-500">({events.length})</span>
+                                )}
+                            </div>
+                        </div>
+
+                        {isEventsOpen && (
+                            <div className="px-6 pb-6 border-t border-gray-100 pt-4">
+                                <div className="mb-4">
+                                    <p className="text-sm text-gray-600 mb-3">
+                                        Detect and review rainfall events from all rain gauges in this project.
+                                    </p>
+                                    <button
+                                        onClick={() => {
+                                            if (!project.survey_start_date || !project.survey_end_date) {
+                                                showToast('Please set survey start and end dates in project settings', 'error');
+                                                return;
+                                            }
+                                            detectEvents.mutate({
+                                                projectId: id,
+                                                startDate: project.survey_start_date,
+                                                endDate: project.survey_end_date,
+                                                minIntensity: 0.5,
+                                                minDurationHours: 0.5,
+                                                precedingDryHours: 6.0,
+                                            }, {
+                                                onSuccess: () => showToast('Events detected successfully', 'success'),
+                                                onError: () => showToast('Failed to detect events', 'error'),
+                                            });
+                                        }}
+                                        disabled={detectEvents.isPending}
+                                        className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                    >
+                                        {detectEvents.isPending ? <Loader2 size={18} className="animate-spin" /> : <CloudRain size={18} />}
+                                        Detect Events
+                                    </button>
+                                </div>
+
+                                {events && events.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {events.map((event) => (
+                                            <div
+                                                key={event.id}
+                                                className="border border-gray-200 rounded-lg p-3 flex items-center justify-between"
+                                                style={{ borderLeftWidth: '4px', borderLeftColor: event.event_type === 'Storm' ? '#3b82f6' : '#6b7280' }}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={event.reviewed}
+                                                        onChange={() => {
+                                                            updateEvent.mutate({
+                                                                eventId: event.id,
+                                                                reviewed: !event.reviewed,
+                                                            });
+                                                        }}
+                                                        className="w-4 h-4 cursor-pointer"
+                                                    />
+                                                    <div>
+                                                        <p className="text-sm font-medium text-gray-900">
+                                                            {new Date(event.start_time).toLocaleString()} - {new Date(event.end_time).toLocaleString()}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500">
+                                                            {event.total_rainfall_mm?.toFixed(1)} mm • {event.max_intensity_mm_hr?.toFixed(1)} mm/hr • {event.event_type}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {event.reviewed && (
+                                                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">
+                                                        ✓ Reviewed
+                                                    </span>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-gray-400 italic text-center py-4">
+                                        No events detected yet. Click "Detect Events" to analyze rainfall data.
+                                    </p>
+                                )}
                             </div>
                         )}
                     </div>

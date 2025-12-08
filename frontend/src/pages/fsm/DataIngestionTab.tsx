@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Folder, Info, Save, Check, X, AlertCircle } from 'lucide-react';
-import { useRawDataSettings, useUpdateRawDataSettings, useInstall } from '../../api/hooks';
+import { Folder, Info, Save, Check, X, AlertCircle, Play } from 'lucide-react';
+import { useRawDataSettings, useUpdateRawDataSettings, useInstall, useIngestInstall } from '../../api/hooks';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api/client';
 
@@ -150,6 +150,7 @@ FileFormatInput.displayName = 'FileFormatInput';
 const DataIngestionTab: React.FC<DataIngestionTabProps> = ({ installId, installType }) => {
     const { data: settings, isLoading } = useRawDataSettings(installId);
     const { mutate: updateSettings, isPending } = useUpdateRawDataSettings();
+    const { mutate: ingestInstall, isPending: isIngesting } = useIngestInstall();
     const { showToast } = useToast();
 
     const [folderPath, setFolderPath] = useState('');
@@ -216,6 +217,18 @@ const DataIngestionTab: React.FC<DataIngestionTabProps> = ({ installId, installT
             }
         );
     }, [installId, folderPath, rainfallFormat, depthFormat, velocityFormat, batteryFormat, pumpLoggerFormat, updateSettings, showToast]);
+
+    const handleRunIngestion = useCallback(() => {
+        ingestInstall(installId, {
+            onSuccess: () => {
+                showToast('Ingestion started successfully', 'success');
+            },
+            onError: (error) => {
+                console.error('Failed to start ingestion:', error);
+                showToast('Failed to start ingestion', 'error');
+            }
+        });
+    }, [installId, ingestInstall, showToast]);
 
     if (isLoading) {
         return <div className="text-center py-8 text-gray-400">Loading settings...</div>;
@@ -311,8 +324,16 @@ const DataIngestionTab: React.FC<DataIngestionTabProps> = ({ installId, installT
                 />
             )}
 
-            {/* Save Button */}
+            {/* Action Buttons */}
             <div className="flex justify-end gap-3 pt-4 border-t">
+                <button
+                    onClick={handleRunIngestion}
+                    disabled={isIngesting}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <Play size={18} />
+                    {isIngesting ? 'Running...' : 'Run Ingestion'}
+                </button>
                 <button
                     onClick={handleSave}
                     disabled={isPending}

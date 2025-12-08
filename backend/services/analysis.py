@@ -1010,3 +1010,128 @@ class SpatialService:
             return 0.0
             
         return numerator / denominator
+
+
+# ==========================================
+# Standalone Event Detection (for FSM Events)
+# ==========================================
+
+def detect_rainfall_events(
+    data: pd.DataFrame,
+    timestamp_col: str = 'timestamp',
+    intensity_col: str = 'value',
+    min_intensity: float = 0.5,
+    min_duration_hours: float = 0.5,
+    preceding_dry_hours: float = 6.0
+) -> List[Dict[str, Any]]:
+    """
+    Detect rainfall events from a DataFrame.
+    
+    Args:
+        data: DataFrame with timestamp and intensity columns
+        timestamp_col: Name of timestamp column
+        intensity_col: Name of intensity column
+        min_intensity: Minimum intensity threshold (mm/hr)
+        min_duration_hours: Minimum event duration (hours)
+        preceding_dry_hours: Required dry period before event (hours)
+    
+    Returns:
+        List of detected events with start_time, end_time, event_type, etc.
+    """
+    if data.empty:
+        return []
+    
+    df = data.copy()
+    df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+    df = df.sort_values(timestamp_col)
+    
+    rain = df[intensity_col].to_numpy(dtype=np.float32, copy=False)
+    times = df[timestamp_col].to_numpy(copy=False)
+    
+    if rain.size == 0:
+        return []
+    
+    # Calculate time step in minutes
+    if len(times) > 1:
+        diffs = np.diff(times).astype('timedelta64[m]').astype(int)
+        valid_diffs = diffs[diffs > 0]
+        if valid_diffs.size > 0:
+            time_step_min = int(np.bincount(valid_diffs).argmax())
+        else:
+            time_step_min = 15  # Default
+    else:
+        time_step_min = 15
+    
+    # Calculate consecutive zeros needed for event separation
+    inter_event_minutes = int(preceding_dry_hours * 60)
+    consec_zero = max(1, int(inter_event_minutes / time_step_min))
+    
+    # Find separators (runs of zeros)
+    is_below = rain < min_intensity
+    
+    if consec_zero <= 0:
+        seps = np.empty(0, dtype=np.int64)
+    elif consec_zero == 1:
+        seps = np.where(is_below)[0]
+    else:
+        if len(rain) < consec_zero:
+            seps = np.empty(0, dtype=np.int64)
+        else:
+            from numpy.lib.stride_tricks import sliding_window_view
+            w = sliding_window_view(is_below, consec_zero).all(axis=1)
+            seps = np.where(w)[0] + (consec_zero - 1)
+    
+    # Create event boundaries
+    if len(seps) > 0:
+        starts = np.r_[0, seps + 1]
+        ends = np.r_[seps, len(rain) - 1]
+        valid = starts <= ends
+        starts, ends = starts[valid], ends[valid]
+    else:
+        starts = np.array([0])
+        ends = np.array([len(rain) - 1])
+    
+    events = []
+    min_duration_readings = int(min_duration_hours * 60 / time_step_min)
+    
+    for s, e in zip(starts, ends):
+        s = max(0, min(s, len(rain) - 1))
+        e = max(0, min(e, len(rain) - 1))
+        
+        r = rain[s:e + 1]
+        if r.size == 0:
+            continue
+        
+        # Check if this is a real event (above threshold)
+        above = r >= min_intensity
+        
+        # Duration of above-threshold readings
+        duration_readings = above.sum()
+        
+        # Total rainfall depth
+        total_mm = float((r * (time_step_min / 60.0)).sum())
+        max_intensity = float(r.max())
+        
+        start_time = pd.Timestamp(times[s])
+        end_time = pd.Timestamp(times[e])
+        duration_hours = (end_time - start_time).total_seconds() / 3600
+        
+        # Classify event
+        if duration_readings >= min_duration_readings and max_intensity >= min_intensity:
+            event_type = "Storm"
+        elif total_mm > 0:
+            event_type = "No Event"  # Some rainfall but didn't meet criteria
+        else:
+            continue  # Skip completely dry periods
+        
+        events.append({
+            'start_time': start_time,
+            'end_time': end_time,
+            'event_type': event_type,
+            'total_rainfall_mm': round(total_mm, 2),
+            'max_intensity_mm_hr': round(max_intensity, 2),
+            'preceding_dry_hours': preceding_dry_hours,
+            'duration_hours': round(duration_hours, 2)
+        })
+    
+    return events

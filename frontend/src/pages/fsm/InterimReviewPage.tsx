@@ -8,10 +8,9 @@ import {
 } from 'lucide-react';
 import DataImportTab from './interim/DataImportTab';
 import ClassificationTab from './interim/ClassificationTab';
-import EventsTab from './interim/EventsTab';
 import ProcessedReviewTab from './interim/ProcessedReviewTab';
 
-type ReviewStage = 'data_import' | 'classification' | 'events' | 'review';
+type ReviewStage = 'data_import' | 'classification' | 'review';
 
 const InterimReviewPage: React.FC = () => {
     const { interimId } = useParams<{ interimId: string }>();
@@ -57,11 +56,11 @@ const InterimReviewPage: React.FC = () => {
     const completedReviews = reviews?.filter(r => r.review_complete).length || 0;
     const progressPct = totalReviews > 0 ? Math.round((completedReviews / totalReviews) * 100) : 0;
 
+    // Per-install review tabs (reduced to 3 stages - Events moved to interim level)
     const tabs: { key: ReviewStage; label: string; icon: React.ReactNode }[] = [
         { key: 'data_import', label: '1. Data Import', icon: <Database size={16} /> },
         { key: 'classification', label: '2. Classification', icon: <Tag size={16} /> },
-        { key: 'events', label: '3. Events', icon: <CloudRain size={16} /> },
-        { key: 'review', label: '4. Review', icon: <LineChart size={16} /> },
+        { key: 'review', label: '3. Review', icon: <LineChart size={16} /> },
     ];
 
     const getStageStatus = (review: InterimReview, stage: ReviewStage): 'complete' | 'incomplete' | 'warning' => {
@@ -70,8 +69,6 @@ const InterimReviewPage: React.FC = () => {
                 return review.data_import_acknowledged ? 'complete' : 'incomplete';
             case 'classification':
                 return review.classification_complete ? 'complete' : 'incomplete';
-            case 'events':
-                return review.events_complete ? 'complete' : 'incomplete';
             case 'review':
                 return review.review_complete ? 'complete' : 'incomplete';
             default:
@@ -104,8 +101,6 @@ const InterimReviewPage: React.FC = () => {
                 return <DataImportTab review={selectedReview} username={username} onRefresh={handleRefresh} />;
             case 'classification':
                 return <ClassificationTab review={selectedReview} username={username} onRefresh={handleRefresh} />;
-            case 'events':
-                return <EventsTab review={selectedReview} username={username} onRefresh={handleRefresh} />;
             case 'review':
                 return <ProcessedReviewTab
                     review={selectedReview}
@@ -113,8 +108,7 @@ const InterimReviewPage: React.FC = () => {
                     onRefresh={handleRefresh}
                     startDate={interim?.start_date}
                     endDate={interim?.end_date}
-                />;
-            default:
+                />; default:
                 return null;
         }
     };
@@ -164,7 +158,6 @@ const InterimReviewPage: React.FC = () => {
                             {reviews?.map((review) => {
                                 const allComplete = review.data_import_acknowledged &&
                                     review.classification_complete &&
-                                    review.events_complete &&
                                     review.review_complete;
 
                                 return (
@@ -191,7 +184,6 @@ const InterimReviewPage: React.FC = () => {
                                                 <div className="flex gap-1">
                                                     <span className={`w-2 h-2 rounded-full ${review.data_import_acknowledged ? 'bg-green-500' : 'bg-gray-300'}`} />
                                                     <span className={`w-2 h-2 rounded-full ${review.classification_complete ? 'bg-green-500' : 'bg-gray-300'}`} />
-                                                    <span className={`w-2 h-2 rounded-full ${review.events_complete ? 'bg-green-500' : 'bg-gray-300'}`} />
                                                     <span className={`w-2 h-2 rounded-full ${review.review_complete ? 'bg-green-500' : 'bg-gray-300'}`} />
                                                 </div>
                                             )}

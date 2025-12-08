@@ -345,6 +345,14 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
         const varName = 'Rain';
         const varData = data.variables[varName];
 
+        if (!varData) {
+            return (
+                <div className="text-center py-8 text-gray-500">
+                    No rain gauge data available
+                </div>
+            );
+        }
+
         return (
             <div>
                 <h3 className="text-lg font-semibold mb-2">{dataType === 'Raw' ? 'Tips' : 'Intensity'}</h3>

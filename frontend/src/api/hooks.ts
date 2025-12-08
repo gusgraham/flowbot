@@ -301,6 +301,20 @@ export const useIngestProject = () => {
     });
 };
 
+export const useIngestInstall = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (installId: number) => {
+            const { data } = await api.post(`/installs/${installId}/ingest`);
+            return data;
+        },
+        onSuccess: (_, installId) => {
+            queryClient.invalidateQueries({ queryKey: ['install', installId] });
+            queryClient.invalidateQueries({ queryKey: ['install_timeseries', installId] });
+        },
+    });
+};
+
 export const useImportProjectCsv = () => {
     const queryClient = useQueryClient();
     return useMutation({
@@ -1123,6 +1137,96 @@ export const useModelsStatus = () => {
         queryFn: async () => {
             const { data } = await api.get<Record<string, boolean>>(`/classification/models-status`);
             return data;
+        },
+    });
+};
+
+// ==========================================
+// FSM Events (Project-level rainfall events)
+// ==========================================
+
+export interface FsmEvent {
+    id: number;
+    project_id: number;
+    start_time: string;
+    end_time: string;
+    event_type: string;  // "Storm", "No Event", "Dry Day"
+    total_rainfall_mm?: number;
+    max_intensity_mm_hr?: number;
+    preceding_dry_hours?: number;
+    reviewed: boolean;
+    review_comment?: string;
+    reviewed_by?: string;
+    reviewed_at?: string;
+    created_at: string;
+}
+
+export const useFsmProjectEvents = (projectId: number, startDate?: string, endDate?: string) => {
+    return useQuery({
+        queryKey: ['fsm_project_events', projectId, startDate, endDate],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            const { data } = await api.get<FsmEvent[]>(`/projects/${projectId}/events?${params.toString()}`);
+            return data;
+        },
+        enabled: !!projectId,
+    });
+};
+
+export interface DetectEventsParams {
+    projectId: number;
+    startDate: string;
+    endDate: string;
+    minIntensity?: number;
+    minDurationHours?: number;
+    precedingDryHours?: number;
+}
+
+export const useDetectEvents = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, startDate, endDate, minIntensity, minDurationHours, precedingDryHours }: DetectEventsParams) => {
+            const params = new URLSearchParams({
+                start_date: startDate,
+                end_date: endDate,
+            });
+            if (minIntensity !== undefined) params.append('min_intensity', minIntensity.toString());
+            if (minDurationHours !== undefined) params.append('min_duration_hours', minDurationHours.toString());
+            if (precedingDryHours !== undefined) params.append('preceding_dry_hours', precedingDryHours.toString());
+
+            const { data } = await api.post(`/projects/${projectId}/events/detect?${params.toString()}`);
+            return data;
+        },
+        onSuccess: (_, { projectId }) => {
+            queryClient.invalidateQueries({ queryKey: ['fsm_project_events', projectId] });
+        },
+    });
+};
+
+export const useUpdateEvent = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ eventId, ...updates }: { eventId: number; reviewed?: boolean; review_comment?: string; event_type?: string }) => {
+            const { data } = await api.put<FsmEvent>(`/events/${eventId}`, updates);
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['fsm_project_events', data.project_id] });
+        },
+    });
+};
+
+export const useDeleteEvent = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (eventId: number) => {
+            const { data } = await api.delete(`/events/${eventId}`);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['fsm_project_events'] });
         },
     });
 };

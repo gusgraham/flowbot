@@ -334,6 +334,23 @@ class IngestionService:
         project.last_ingestion_date = datetime.now()
         self.session.add(project)
         self.session.commit()
+    
+    def ingest_install_by_id(self, install_id: int):
+        """
+        Ingest a single install by ID. Fetches the install and its project's default path.
+        """
+        install = self.session.get(Install, install_id)
+        if not install:
+            print(f"Install {install_id} not found")
+            return
+        
+        # Get project's default path as fallback
+        default_path = None
+        if install.project:
+            default_path = install.project.default_download_path
+        
+        # Call the main ingest_install method
+        self.ingest_install(install, default_path)
 
     def ingest_install(self, install: Install, default_path: Optional[str]):
         settings = install.raw_data_settings
@@ -392,9 +409,9 @@ class IngestionService:
             if template:
                 fname = self.decode_file_format(template, install)
                 if fname.lower().endswith('.flo'):
-                    process_file_type(template, BinaryParser.parse_flo_file, 'Rainfall')
+                    process_file_type(template, BinaryParser.parse_flo_file, 'Rain')
                 else:
-                    process_file_type(template, BinaryParser.parse_dat_file, 'Rainfall')
+                    process_file_type(template, BinaryParser.parse_dat_file, 'Rain')
 
         # Flow / Depth Monitor
         if install.install_type in ['Flow Monitor', 'Depth Monitor']:

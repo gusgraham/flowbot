@@ -325,3 +325,53 @@ class AttachmentCreate(AttachmentBase):
 
 class AttachmentRead(AttachmentBase):
     id: int
+
+# ==========================================
+# FSM EVENT (Project-level rainfall events)
+# ==========================================
+
+class FsmEventBase(SQLModel):
+    start_time: datetime
+    end_time: datetime
+    event_type: str = "Storm"  # Storm, No Event, Dry Day
+    total_rainfall_mm: Optional[float] = None
+    max_intensity_mm_hr: Optional[float] = None
+    preceding_dry_hours: Optional[float] = None
+    
+    # Review fields
+    reviewed: bool = False
+    review_comment: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+
+
+class FsmEvent(FsmEventBase, table=True):
+    __tablename__ = "fsmevent"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="fsmproject.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class FsmEventCreate(SQLModel):
+    project_id: int
+    start_time: datetime
+    end_time: datetime
+    event_type: str = "Storm"
+    total_rainfall_mm: Optional[float] = None
+    max_intensity_mm_hr: Optional[float] = None
+    preceding_dry_hours: Optional[float] = None
+
+
+class FsmEventUpdate(SQLModel):
+    event_type: Optional[str] = None
+    reviewed: Optional[bool] = None
+    review_comment: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+
+
+class FsmEventRead(FsmEventBase):
+    id: int
+    project_id: int
+    created_at: datetime

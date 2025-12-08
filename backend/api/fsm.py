@@ -3,6 +3,7 @@ Field Survey Management (FSM) API Endpoints
 All API endpoints related to field survey management are consolidated here.
 """
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlmodel import Session
 from database import get_session
@@ -14,7 +15,8 @@ from domain.fsm import (
     VisitRead, VisitCreate,
     NoteRead, NoteCreate,
     AttachmentRead, AttachmentCreate,
-    RawDataSettingsRead, RawDataSettingsCreate, RawDataSettingsUpdate
+    RawDataSettingsRead, RawDataSettingsCreate, RawDataSettingsUpdate,
+    FsmEvent, FsmEventCreate, FsmEventUpdate, FsmEventRead
 )
 from domain.interim import (
     Interim, InterimCreate, InterimUpdate, InterimRead,
@@ -1237,3 +1239,206 @@ def get_models_status(
     from services.classification import check_models_available
     
     return check_models_available()
+
+
+# ==========================================
+# FSM EVENTS (Project-level rainfall events)
+# ==========================================
+
+@router.get("/projects/{project_id}/events", response_model=List[FsmEventRead])
+def list_project_events(
+    project_id: int,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """List all events for a project, optionally filtered by date range."""
+    from datetime import datetime
+    
+    query = session.query(FsmEvent).filter(FsmEvent.project_id == project_id)
+    
+    if start_date:
+        query = query.filter(FsmEvent.end_time >= start_date)
+    if end_date:
+        query = query.filter(FsmEvent.start_time <= end_date)
+    
+    events = query.order_by(FsmEvent.start_time).all()
+    return events
+
+
+@router.post("/projects/{project_id}/events/detect")
+def detect_project_events(
+    project_id: int,
+    start_date: datetime = Query(...),
+    end_date: datetime = Query(...),
+    min_intensity: float = Query(default=0.5, description="Minimum intensity threshold (mm/hr)"),
+    min_duration_hours: float = Query(default=0.5, description="Minimum event duration (hours)"),
+    preceding_dry_hours: float = Query(default=6.0, description="Required dry period before event"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Detect rainfall events from all RG data in the project for the given date range."""
+    from domain.fsm import FsmProject, Install, TimeSeries
+    from infra.storage import StorageService
+    from services.analysis import detect_rainfall_events
+    import pandas as pd
+    
+    # Verify project exists
+    project = session.get(FsmProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    storage = StorageService()
+    
+    # Get all RG installs for this project
+    rg_installs = session.query(Install).filter(
+        Install.project_id == project_id,
+        Install.install_type.in_(["Rain Gauge", "Raingauge"])
+    ).all()
+    
+    if not rg_installs:
+        raise HTTPException(status_code=400, detail="No rain gauge installs found for this project")
+    
+    # Collect rainfall data from all RGs
+    all_rainfall_data = []
+    
+    for install in rg_installs:
+        timeseries = session.query(TimeSeries).filter(
+            TimeSeries.install_id == install.id
+        ).all()
+        
+        for ts in timeseries:
+            if not ts.filename:
+                continue
+            try:
+                data = storage.read_parquet(ts.filename)
+                if data is not None and not data.empty:
+                    # Standardize time column
+                    time_col = None
+                    for col in ['time', 'timestamp', 'Date']:
+                        if col in data.columns:
+                            time_col = col
+                            break
+                    if time_col:
+                        data[time_col] = pd.to_datetime(data[time_col])
+                        # Filter to date range
+                        mask = (data[time_col] >= start_date) & (data[time_col] <= end_date)
+                        data = data[mask]
+                        if not data.empty:
+                            data = data.rename(columns={time_col: 'timestamp'})
+                            all_rainfall_data.append(data)
+            except Exception as e:
+                print(f"Error reading RG data from {ts.filename}: {e}")
+    
+    if not all_rainfall_data:
+        raise HTTPException(status_code=400, detail="No rainfall data found for the specified period")
+    
+    # Combine all RG data (average if multiple RGs)
+    combined = pd.concat(all_rainfall_data)
+    combined = combined.groupby('timestamp').mean().reset_index()
+    combined = combined.sort_values('timestamp')
+    
+    # Find intensity column
+    intensity_col = None
+    for col in ['value', 'Intensity', 'Rain', 'IntensityData']:
+        if col in combined.columns:
+            intensity_col = col
+            break
+    
+    if not intensity_col:
+        raise HTTPException(status_code=400, detail="Could not find intensity column in rainfall data")
+    
+    # Run event detection using the analysis service algorithm
+    try:
+        events = detect_rainfall_events(
+            data=combined,
+            timestamp_col='timestamp',
+            intensity_col=intensity_col,
+            min_intensity=min_intensity,
+            min_duration_hours=min_duration_hours,
+            preceding_dry_hours=preceding_dry_hours
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Event detection failed: {str(e)}")
+    
+    # Delete existing events for this project in this date range
+    session.query(FsmEvent).filter(
+        FsmEvent.project_id == project_id,
+        FsmEvent.start_time >= start_date,
+        FsmEvent.end_time <= end_date
+    ).delete()
+    
+    # Save detected events
+    created_events = []
+    for event in events:
+        db_event = FsmEvent(
+            project_id=project_id,
+            start_time=event['start_time'],
+            end_time=event['end_time'],
+            event_type=event.get('event_type', 'Storm'),
+            total_rainfall_mm=event.get('total_rainfall_mm'),
+            max_intensity_mm_hr=event.get('max_intensity_mm_hr'),
+            preceding_dry_hours=event.get('preceding_dry_hours')
+        )
+        session.add(db_event)
+        created_events.append(db_event)
+    
+    session.commit()
+    
+    return {
+        "status": "success",
+        "message": f"Detected {len(created_events)} events",
+        "events_count": len(created_events)
+    }
+
+
+@router.put("/events/{event_id}", response_model=FsmEventRead)
+def update_event(
+    event_id: int,
+    update: FsmEventUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Update an event (typically for review/comment)."""
+    from datetime import datetime
+    
+    event = session.get(FsmEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    update_data = update.dict(exclude_unset=True)
+    
+    # If marking as reviewed, set reviewed_at
+    if update_data.get('reviewed') and not event.reviewed:
+        update_data['reviewed_at'] = datetime.now()
+        if current_user:
+            update_data['reviewed_by'] = current_user.username
+    
+    for key, value in update_data.items():
+        setattr(event, key, value)
+    
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    
+    return event
+
+
+@router.delete("/events/{event_id}")
+def delete_event(
+    event_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Delete an event."""
+    event = session.get(FsmEvent, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    session.delete(event)
+    session.commit()
+    
+    return {"status": "success", "message": "Event deleted"}

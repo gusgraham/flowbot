@@ -25,3 +25,17 @@ def trigger_ingestion(
     
     background_tasks.add_task(service.ingest_project, project_id)
     return {"message": "Ingestion started", "status": "processing"}
+
+@router.post("/installs/{install_id}/ingest")
+def trigger_install_ingestion(
+    install_id: int, 
+    background_tasks: BackgroundTasks,
+    service: IngestionService = Depends(get_ingestion_service),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Trigger raw data ingestion for a single install.
+    Runs as a background task.
+    """
+    background_tasks.add_task(service.ingest_install_by_id, install_id)
+    return {"message": "Ingestion started for install", "status": "processing"}
