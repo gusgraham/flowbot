@@ -518,14 +518,14 @@ const SurveyDashboard: React.FC = () => {
                                     </p>
                                     <button
                                         onClick={() => {
-                                            if (!project.survey_start_date || !project.survey_end_date) {
-                                                showToast('Please set survey start and end dates in project settings', 'error');
+                                            if (!project.survey_start_date) {
+                                                showToast('Please set survey start date in project settings', 'error');
                                                 return;
                                             }
                                             detectEvents.mutate({
                                                 projectId: id,
                                                 startDate: project.survey_start_date,
-                                                endDate: project.survey_end_date,
+                                                endDate: project.survey_end_date || new Date().toISOString(),
                                                 minIntensity: 0.5,
                                                 minDurationHours: 0.5,
                                                 precedingDryHours: 6.0,

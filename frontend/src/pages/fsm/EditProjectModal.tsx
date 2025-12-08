@@ -21,8 +21,8 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ isOpen, onClose, pr
                 name: project.name,
                 client: project.client,
                 client_job_ref: project.client_job_ref,
-                survey_start_date: project.survey_start_date,
-                survey_end_date: project.survey_end_date,
+                survey_start_date: project.survey_start_date ? project.survey_start_date.toString().split('T')[0] : undefined,
+                survey_end_date: project.survey_end_date ? project.survey_end_date.toString().split('T')[0] : undefined,
                 default_download_path: project.default_download_path
             });
         }

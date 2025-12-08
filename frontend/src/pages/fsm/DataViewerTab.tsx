@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useInstallTimeseries, useProcessInstall } from '../../api/hooks';
+import { useToast } from '../../contexts/ToastContext';
 import { Loader2, Calendar, Play, X, ZoomOut } from 'lucide-react';
 import {
     LineChart,
@@ -30,12 +31,18 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
         endDate || undefined
     );
 
+    const { success, error: showError } = useToast();
     const { mutate: processInstall, isLoading: isProcessing } = useProcessInstall();
 
     const handleProcess = () => {
         processInstall(installId, {
             onSuccess: () => {
                 setDataType('Processed');
+                success("Data has been successfully processed.");
+            },
+            onError: (err: any) => {
+                const message = err.response?.data?.detail || err.message || "Unknown error occurred";
+                showError(`Processing Failed: ${message}`);
             }
         });
     };

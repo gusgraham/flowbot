@@ -14,6 +14,8 @@ app = FastAPI(title="FlowBot Hub")
 origins = [
     "http://localhost:5173",
     "http://localhost:3000",
+    "http://GLWS-150447-BMF:5173",
+    "http://glws-150447-bmf:5173",
 ]
 
 app.add_middleware(

@@ -27,10 +27,7 @@ interface InstallFormData {
     rg_position?: string;
 }
 
-const PIPE_SHAPES = [
-    "Circular", "Rectangular", "Arched", "Cunette",
-    "Egg", "Egg 2", "Oval", "U-Shaped", "Other"
-];
+const PIPE_SHAPES = ["ARCH", "CIRC", "CNET", "EGG", "EGG2", "OVAL", "RECT", "UTOP", "USER"];
 
 const RG_POSITIONS = [
     "Ground", "Roof (First Floor)", "Roof (Higher)", "Post"

@@ -1,4 +1,5 @@
 
+from sqlalchemy import func
 import pandas as pd
 import numpy as np
 import math
@@ -155,6 +156,137 @@ class ProcessingService:
         effective_depths = np.minimum(depths, height_m)
         return effective_depths * width_m
 
+    def _process_rainfall_tips(self, tip_timestamps: List[datetime], tb_depth: float) -> pd.DataFrame:
+        """
+        Legacy rainfall processing algorithm.
+        Converts list of tip timestamps to 2-min intensity series.
+        """
+        if not tip_timestamps:
+            return pd.DataFrame()
+
+        # Create full 2-minute interval range
+        start_datetime = min(tip_timestamps)
+        end_datetime = max(tip_timestamps)
+
+        # Round start time to the next 2-minute interval
+        # (start.minute // 2) * 2 + 2 ensures we start at next even minute boundary
+        first_interval_start = start_datetime.replace(
+            minute=((start_datetime.minute // 2) * 2 + 2) % 60, # handle 60 rollover?
+            second=0,
+            microsecond=0
+        )
+        if (start_datetime.minute // 2) * 2 + 2 >= 60:
+             # If rolled over hour
+             first_interval_start = first_interval_start + pd.Timedelta(hours=1)
+             first_interval_start = first_interval_start.replace(minute=0)
+
+        # Legacy logic just does: minute=((start_datetime.minute // 2) * 2 + 2)
+        # Using pandas ceil might be safer? 
+        # But sticking to legacy intent: next 2 min boundary.
+        
+        full_timestamps = pd.date_range(
+            start=first_interval_start,
+            end=end_datetime.replace(
+                minute=(end_datetime.minute // 2) * 2,
+                second=0,
+                microsecond=0
+            ),
+            freq='2T'
+        )
+
+        # Group tips into 2-minute intervals
+        # timestamp is tip time. interval is rounded time?
+        grouped_tips = {}
+        for tip in tip_timestamps:
+            # interval = floor(2T) + 2min
+            rounded_time = pd.Timestamp(tip).floor('2T') + pd.Timedelta(minutes=2)
+            if rounded_time not in grouped_tips:
+                grouped_tips[rounded_time] = []
+            grouped_tips[rounded_time].append(tip)
+
+        df = pd.DataFrame(0.0, index=full_timestamps, columns=['Value'])
+        last_tip_time = None
+        
+        # We need to sort timestamps to iterate chronologically
+        sorted_intervals = sorted(full_timestamps)
+
+        for timestamp in sorted_intervals:
+            tips_in_interval = grouped_tips.get(timestamp, [])
+
+            if tips_in_interval:
+                # Calculate time since previous measurement
+                if last_tip_time is None:
+                    time_since_prev = 10  # Default to 10 minutes if first interval
+                else:
+                    time_since_prev = (timestamp - last_tip_time).total_seconds() / 60
+
+                # Determine averaging period (minimum of time since prev and 10 minutes)
+                avg_period = min(time_since_prev, 10)
+
+                # Calculate total tips and rainfall intensity
+                tips_this_interval = len(tips_in_interval)
+                
+                # Logic copied from legacy:
+                if tips_this_interval > 1:
+                    if avg_period > 2:
+                        tips_current_timestamps = tips_this_interval - 1
+                        mm_per_hour_current_timestamps = tips_current_timestamps * (60 / 2) * tb_depth
+                        tips_to_distribute = 1
+                        mm_per_hour_to_distribute = tips_to_distribute * (60 / (avg_period - 2)) * tb_depth
+                    else:
+                        tips_current_timestamps = tips_this_interval
+                        mm_per_hour_current_timestamps = tips_current_timestamps * (60 / 2) * tb_depth
+                else:
+                    tips_current_timestamps = 1
+                    mm_per_hour_current_timestamps = tips_current_timestamps * (60 / avg_period) * tb_depth
+                    if avg_period > 2:
+                        tips_to_distribute = 1
+                        mm_per_hour_to_distribute = tips_to_distribute * (60 / avg_period) * tb_depth
+                    else:
+                         mm_per_hour_to_distribute = 0 # Not used if avg_period <= 2 in this else branch?
+
+                # Determine number of periods to distribute across
+                periods_in_avg = math.ceil(avg_period / 2)
+
+                # Fill in values for all periods in the averaging interval
+                for period in range(periods_in_avg):
+                    period_timestamp = timestamp - pd.Timedelta(minutes=2 * (periods_in_avg - period))
+                    
+                    # Logic note: period goes 0 to N-1
+                    # check logic:
+                    # timestamp is current end of interval.
+                    # e.g. periods=3. period 0, 1, 2.
+                    # period=2 (last): timestamp - 2*(3-2) = timestamp - 2 => previous interval?
+                    # Wrapper Legacy: 'timestamp - pd.Timedelta(minutes=2 * (periods_in_avg - period))'
+                    # If period = periods_in_avg - 1 => period_timestamp = timestamp - 2*(1) = timestamp - 2min?
+                    # Wait, current interval ends at timestamp. 2min interval covers (timestamp-2, timestamp].
+                    # So timestamp IS the row index for that interval (usually right labeled).
+                    # If legacy logic uses timestamp as index, then `df.loc[timestamp]` is the current interval.
+                    # Legacy: `if period == periods_in_avg - 1: value_to_add = mm_cur`
+                    # let's trust the logic calculation for time
+                    
+                    if period == periods_in_avg - 1:
+                         value_to_add = mm_per_hour_current_timestamps
+                    else:
+                         value_to_add = mm_per_hour_to_distribute
+
+                    if period_timestamp in df.index:
+                        df.loc[period_timestamp, 'Value'] += value_to_add
+                    else:
+                        # Should we add rows if they don't exist? (Backfilling before start?)
+                        # Legacy says: df = pd.concat... sort_index()
+                        new_row = pd.DataFrame({'Value': value_to_add}, index=[period_timestamp])
+                        df = pd.concat([df, new_row]).sort_index()
+
+                # Update last tip time to the last tip in this interval
+                # Legacy: `last_tip_time = timestamp`
+                # Is timestamp the tip time? No it's the interval time.
+                # "Update last tip time to the last tip in this interval" -> comment says last tip, code says timestamp.
+                # Code: `last_tip_time = timestamp`
+                last_tip_time = timestamp
+                
+        return df
+
     def process_install(self, install_id: int):
         """
         Main processing workflow for an install.
@@ -173,12 +305,12 @@ class ProcessingService:
         # Fetch Raw TimeSeries
         stmt = select(TimeSeries).where(
             TimeSeries.install_id == install_id,
-            TimeSeries.data_type == 'Raw'
+            func.lower(TimeSeries.data_type) == 'raw'
         )
         raw_series = self.session.exec(stmt).all()
         
         if not raw_series:
-            raise ValueError("No raw data found for this install")
+            raise ValueError("No raw data records found for this install. Please ensure Data Ingestion has been run.")
 
         # Load Raw Data
         dfs = []
@@ -203,7 +335,7 @@ class ProcessingService:
                 continue
 
         if not dfs:
-            raise ValueError("Could not load any raw data files")
+            raise ValueError("Raw data records indicate data exists, but the file system paths could not be read. Please check file storage.")
 
         combined = pd.concat(dfs, ignore_index=True)
         
@@ -280,7 +412,83 @@ class ProcessingService:
             # Usually raw is tips (counts) or intensity (mm/hr).
             # If Raw is Tips (0.2mm per tip):
             # Processed usually Intensity.
-            pass # TODO: Rain gauge implementation
+            # Process Intensity from Tips
+            if 'Rain' in pivoted.columns:
+                # Assuming 'Rain' column contains tips (counts) or 1s per tip.
+                # If we have 'Rain', we might need to convert tips to intensity using the legacy logic.
+                # If it's already intensity, we might double process, but based on legacy:
+                # "if a_raw.rg_data is None: return None" -> implies input is raw tips data.
+                # In our case 'pivoted' has 'Rain' which might be just 1.0 for each tip.
+                
+                # Check if we have tips (e.g. discrete events) or intensity. 
+                # If ingestion loaded tips, they are likely 1s at timestamps.
+                # If ingested from R file, it might be intensity already. R file parser returns INTENSITY.
+                # FLO/DAT parsers usually return tips.
+                # Let's assume if it is 'Rain', we treat as tips and run the algo. 
+                # Unless it seems to be intensity? 
+                
+                # However, the user provided logic loops over `tip_timestamps`.
+                # If we have intensity already, we should just use it.
+                # How to distinguish? R file import sets data as 'Rain' too? No, checks for 'INTENSITY'.
+                # Let's check ingestion:
+                # import_r_file -> INTENSITY -> 'Rain' (via my simple pass through logic earlier? No wait)
+                # Ingestion: 
+                #   Rain Gauge -> check extension
+                #   if .flo -> parse_flo_file -> ? (BinaryParser usually tips) -> 'Rain'
+                #   if .dat -> parse_dat_file -> ? (BinaryParser usually tips) -> 'Rain'
+                #   import_r_file -> NOT CALLED for Rain Gauge in Ingestion Service currently?
+                #   Wait, IngestionService only calls parse_flo or parse_dat for Rain Gauge.
+                #   It does NOT call import_r_file. So 'Rain' is likely TIPS from binary files.
+                
+                # Extract timestamps of tips (where Rain > 0)
+                # If pivoted has 2 min intervals filled with 0s, we might lose accuracy of tip time?
+                # But pivoted comes from `combined` which comes from storage read_parquet.
+                # read_parquet might have exact timestamps of tips if it was tips.
+                
+                # Re-reading raw DF for Rain might be better to get exact tip times than using 'pivoted' 
+                # which might have been resampled? No, 'pivoted' is just pivot_table, it doesn't resample 
+                # unless duplicates. But tips can be duplicate times? 
+                # pivot_table aggregates duplicates. Tips at exact same time?
+                # Better to use `combined` filtered for 'Rain'.
+                
+                rain_rows = combined[combined['variable'] == 'Rain']
+                if not rain_rows.empty:
+                    # Get all timestamps where there is a tip. 
+                    # If Value is 1, it's 1 tip. If Value is 2, 2 tips?
+                    # Legacy: `tip_timestamps = a_raw.rg_data['Timestamp'].to_list()` -> implies 1 row per tip?
+                    # Our ingestion for .dat/.flo creates 1 row per tip?
+                    # Let's assume yes or use value as count.
+                    
+                    tip_timestamps_list = []
+                    for _, row in rain_rows.iterrows():
+                        val = row['value']
+                        if pd.isna(val):
+                            continue
+                        count = int(val)
+                        ts = row['time']
+                        for _ in range(count):
+                            tip_timestamps_list.append(ts)
+                            
+                    tb_depth = settings.rg_tb_depth if settings.rg_tb_depth is not None else 0.2
+                    
+                    processed_intensity_df = self._process_rainfall_tips(tip_timestamps_list, tb_depth)
+                    
+                    # Merge back into processed data
+                    if not processed_intensity_df.empty:
+                        processed_data['Rain'] = processed_intensity_df['Value'].values
+                        # Re-align timestamps if needed? 
+                        # This generates a 2-min fixed grid.
+                        # The other variables (if any? RG usually standalone) might be on different grid.
+                        # If RG is standalone, we update `timestamps` to be this new grid.
+                        timestamps = processed_intensity_df.index.values
+
+            elif 'Intensity' in pivoted.columns:
+                 # Already intensity (e.g. from some other source)
+                 processed_data['Rain'] = pivoted['Intensity'].values
+
+        # ---------------------------------------------------------
+        # PUMP LOGGER PROCESSING
+        # ---------------------------------------------------------
             
         # ---------------------------------------------------------
         # PUMP LOGGER PROCESSING
@@ -356,6 +564,9 @@ class ProcessingService:
                 processed_data['Pump_State'] = pivoted['Pump_State'].values
             
         
+        if not processed_data:
+             raise ValueError(f"Processing produced no data. Check if required variables exist (e.g. Depth/Velocity for Flow Monitors). Type: {install.install_type}")
+
         # ---------------------------------------------------------
         # SAVE PROCESSED DATA
         # ---------------------------------------------------------

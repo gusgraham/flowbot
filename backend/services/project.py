@@ -95,7 +95,35 @@ class ProjectService:
     # Installs
     def create_install(self, install_in: InstallCreate) -> Install:
         install = Install.from_orm(install_in)
-        return self.install_repo.create(install)
+        # Create the install first to get an ID
+        created_install = self.install_repo.create(install)
+        
+        # Now create default RawDataSettings
+        try:
+            # Fetch project for defaults
+            project = self.project_repo.get(created_install.project_id)
+            default_path = project.default_download_path if project else None
+            
+            # Create settings linked to this install
+            settings = RawDataSettings(
+                install_id=created_install.id,
+                file_path=default_path,
+                pipe_shape=created_install.fm_pipe_shape,
+                pipe_width=created_install.fm_pipe_width_mm,
+                pipe_height=created_install.fm_pipe_height_mm,
+                # Default empty/None for others
+            )
+            self.session.add(settings)
+            self.session.commit()
+            self.session.refresh(created_install) # Refresh to load relationship if needed
+            
+        except Exception as e:
+            print(f"Error creating default RawDataSettings: {e}")
+            # We don't want to fail the install creation just because settings failed,
+            # but ideally we should log this.
+            pass
+            
+        return created_install
     
     
     def list_installs(self, project_id: int) -> List[Install]:

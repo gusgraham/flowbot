@@ -1271,7 +1271,7 @@ def list_project_events(
 def detect_project_events(
     project_id: int,
     start_date: datetime = Query(...),
-    end_date: datetime = Query(...),
+    end_date: Optional[datetime] = Query(None),
     min_intensity: float = Query(default=0.5, description="Minimum intensity threshold (mm/hr)"),
     min_duration_hours: float = Query(default=0.5, description="Minimum event duration (hours)"),
     preceding_dry_hours: float = Query(default=6.0, description="Required dry period before event"),
@@ -1283,6 +1283,9 @@ def detect_project_events(
     from infra.storage import StorageService
     from services.analysis import detect_rainfall_events
     import pandas as pd
+    
+    if end_date is None:
+        end_date = datetime.now()
     
     # Verify project exists
     project = session.get(FsmProject, project_id)
