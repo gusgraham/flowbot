@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend_data:/app/data
+      # Mount the database file or directory if needed.
+      # Ideally migrate to using a mounted folder for DB.
+      # For now, we assume flowbot.db is created in /app if not exists, 
+      # but to persist it we should set DATABASE_URL to a volume path.
+    environment:
+      - DATABASE_URL=sqlite:///./data/flowbot.db
+      # Add other env vars if needed
+    networks:
+      - flowbot-net
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - flowbot-net
+
+networks:
+  flowbot-net:
+    driver: bridge
