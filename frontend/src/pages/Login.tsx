@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import { Lock, Mail, Loader2 } from 'lucide-react';
 
@@ -92,6 +92,13 @@ const Login: React.FC = () => {
                 >
                     {loading ? <Loader2 className="animate-spin h-5 w-5" /> : 'Sign in'}
                 </button>
+            </div>
+
+            <div className="text-center text-sm">
+                <span className="text-gray-500">Don't have an account? </span>
+                <Link to="/register" className="text-blue-600 hover:text-blue-500 font-medium">
+                    Register here
+                </Link>
             </div>
         </form>
     );

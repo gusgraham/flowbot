@@ -6,6 +6,7 @@ import MainLayout from './layouts/MainLayout';
 import AuthLayout from './layouts/AuthLayout';
 import Hub from './pages/Hub';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import SurveyList from './pages/fsm/SurveyList';
 import SurveyDashboard from './pages/fsm/SurveyDashboard';
 import MonitorDetail from './pages/fsm/MonitorDetail';
@@ -68,6 +69,10 @@ function App() {
           <Routes>
             <Route path="/login" element={<AuthLayout />}>
               <Route index element={<Login />} />
+            </Route>
+
+            <Route path="/register" element={<AuthLayout />}>
+              <Route index element={<Register />} />
             </Route>
 
             <Route element={<ProtectedRoute />}>

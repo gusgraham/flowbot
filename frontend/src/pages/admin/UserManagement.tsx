@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { useUsers, useCreateUser, useUpdateUser } from '../../api/hooks';
+import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '../../api/hooks';
 import type { User, UserCreate, UserUpdate } from '../../api/hooks';
-import { Plus, Edit2, Check, X, Shield, User as UserIcon } from 'lucide-react';
+import { Plus, Edit2, Check, X, Shield, User as UserIcon, Trash2 } from 'lucide-react';
 
 const UserManagement = () => {
     const { data: users, isLoading, error } = useUsers();
     const createUser = useCreateUser();
     const updateUser = useUpdateUser();
+    const deleteUser = useDeleteUser();
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -167,12 +168,26 @@ const UserManagement = () => {
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 text-right">
-                                    <button
-                                        onClick={() => openEditModal(user)}
-                                        className="p-2 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white transition-colors"
-                                    >
-                                        <Edit2 size={18} />
-                                    </button>
+                                    <div className="flex gap-1 justify-end">
+                                        <button
+                                            onClick={() => openEditModal(user)}
+                                            className="p-2 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white transition-colors"
+                                            title="Edit user"
+                                        >
+                                            <Edit2 size={18} />
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (confirm(`Are you sure you want to delete ${user.full_name || user.username}? This action cannot be undone.`)) {
+                                                    deleteUser.mutate(user.id);
+                                                }
+                                            }}
+                                            className="p-2 hover:bg-red-900/50 rounded-lg text-gray-400 hover:text-red-400 transition-colors"
+                                            title="Delete user"
+                                        >
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}

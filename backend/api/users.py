@@ -86,3 +86,27 @@ def update_user(
     session.commit()
     session.refresh(user)
     return user
+
+@router.delete("/{user_id}")
+def delete_user(
+    user_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_superuser),
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="The user with this id does not exist in the system",
+        )
+    
+    # Prevent self-deletion
+    if user.id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot delete your own account",
+        )
+    
+    session.delete(user)
+    session.commit()
+    return {"status": "success", "message": "User deleted"}

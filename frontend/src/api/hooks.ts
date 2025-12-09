@@ -831,6 +831,19 @@ export const useUpdateUser = () => {
     });
 };
 
+export const useDeleteUser = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (userId: number) => {
+            const { data } = await api.delete(`/users/${userId}`);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        },
+    });
+};
+
 // Install Timeseries Data
 export interface TimeseriesVariable {
     data: Array<{ time: string; value: number | null }>;
