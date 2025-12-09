@@ -12,6 +12,7 @@ class UserBase(SQLModel):
     access_fsa: bool = True
     access_wq: bool = True
     access_verification: bool = True
+    access_ssd: bool = True  # Spill Storage Design module
 
 class User(UserBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -38,6 +39,7 @@ class UserUpdate(SQLModel):
     access_fsa: Optional[bool] = None
     access_wq: Optional[bool] = None
     access_verification: Optional[bool] = None
+    access_ssd: Optional[bool] = None
 
 class Token(SQLModel):
     access_token: str

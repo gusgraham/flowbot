@@ -1,0 +1,514 @@
+"""
+Catchment-based storage analysis engine.
+
+This module handles multi-tank catchment analysis where storage is optimized
+across multiple CSOs with upstream/downstream relationships and pass-forward flow constraints.
+
+Key features:
+- Multiple tanks analyzed together timestep-by-timestep
+- Delta propagation from upstream to downstream CSOs
+- Model 1: Independent draindown (local capacity)
+- Model 2: Coordinated draindown (wait for downstream tanks to empty)
+"""
+
+import logging
+import numpy as np
+import pandas as pd
+from datetime import timedelta, datetime
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+
+
+@dataclass
+class CSOState:
+    """Runtime state for a CSO during simulation."""
+    name: str
+    current_stored_volume: float = 0.0
+    storage_volume_n: float = 0.0
+    spill_count: int = -1
+    stop_iteration: bool = False
+    insufficient_storage_volumes: List[float] = field(
+        default_factory=lambda: [0])
+    excessive_storage_volumes: List[float] = field(default_factory=list)
+    spill_count_exceeded_prior: bool = False
+    storage_volume_increase: float = -1
+
+    # Model 2 coordination flags
+    tank_full: bool = False
+    full_ds: bool = False
+
+
+class CatchmentAnalysisEngine:
+    """
+    Catchment-based storage optimization engine.
+
+    Key differences from CSO engine (Method 1):
+    - Multiple tanks analyzed together
+    - Upstream/downstream CSO relationships
+    - Pass-forward flow (PFF) augmentation
+    - Hierarchical position levels
+    - Tank interactions and constraints
+    """
+
+    def __init__(self, overflow_data: pd.DataFrame, flow_data: pd.DataFrame, depth_data: pd.DataFrame,
+                 master_directory: str, timestep_length: timedelta):
+        """
+        Initialize catchment analysis engine.
+
+        Args:
+            overflow_data: DataFrame with CSO configuration (one row per CSO)
+            flow_data: Time series flow data for all CSOs
+            depth_data: Time series depth data for continuation links
+            master_directory: Output directory path
+            timestep_length: Simulation timestep as timedelta
+        """
+        self.overflow_data = overflow_data
+        self.flow_data = flow_data
+        self.depth_data = depth_data
+        self.master_directory = master_directory
+        self.timestep_length = timestep_length
+        self.timestep_seconds = timestep_length.total_seconds()
+
+        # Parse CSO objects from configuration
+        self.csos = self._initialize_csos()
+        
+        # Create runtime state for each CSO
+        self.cso_states = {cso['Name']: CSOState(name=cso['Name']) for cso in self.csos}
+
+        logging.info(
+            f"Initialized catchment engine with {len(self.csos)} CSOs")
+
+    def _initialize_csos(self) -> List[Dict]:
+        """Parse overflow data into CSO configuration objects."""
+        csos = []
+
+        for idx, row in self.overflow_data.iterrows():
+            cso = {
+                'Name': row['CSO Name'],
+                'Continuation_Link': row['Continuation Link'],
+                'Spill_Target': int(row['Spill Target (Entire Period)']),
+                'PFF_Increase': row.get('PFF Increase (m3/s)', 0) or 0,
+                'Tank_Volume': row.get('Tank Volume (m3)', None) if pd.notna(row.get('Tank Volume (m3)')) else None,
+                'Pumping_Mode': row['Pumping Mode'],
+                'Pump_Rate': row.get('Pump Rate (m3/s)', None) if row['Pumping Mode'] == 'Fixed' else None,
+                'Flow_Return_Threshold': row['Flow Return Threshold (m3/s)'],
+                'Depth_Return_Threshold': row['Depth Return Threshold (m)'],
+                'Time_Delay': timedelta(hours=int(row['Time Delay (hours)'])),
+                'Spill_Flow_Threshold': row['Spill Flow Threshold (m3/s)'],
+                'Spill_Volume_Threshold': row['Spill Volume Threshold (m3)'],
+                'Level': row['Position Level'],
+                'Upstream_CSOs': None,
+                'Downstream_CSO': None,
+                'Max_PFF': None,
+                'Distance': None,
+                'Average_Velocity': None,
+                'Time_Shift': None
+            }
+
+            # Parse upstream CSO relationships
+            if pd.notna(row.get('Upstream CSOs')):
+                cso['Upstream_CSOs'] = [x.strip()
+                                        for x in row['Upstream CSOs'].split(",")]
+                max_pff = row.get('Maximum Pass Forward Flow (m3/s)')
+                if pd.notna(max_pff) and max_pff != 'Unknown':
+                    cso['Max_PFF'] = float(max_pff)
+                else:
+                    cso['Max_PFF'] = 'Unknown'
+
+            # Parse downstream CSO relationship (singular)
+            if pd.notna(row.get('Downstream CSO')):
+                cso['Downstream_CSO'] = row['Downstream CSO']
+                cso['Distance'] = row['Distance (m)']
+                cso['Average_Velocity'] = row['Average Velocity (m/s)']
+                # Calculate time shift, rounded to timestep
+                time_shift_seconds = cso['Distance'] / cso['Average_Velocity']
+                # Round to nearest timestep
+                time_shift_steps = round(time_shift_seconds / self.timestep_seconds)
+                cso['Time_Shift'] = timedelta(seconds=time_shift_steps * self.timestep_seconds)
+
+            csos.append(cso)
+
+        # Sort by position level (upstream to downstream)
+        csos.sort(key=lambda x: x['Level'])
+        
+        return csos
+
+    def run_analysis(self, start_date: str, end_date: str, model_id: int = 1,
+                     bathing_season_start: str = None, bathing_season_end: str = None) -> Dict:
+        """
+        Run catchment-based storage analysis for multiple CSOs.
+
+        Args:
+            start_date: Analysis start date (dd/mm/yyyy HH:MM:SS)
+            end_date: Analysis end date (dd/mm/yyyy HH:MM:SS)
+            model_id: Model type (1=local capacity draindown, 2=all downstream empty)
+            bathing_season_start: Bathing season start (dd/mm)
+            bathing_season_end: Bathing season end (dd/mm)
+
+        Returns:
+            Dictionary with results for each CSO
+        """
+        logging.info("=" * 80)
+        logging.info("CATCHMENT ANALYSIS (Method 2)")
+        logging.info("=" * 80)
+        logging.info(f"Model ID: {model_id}")
+        logging.info(f"Date Range: {start_date} to {end_date}")
+        logging.info(f"Number of CSOs: {len(self.csos)}")
+
+        # Parse bathing season if provided
+        bathing_season = None
+        if bathing_season_start and bathing_season_end:
+            start_d, start_m = map(int, bathing_season_start.split('/'))
+            end_d, end_m = map(int, bathing_season_end.split('/'))
+            bathing_season = ((start_m, start_d), (end_m, end_d))
+
+        # Filter flow data to date range
+        flow_data = self._filter_dates(start_date, end_date)
+
+        # Process each CSO in hierarchical order (by position level)
+        results = {}
+        max_iterations = 30
+
+        for cso_idx, cso in enumerate(self.csos):
+            logging.info("=" * 60)
+            logging.info(
+                f"Processing CSO {cso_idx + 1}/{len(self.csos)}: {cso['Name']}")
+            logging.info(f"  Level: {cso['Level']}")
+            logging.info(f"  Target: {cso['Spill_Target']} spills")
+            logging.info(f"  PFF Increase: {cso['PFF_Increase']} m³/s")
+
+            # Prepare CSO-specific flow data
+            cso_flow = self._prepare_cso_flow_data(
+                flow_data.copy(), cso, results)
+
+            # Apply PFF augmentation if configured
+            if cso['PFF_Increase'] > 0:
+                logging.info(
+                    f"  Applying PFF augmentation: {cso['PFF_Increase']} m³/s")
+                cso_flow = self._augment_pff(cso_flow, cso)
+
+            # Count initial spills
+            initial_count, initial_bathing, _ = self._count_spills_for_cso(
+                cso_flow.copy(), cso, bathing_season
+            )
+            logging.info(
+                f"  Initial: {initial_count} spills ({initial_bathing} bathing)")
+
+            # Run iterative storage optimization
+            if cso['Tank_Volume'] is None:
+                result = self._optimize_cso_storage(
+                    cso_flow, cso, bathing_season, max_iterations
+                )
+            else:
+                # Fixed storage volume - just simulate
+                result = self._simulate_cso_fixed_storage(
+                    cso_flow, cso, bathing_season
+                )
+
+            results[cso['Name']] = result
+            logging.info(f"  ✓ Completed: {result['spill_count']} spills, "
+                         f"{result['storage_volume']:.1f} m³ storage")
+
+        logging.info("=" * 80)
+        logging.info("CATCHMENT ANALYSIS COMPLETE")
+        logging.info("=" * 80)
+
+        return results
+
+    def _filter_dates(self, start_date: str, end_date: str) -> pd.DataFrame:
+        """Filter flow data to specified date range."""
+        start = pd.to_datetime(start_date, dayfirst=True)
+        end = pd.to_datetime(end_date, dayfirst=True)
+
+        mask = (self.flow_data['Time'] >= start) & (
+            self.flow_data['Time'] <= end)
+        return self.flow_data[mask].copy()
+
+    def _prepare_cso_flow_data(self, flow_data: pd.DataFrame, cso: Dict,
+                               prior_results: Dict) -> pd.DataFrame:
+        """
+        Prepare flow data for a specific CSO, incorporating upstream impacts.
+        """
+        # Extract relevant columns for this CSO
+        required_cols = ['Time', cso['Name'], cso['Continuation_Link']]
+
+        # Check for upstream CSO impacts
+        if cso['Upstream_CSOs']:
+            for upstream_name in cso['Upstream_CSOs']:
+                if upstream_name in prior_results:
+                    # Apply upstream storage impacts (simplified)
+                    logging.info(
+                        f"    Incorporating upstream CSO: {upstream_name}")
+
+        return flow_data
+
+    def _augment_pff(self, flow_data: pd.DataFrame, cso: Dict) -> pd.DataFrame:
+        """
+        Augment pass-forward flow for a CSO.
+
+        Similar to FFT augmentation but for CSO continuation links.
+        """
+        pff_increase = cso['PFF_Increase']
+        spill_col = cso['Name']
+        cont_col = cso['Continuation_Link']
+
+        # Where spilling less than PFF increase, add spill to continuation
+        flow_data[cont_col] = flow_data[cont_col].where(
+            flow_data[spill_col] > pff_increase,
+            flow_data[cont_col] + flow_data[spill_col]
+        )
+
+        # Reduce spills by PFF increase
+        flow_data[spill_col] = flow_data[spill_col] - pff_increase
+
+        # Where still spilling, add PFF increase to continuation
+        flow_data[cont_col] = flow_data[cont_col].where(
+            flow_data[spill_col] < 0,
+            flow_data[cont_col] + pff_increase
+        )
+
+        # Zero out negative spills
+        flow_data[spill_col] = flow_data[spill_col].where(
+            flow_data[spill_col] > 0.0001, 0
+        )
+
+        return flow_data
+
+    def _optimize_cso_storage(self, flow_data: pd.DataFrame, cso: Dict,
+                              bathing_season, max_iterations: int) -> Dict:
+        """
+        Iteratively optimize storage for a single CSO to meet spill target.
+        """
+        storage = 0  # Start with no storage
+        iteration = 0
+        test_points = []
+
+        target_spills = cso['Spill_Target']
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            # Simulate with current storage
+            sim_data = self._simulate_cso_storage(
+                flow_data.copy(), cso, storage)
+
+            # Count spills
+            entire_count, bathing_count, spill_list = self._count_spills_for_cso(
+                sim_data, cso, bathing_season
+            )
+
+            test_points.append((storage, entire_count, bathing_count))
+
+            logging.info(
+                f"    Iteration {iteration}: Storage={storage:.1f} m³, "
+                f"Spills={entire_count} ({bathing_count} bathing)")
+
+            # Check if target met
+            if entire_count <= target_spills:
+                logging.info(f"    ✓ Target met!")
+                return {
+                    'storage_volume': storage,
+                    'spill_count': entire_count,
+                    'bathing_spill_count': bathing_count,
+                    'iterations': iteration,
+                    'test_points': test_points,
+                    'spill_events': spill_list
+                }
+
+            # Calculate storage increase
+            if len(spill_list) > target_spills:
+                spills_over = spill_list.iloc[target_spills:]
+                mean_volume = spills_over['Spill Volume (m3)'].mean()
+                storage_increase = max(mean_volume, 0.05 * storage, 10)
+            else:
+                storage_increase = max(0.05 * storage, 10)
+
+            storage += storage_increase
+
+        logging.warning(f"    Max iterations reached")
+        return {
+            'storage_volume': storage,
+            'spill_count': entire_count if 'entire_count' in locals() else None,
+            'bathing_spill_count': bathing_count if 'bathing_count' in locals() else None,
+            'iterations': iteration,
+            'test_points': test_points,
+            'status': 'Max iterations reached'
+        }
+
+    def _simulate_cso_fixed_storage(self, flow_data: pd.DataFrame, cso: Dict,
+                                    bathing_season) -> Dict:
+        """Simulate CSO with fixed storage volume."""
+        sim_data = self._simulate_cso_storage(
+            flow_data.copy(), cso, cso['Tank_Volume'])
+
+        entire_count, bathing_count, spill_list = self._count_spills_for_cso(
+            sim_data, cso, bathing_season
+        )
+
+        return {
+            'storage_volume': cso['Tank_Volume'],
+            'spill_count': entire_count,
+            'bathing_spill_count': bathing_count,
+            'spill_events': spill_list
+        }
+
+    def _simulate_cso_storage(self, flow_data: pd.DataFrame, cso: Dict,
+                              storage_volume: float) -> pd.DataFrame:
+        """
+        Simulate CSO tank storage behavior.
+
+        Simplified version - full implementation would include:
+        - Pump control logic (fixed/variable)
+        - Draindown based on model_id
+        - Upstream/downstream tank interactions
+        """
+        current_stored_vol = 0
+        spill_col = cso['Name']
+        cont_col = cso['Continuation_Link']
+
+        flow_data['Tank_Volume'] = 0.0
+        flow_data['Spill_In_Time_Delay'] = 0.0
+
+        # Calculate time delay window
+        time_delay_steps = int(
+            cso['Time_Delay'].total_seconds() / self.timestep_length)
+
+        for idx in range(len(flow_data)):
+            # Simplified draindown logic
+            draindown_allowed = False
+
+            if current_stored_vol > 0:
+                # Check return thresholds
+                if (flow_data[cont_col].iloc[idx] < cso['Flow_Return_Threshold'] and
+                        flow_data[spill_col].iloc[idx] == 0):
+                    draindown_allowed = True
+
+            # Draindown
+            if draindown_allowed and cso['Pumping_Mode'] == 'Fixed':
+                stored_before = current_stored_vol
+                current_stored_vol -= cso['Pump_Rate'] * self.timestep_length
+
+                if current_stored_vol < 0:
+                    current_stored_vol = 0
+
+                # Return flow to continuation
+                returned = (stored_before - current_stored_vol) / \
+                    self.timestep_length
+                flow_data.loc[flow_data.index[idx], cont_col] += returned
+
+            # Tank filling
+            if current_stored_vol < storage_volume and flow_data[spill_col].iloc[idx] > 0:
+                inflow_volume = flow_data[spill_col].iloc[idx] * \
+                    self.timestep_length
+                current_stored_vol += inflow_volume
+
+                if current_stored_vol <= storage_volume:
+                    flow_data.loc[flow_data.index[idx], spill_col] = 0
+                else:
+                    overflow = (current_stored_vol -
+                                storage_volume) / self.timestep_length
+                    flow_data.loc[flow_data.index[idx], spill_col] = overflow
+                    current_stored_vol = storage_volume
+
+            flow_data.loc[flow_data.index[idx],
+                          'Tank_Volume'] = current_stored_vol
+
+        return flow_data
+
+    def _count_spills_for_cso(self, flow_data: pd.DataFrame, cso: Dict,
+                              bathing_season) -> tuple:
+        """Count spills for a single CSO using 12/24 hour method."""
+        spill_col = cso['Name']
+        flow_threshold = cso['Spill_Flow_Threshold']
+        volume_threshold = cso['Spill_Volume_Threshold']
+
+        # Add month_day for bathing season
+        if bathing_season:
+            flow_data['month_day'] = list(
+                zip(flow_data['Time'].dt.month, flow_data['Time'].dt.day))
+
+        # Filter by threshold
+        flow_data['Spill_Filtered'] = flow_data[spill_col].where(
+            flow_data[spill_col] > flow_threshold, 0
+        )
+
+        # Rolling windows
+        timestep_hours = self.timestep_length / 3600
+        half_day = int(12 / timestep_hours)
+        full_day = int(24 / timestep_hours)
+
+        flow_data['Spill_Volume_12hr'] = (
+            flow_data['Spill_Filtered']
+            .rolling(window=half_day, min_periods=1, closed='left')
+            .sum() * self.timestep_length
+        )
+        flow_data['Spill_Volume_24hr'] = (
+            flow_data['Spill_Filtered']
+            .rolling(window=full_day, min_periods=1, closed='left')
+            .sum() * self.timestep_length
+        )
+
+        # Count spills
+        spill_events = []
+        EAcount = 0
+        cooldown = 0
+
+        for idx in range(len(flow_data)):
+            spill_flow = flow_data['Spill_Filtered'].iloc[idx]
+
+            if EAcount == 0:
+                if spill_flow > 0:
+                    EAcount = 1
+            else:
+                if EAcount < half_day:
+                    EAcount += 1
+
+                    if EAcount == half_day:
+                        spill_vol_12 = flow_data['Spill_Volume_12hr'].iloc[idx]
+                        if spill_vol_12 >= volume_threshold:
+                            cooldown = full_day
+                            spill_start_idx = idx - half_day
+                            spill_start_time = flow_data['Time'].iloc[spill_start_idx]
+
+                            in_bathing = False
+                            if bathing_season:
+                                month_day = flow_data['month_day'].iloc[idx]
+                                in_bathing = self._is_in_season(
+                                    month_day, bathing_season[0], bathing_season[1])
+
+                            spill_events.append({
+                                'DateTime': spill_start_time,
+                                'Spill Volume (m3)': spill_vol_12,
+                                'In Bathing Season': in_bathing
+                            })
+
+                        EAcount = 0
+
+                elif cooldown > 0:
+                    cooldown -= 1
+
+                    if cooldown == 0:
+                        spill_vol_24 = flow_data['Spill_Volume_24hr'].iloc[idx]
+                        if len(spill_events) > 0:
+                            spill_events[-1]['Spill Volume (m3)'] = spill_vol_24
+                        EAcount = 0
+
+        spill_df = pd.DataFrame(spill_events)
+        entire_count = len(spill_df)
+        bathing_count = len(
+            spill_df[spill_df['In Bathing Season']]) if bathing_season else 0
+
+        return entire_count, bathing_count, spill_df
+
+    def _is_in_season(self, date_tuple, start_tuple, end_tuple) -> bool:
+        """Check if date is within seasonal range."""
+        month, day = date_tuple
+        start_m, start_d = start_tuple
+        end_m, end_d = end_tuple
+
+        if start_m <= end_m:
+            return (month > start_m or (month == start_m and day >= start_d)) and \
+                   (month < end_m or (month == end_m and day <= end_d))
+        else:
+            return (month > start_m or (month == start_m and day >= start_d)) or \
+                   (month < end_m or (month == end_m and day <= end_d))

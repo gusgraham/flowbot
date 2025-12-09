@@ -25,7 +25,8 @@ const UserManagement = () => {
         access_fsm: true,
         access_fsa: true,
         access_wq: true,
-        access_verification: true
+        access_verification: true,
+        access_ssd: true
     });
 
     const handleAddUser = async (e: React.FormEvent) => {
@@ -44,7 +45,8 @@ const UserManagement = () => {
                 access_fsm: true,
                 access_fsa: true,
                 access_wq: true,
-                access_verification: true
+                access_verification: true,
+                access_ssd: true
             });
         } catch (err) {
             console.error("Failed to create user", err);
@@ -63,7 +65,8 @@ const UserManagement = () => {
                 access_fsm: formData.access_fsm,
                 access_fsa: formData.access_fsa,
                 access_wq: formData.access_wq,
-                access_verification: formData.access_verification
+                access_verification: formData.access_verification,
+                access_ssd: formData.access_ssd
             };
 
             await updateUser.mutateAsync({ id: selectedUser.id, updates });
@@ -85,7 +88,8 @@ const UserManagement = () => {
             access_fsm: user.access_fsm ?? true,
             access_fsa: user.access_fsa ?? true,
             access_wq: user.access_wq ?? true,
-            access_verification: user.access_verification ?? true
+            access_verification: user.access_verification ?? true,
+            access_ssd: user.access_ssd ?? true
         });
         setIsEditModalOpen(true);
     };
@@ -162,7 +166,8 @@ const UserManagement = () => {
                                         {user.access_fsa && <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">FSA</span>}
                                         {user.access_wq && <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">WQ</span>}
                                         {user.access_verification && <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">Verif</span>}
-                                        {(!user.access_fsm && !user.access_fsa && !user.access_wq && !user.access_verification) &&
+                                        {user.access_ssd && <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">SSD</span>}
+                                        {(!user.access_fsm && !user.access_fsa && !user.access_wq && !user.access_verification && !user.access_ssd) &&
                                             <span className="text-xs text-gray-600 italic">None</span>
                                         }
                                     </div>
@@ -299,6 +304,16 @@ const UserManagement = () => {
                                         />
                                         <label htmlFor="access_verification" className="text-sm text-gray-400">Verification</label>
                                     </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="access_ssd"
+                                            checked={formData.access_ssd}
+                                            onChange={(e) => setFormData({ ...formData, access_ssd: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="access_ssd" className="text-sm text-gray-400">SSD</label>
+                                    </div>
                                 </div>
                             </div>
 
@@ -407,6 +422,16 @@ const UserManagement = () => {
                                             className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
                                         />
                                         <label htmlFor="edit_access_verification" className="text-sm text-gray-400">Verification</label>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="edit_access_ssd"
+                                            checked={formData.access_ssd}
+                                            onChange={(e) => setFormData({ ...formData, access_ssd: e.target.checked })}
+                                            className="rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="edit_access_ssd" className="text-sm text-gray-400">SSD</label>
                                     </div>
                                 </div>
                             </div>

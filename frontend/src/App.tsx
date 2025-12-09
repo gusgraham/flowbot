@@ -19,6 +19,8 @@ import VerificationDashboard from './pages/verification/VerificationDashboard';
 import WQProjectList from './pages/wq/WQProjectList';
 import UserManagement from './pages/admin/UserManagement';
 import { useCurrentUser } from './api/hooks';
+import SSDProjectList from './pages/ssd/SSDProjectList';
+import SSDDashboard from './pages/ssd/SSDDashboard';
 
 // Placeholder components for other routes
 const Placeholder = ({ title }: { title: string }) => (
@@ -36,7 +38,7 @@ const ProtectedRoute = () => {
   return <Outlet />;
 };
 
-const RequireAccess = ({ module }: { module: 'fsm' | 'fsa' | 'wq' | 'verification' | 'admin' }) => {
+const RequireAccess = ({ module }: { module: 'fsm' | 'fsa' | 'wq' | 'verification' | 'ssd' | 'admin' }) => {
   const { data: user, isLoading } = useCurrentUser();
 
   if (isLoading) return <div className="p-8 text-center text-gray-400">Loading permissions...</div>;
@@ -49,6 +51,7 @@ const RequireAccess = ({ module }: { module: 'fsm' | 'fsa' | 'wq' | 'verificatio
     case 'fsa': hasAccess = !!user?.access_fsa; break;
     case 'wq': hasAccess = !!user?.access_wq; break;
     case 'verification': hasAccess = !!user?.access_verification; break;
+    case 'ssd': hasAccess = !!user?.access_ssd; break;
     case 'admin': hasAccess = user?.role === 'Admin'; break;
   }
 
@@ -103,6 +106,12 @@ function App() {
                 {/* WQ Routes */}
                 <Route element={<RequireAccess module="wq" />}>
                   <Route path="wq" element={<WQProjectList />} />
+                </Route>
+
+                {/* SSD Routes */}
+                <Route element={<RequireAccess module="ssd" />}>
+                  <Route path="ssd" element={<SSDProjectList />} />
+                  <Route path="ssd/:projectId" element={<SSDDashboard />} />
                 </Route>
 
                 {/* Admin Routes */}

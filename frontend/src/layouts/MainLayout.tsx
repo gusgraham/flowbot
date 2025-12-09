@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Database, Activity, CheckCircle, Droplets, LogOut, Menu, X, Users } from 'lucide-react';
+import { LayoutDashboard, Database, Activity, CheckCircle, Droplets, LogOut, Menu, X, Users, Container } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/utils';
 import { useCurrentUser } from '../api/hooks';
@@ -19,6 +19,7 @@ const MainLayout: React.FC = () => {
         { name: 'Analysis', path: '/analysis', icon: Activity, hasAccess: user?.access_fsa },
         { name: 'Verification', path: '/verification', icon: CheckCircle, hasAccess: user?.access_verification },
         { name: 'Water Quality', path: '/wq', icon: Droplets, hasAccess: user?.access_wq },
+        { name: 'SSD', path: '/ssd', icon: Container, hasAccess: user?.access_ssd },
     ];
 
     const filteredNavItems = navItems.filter(item =>

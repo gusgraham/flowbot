@@ -755,6 +755,7 @@ export interface User {
     access_fsa?: boolean;
     access_wq?: boolean;
     access_verification?: boolean;
+    access_ssd?: boolean;
 }
 
 export interface UserCreate {
@@ -769,6 +770,7 @@ export interface UserCreate {
     access_fsa?: boolean;
     access_wq?: boolean;
     access_verification?: boolean;
+    access_ssd?: boolean;
 }
 
 export interface UserUpdate {
@@ -782,6 +784,7 @@ export interface UserUpdate {
     access_fsa?: boolean;
     access_wq?: boolean;
     access_verification?: boolean;
+    access_ssd?: boolean;
 }
 
 export const useUsers = () => {
@@ -1293,3 +1296,504 @@ export const useDeleteEvent = () => {
         },
     });
 };
+
+export interface SSDProject {
+    id: number;
+    name: string;
+    client: string;
+    job_number: string;
+    description?: string;
+    created_at: string;
+}
+
+export interface SSDProjectCreate {
+    name: string;
+    client: string;
+    job_number: string;
+    description?: string;
+}
+
+export interface SSDAnalysisConfig {
+    cso_name: string;
+    overflow_link: string;
+    continuation_link: string;
+    run_suffix: string;
+    start_date: string;
+    end_date: string;
+    spill_target_entire: number;
+    spill_target_bathing: number;
+    bathing_season_start: string;
+    bathing_season_end: string;
+    pff_increase: number;
+    tank_volume?: number;
+    pump_rate: number;
+    pumping_mode: 'Fixed' | 'Variable';
+    flow_return_threshold: number;
+    depth_return_threshold: number;
+    time_delay: number;
+    spill_flow_threshold: number;
+    spill_volume_threshold: number;
+}
+
+export interface SpillEvent {
+    start_time: string;
+    end_time: string;
+    duration_hours: number;
+    volume_m3: number;
+    peak_flow_m3s: number;
+    is_bathing_season: boolean;
+}
+
+export interface SSDAnalysisResult {
+    success: boolean;
+    cso_name: string;
+    converged: boolean;
+    iterations: number;
+    final_storage_m3: number;
+    spill_count: number;
+    bathing_spill_count: number;
+    total_spill_volume_m3: number;
+    bathing_spill_volume_m3: number;
+    total_spill_duration_hours: number;
+    spill_events: SpillEvent[];
+    error?: string;
+}
+
+export interface UploadedFile {
+    filename: string;
+    size_bytes: number;
+    uploaded_at: string;
+}
+
+// SSD Hooks
+export function useSSDProjects() {
+    return useQuery({
+        queryKey: ['ssd-projects'],
+        queryFn: async () => {
+            const response = await api.get<SSDProject[]>('/ssd/projects');
+            return response.data;
+        },
+    });
+}
+
+export function useSSDProject(projectId: number) {
+    return useQuery({
+        queryKey: ['ssd-project', projectId],
+        queryFn: async () => {
+            const response = await api.get<SSDProject>(`/ssd/projects/${projectId}`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+export function useCreateSSDProject() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (newProject: SSDProjectCreate) => {
+            const response = await api.post('/ssd/projects', newProject);
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-projects'] });
+        },
+    });
+}
+
+export function useSSDFiles(projectId: number) {
+    return useQuery({
+        queryKey: ['ssd-files', projectId],
+        queryFn: async () => {
+            const response = await api.get<UploadedFile[]>(`/ssd/projects/${projectId}/files`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+export function useSSDUpload() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, files }: { projectId: number; files: File[] }) => {
+            const formData = new FormData();
+            files.forEach((file) => {
+                formData.append('flow_files', file);
+            });
+            const response = await api.post(`/ssd/projects/${projectId}/upload`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-files', variables.projectId] });
+        },
+    });
+}
+
+export function useDeleteSSDFile() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, filename }: { projectId: number; filename: string }) => {
+            const response = await api.delete(`/ssd/projects/${projectId}/files/${filename}`);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-files', variables.projectId] });
+        },
+    });
+}
+
+export function useSSDAnalysis() {
+    return useMutation({
+        mutationFn: async ({ projectId, config }: { projectId: number; config: SSDAnalysisConfig }) => {
+            const response = await api.post<SSDAnalysisResult>(`/ssd/projects/${projectId}/analyze`, config);
+            return response.data;
+        },
+    });
+}
+
+// New scenario-based analysis hook
+export interface ScenarioAnalysisResult {
+    success: boolean;
+    message: string;
+    scenarios: {
+        scenario_id: number;
+        scenario_name: string;
+        cso_name: string;
+        config_name: string;
+        status: string;
+        message: string;
+    }[];
+}
+
+export function useSSDScenarioAnalysis() {
+    return useMutation({
+        mutationFn: async ({ projectId, scenarioIds }: { projectId: number; scenarioIds: number[] }) => {
+            const response = await api.post<ScenarioAnalysisResult>(`/ssd/projects/${projectId}/analyze-scenarios`, {
+                scenario_ids: scenarioIds
+            });
+            return response.data;
+        },
+    });
+}
+
+// ==========================================
+// CSO ASSETS
+// ==========================================
+
+export interface CSOAsset {
+    id: number;
+    project_id: number;
+    name: string;
+    overflow_links: string[];
+    continuation_link: string;
+    is_effective_link: boolean;
+    effective_link_components: string[] | null;
+    created_at: string;
+}
+
+export interface CSOAssetCreate {
+    name: string;
+    overflow_links: string[];
+    continuation_link: string;
+    is_effective_link?: boolean;
+    effective_link_components?: string[] | null;
+}
+
+export interface CSOAssetUpdate {
+    name?: string;
+    overflow_links?: string[];
+    continuation_link?: string;
+    is_effective_link?: boolean;
+    effective_link_components?: string[] | null;
+}
+
+// Get available link names from uploaded CSVs
+export function useSSDLinks(projectId: number) {
+    return useQuery({
+        queryKey: ['ssd-links', projectId],
+        queryFn: async () => {
+            const response = await api.get<string[]>(`/ssd/projects/${projectId}/links`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+export interface DateRange {
+    min_date: string | null;
+    max_date: string | null;
+}
+
+// Get date range from uploaded CSV files
+export function useSSDDateRange(projectId: number) {
+    return useQuery({
+        queryKey: ['ssd-date-range', projectId],
+        queryFn: async () => {
+            const response = await api.get<DateRange>(`/ssd/projects/${projectId}/date-range`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+// List CSO assets
+export function useSSDCSOAssets(projectId: number) {
+    return useQuery({
+        queryKey: ['ssd-cso-assets', projectId],
+        queryFn: async () => {
+            const response = await api.get<CSOAsset[]>(`/ssd/projects/${projectId}/cso-assets`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+// Create CSO asset
+export function useCreateCSOAsset() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, asset }: { projectId: number; asset: CSOAssetCreate }) => {
+            const response = await api.post<CSOAsset>(`/ssd/projects/${projectId}/cso-assets`, asset);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-cso-assets', variables.projectId] });
+        },
+    });
+}
+
+// Update CSO asset
+export function useUpdateCSOAsset() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, assetId, update }: { projectId: number; assetId: number; update: CSOAssetUpdate }) => {
+            const response = await api.put<CSOAsset>(`/ssd/projects/${projectId}/cso-assets/${assetId}`, update);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-cso-assets', variables.projectId] });
+        },
+    });
+}
+
+// Delete CSO asset
+export function useDeleteCSOAsset() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, assetId }: { projectId: number; assetId: number }) => {
+            const response = await api.delete(`/ssd/projects/${projectId}/cso-assets/${assetId}`);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-cso-assets', variables.projectId] });
+        },
+    });
+}
+
+// ==========================================
+// ANALYSIS CONFIGURATIONS
+// ==========================================
+
+export interface AnalysisConfigDB {
+    id: number;
+    project_id: number;
+    name: string;
+    mode: string;
+    model: number;
+    start_date: string;
+    end_date: string;
+    spill_target: number;
+    spill_target_bathing: number | null;
+    bathing_season_start: string | null;
+    bathing_season_end: string | null;
+    spill_flow_threshold: number;
+    spill_volume_threshold: number;
+    created_at: string;
+}
+
+export interface AnalysisConfigDBCreate {
+    name: string;
+    mode: string;
+    model: number;
+    start_date: string;
+    end_date: string;
+    spill_target: number;
+    spill_target_bathing?: number | null;
+    bathing_season_start?: string | null;
+    bathing_season_end?: string | null;
+    spill_flow_threshold?: number;
+    spill_volume_threshold?: number;
+}
+
+export interface AnalysisConfigDBUpdate {
+    name?: string;
+    mode?: string;
+    model?: number;
+    start_date?: string;
+    end_date?: string;
+    spill_target?: number;
+    spill_target_bathing?: number | null;
+    bathing_season_start?: string | null;
+    bathing_season_end?: string | null;
+    spill_flow_threshold?: number;
+    spill_volume_threshold?: number;
+}
+
+// List analysis configs
+export function useSSDAnalysisConfigs(projectId: number) {
+    return useQuery({
+        queryKey: ['ssd-analysis-configs', projectId],
+        queryFn: async () => {
+            const response = await api.get<AnalysisConfigDB[]>(`/ssd/projects/${projectId}/analysis-configs`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+// Create analysis config
+export function useCreateAnalysisConfig() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, config }: { projectId: number; config: AnalysisConfigDBCreate }) => {
+            const response = await api.post<AnalysisConfigDB>(`/ssd/projects/${projectId}/analysis-configs`, config);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-analysis-configs', variables.projectId] });
+        },
+    });
+}
+
+// Update analysis config
+export function useUpdateAnalysisConfig() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, configId, update }: { projectId: number; configId: number; update: AnalysisConfigDBUpdate }) => {
+            const response = await api.put<AnalysisConfigDB>(`/ssd/projects/${projectId}/analysis-configs/${configId}`, update);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-analysis-configs', variables.projectId] });
+        },
+    });
+}
+
+// Delete analysis config
+export function useDeleteAnalysisConfig() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, configId }: { projectId: number; configId: number }) => {
+            const response = await api.delete(`/ssd/projects/${projectId}/analysis-configs/${configId}`);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-analysis-configs', variables.projectId] });
+        },
+    });
+}
+
+// ==========================================
+// ANALYSIS SCENARIOS
+// ==========================================
+
+export interface AnalysisScenarioData {
+    id: number;
+    project_id: number;
+    scenario_name: string;
+    cso_asset_id: number;
+    config_id: number;
+    pff_increase: number;
+    pumping_mode: string;
+    pump_rate: number;
+    time_delay: number;
+    flow_return_threshold: number;
+    depth_return_threshold: number;
+    tank_volume: number | null;
+    created_at: string;
+}
+
+export interface AnalysisScenarioCreate {
+    scenario_name: string;
+    cso_asset_id: number;
+    config_id: number;
+    pff_increase?: number;
+    pumping_mode?: string;
+    pump_rate?: number;
+    time_delay?: number;
+    flow_return_threshold?: number;
+    depth_return_threshold?: number;
+    tank_volume?: number | null;
+}
+
+export interface AnalysisScenarioUpdate {
+    scenario_name?: string;
+    cso_asset_id?: number;
+    config_id?: number;
+    pff_increase?: number;
+    pumping_mode?: string;
+    pump_rate?: number;
+    time_delay?: number;
+    flow_return_threshold?: number;
+    depth_return_threshold?: number;
+    tank_volume?: number | null;
+}
+
+// List analysis scenarios
+export function useSSDScenarios(projectId: number) {
+    return useQuery({
+        queryKey: ['ssd-scenarios', projectId],
+        queryFn: async () => {
+            const response = await api.get<AnalysisScenarioData[]>(`/ssd/projects/${projectId}/scenarios`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+// Create analysis scenario
+export function useCreateScenario() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, scenario }: { projectId: number; scenario: AnalysisScenarioCreate }) => {
+            const response = await api.post<AnalysisScenarioData>(`/ssd/projects/${projectId}/scenarios`, scenario);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-scenarios', variables.projectId] });
+        },
+    });
+}
+
+// Update analysis scenario
+export function useUpdateScenario() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, scenarioId, update }: { projectId: number; scenarioId: number; update: AnalysisScenarioUpdate }) => {
+            const response = await api.put<AnalysisScenarioData>(`/ssd/projects/${projectId}/scenarios/${scenarioId}`, update);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-scenarios', variables.projectId] });
+        },
+    });
+}
+
+// Delete analysis scenario
+export function useDeleteScenario() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, scenarioId }: { projectId: number; scenarioId: number }) => {
+            const response = await api.delete(`/ssd/projects/${projectId}/scenarios/${scenarioId}`);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-scenarios', variables.projectId] });
+        },
+    });
+}
+
+

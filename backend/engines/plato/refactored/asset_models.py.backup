@@ -1,0 +1,451 @@
+"""
+Data models for separating CSO assets from analysis scenarios.
+
+This module implements a two-level architecture:
+- CSOAsset: Physical CSO definition (defined once)
+- AnalysisScenario: What-if analysis configuration (many per CSO)
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Optional, Dict, Any, Tuple
+from pathlib import Path
+
+
+@dataclass
+class CSOAsset:
+    """
+    Physical CSO definition - defines which links represent a CSO.
+
+    This represents the logical grouping of overflow and continuation links.
+    The actual data comes from the Data Import tab.
+    One CSO asset can have many analysis scenarios.
+
+    Attributes:
+        name: Unique CSO identifier
+        overflow_links: List of link names that spill (can be single link or effective link)
+        continuation_link: Downstream continuation link name
+        is_effective_link: Whether overflow is an effective (combined) link
+        effective_link_components: If effective, the component link names
+    """
+    name: str
+    overflow_links: list[str]  # Link name(s) from data import
+    continuation_link: str  # Link name from data import
+    is_effective_link: bool = False
+    effective_link_components: Optional[list[str]] = None
+
+    def __post_init__(self):
+        """Validate asset data."""
+        if not self.name or not self.name.strip():
+            raise ValueError("CSO name cannot be empty")
+
+        if not self.overflow_links:
+            raise ValueError("At least one overflow link must be specified")
+
+        if not self.continuation_link or not self.continuation_link.strip():
+            raise ValueError("Continuation link must be specified")
+
+        if self.is_effective_link and not self.effective_link_components:
+            raise ValueError(
+                "Effective link must have component links specified")
+
+        if self.is_effective_link and len(self.effective_link_components) < 2:
+            raise ValueError("Effective link must combine at least 2 links")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for CSV export."""
+        result = {
+            'CSO Name': self.name,
+            'Overflow Links': '|'.join(self.overflow_links),  # Pipe-separated
+            'Continuation Link': self.continuation_link,
+            'Is Effective Link': self.is_effective_link,
+        }
+
+        if self.effective_link_components:
+            result['Effective Link Components'] = '|'.join(
+                self.effective_link_components)
+
+        return result
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'CSOAsset':
+        """Create from dictionary (CSV import)."""
+        overflow_links = data['Overflow Links'].split('|') if isinstance(
+            data['Overflow Links'], str) else data['Overflow Links']
+
+        effective_components = None
+        if data.get('Effective Link Components'):
+            effective_components = data['Effective Link Components'].split('|')
+
+        return cls(
+            name=data['CSO Name'],
+            overflow_links=overflow_links,
+            continuation_link=data['Continuation Link'],
+            is_effective_link=bool(data.get('Is Effective Link', False)),
+            effective_link_components=effective_components,
+        )
+
+
+@dataclass
+class AnalysisConfiguration:
+    """
+    Reusable analysis configuration - defines how to analyze CSOs.
+    
+    This represents a standard analysis approach that can be applied to multiple CSOs.
+    For example: "10 Spills Per Annum", "Bathing Season Compliance", etc.
+    
+    Attributes:
+        name: Configuration name (e.g., "CSO 10SPA", "Bathing Compliance")
+        mode: Analysis mode ("Default", "Catchment", "WWTW")
+        model: Iteration model (1-4)
+        start_date: Analysis period start
+        end_date: Analysis period end
+        spill_target: Target spills for entire period
+        spill_target_bathing: Target spills during bathing season (Model 4)
+        bathing_season_start: Bathing season start date "dd/mm"
+        bathing_season_end: Bathing season end date "dd/mm"
+        spill_flow_threshold: Minimum flow to count as spill (m³/s)
+        spill_volume_threshold: Minimum volume to count as spill (m³)
+    """
+    name: str
+    mode: str  # "Default", "Catchment", "WWTW"
+    model: int  # 1=Classical, 2=Fixed Tank, 3=Yorkshire Water, 4=Bathing Season
+    start_date: datetime
+    end_date: datetime
+    spill_target: int  # Target spills for entire period
+    
+    # Optional bathing season parameters (required for Model 4)
+    spill_target_bathing: Optional[int] = None
+    bathing_season_start: Optional[str] = None  # "dd/mm" format
+    bathing_season_end: Optional[str] = None    # "dd/mm" format
+    
+    # Spill definition thresholds
+    spill_flow_threshold: float = 0.001  # m³/s
+    spill_volume_threshold: float = 0.0  # m³
+
+    def __post_init__(self):
+        """Validate configuration."""
+        if not self.name or not self.name.strip():
+            raise ValueError("Analysis configuration name cannot be empty")
+        
+        if self.mode not in ["Default", "Catchment", "WWTW"]:
+            raise ValueError(f"Invalid mode: {self.mode}")
+        
+        if self.model not in [1, 2, 3, 4]:
+            raise ValueError(f"Invalid model: {self.model}. Must be 1, 2, 3, or 4")
+        
+        if self.start_date >= self.end_date:
+            raise ValueError("Start date must be before end date")
+        
+        # Validate model-specific requirements
+        if self.model == 4:
+            if self.spill_target_bathing is None:
+                raise ValueError("Model 4 (Bathing Season) requires spill_target_bathing")
+            if not self.bathing_season_start or not self.bathing_season_end:
+                raise ValueError("Model 4 (Bathing Season) requires bathing season dates")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for CSV export."""
+        return {
+            'Configuration Name': self.name,
+            'Mode': self.mode,
+            'Model': self.model,
+            'Start Date': self.start_date.strftime('%d/%m/%Y %H:%M:%S'),
+            'End Date': self.end_date.strftime('%d/%m/%Y %H:%M:%S'),
+            'Spill Target': self.spill_target,
+            'Spill Target (Bathing)': self.spill_target_bathing if self.spill_target_bathing is not None else '',
+            'Bathing Season Start': self.bathing_season_start or '',
+            'Bathing Season End': self.bathing_season_end or '',
+            'Spill Flow Threshold (m3/s)': self.spill_flow_threshold,
+            'Spill Volume Threshold (m3)': self.spill_volume_threshold,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'AnalysisConfiguration':
+        """Create from dictionary (CSV import)."""
+        bathing_target = data.get('Spill Target (Bathing)')
+        if bathing_target == '' or bathing_target is None:
+            bathing_target = None
+        else:
+            bathing_target = int(bathing_target)
+        
+        return cls(
+            name=data['Configuration Name'],
+            mode=data['Mode'],
+            model=int(data['Model']),
+            start_date=datetime.strptime(data['Start Date'], '%d/%m/%Y %H:%M:%S'),
+            end_date=datetime.strptime(data['End Date'], '%d/%m/%Y %H:%M:%S'),
+            spill_target=int(data['Spill Target']),
+            spill_target_bathing=bathing_target,
+            bathing_season_start=data.get('Bathing Season Start') or None,
+            bathing_season_end=data.get('Bathing Season End') or None,
+            spill_flow_threshold=float(data.get('Spill Flow Threshold (m3/s)', 0.001)),
+            spill_volume_threshold=float(data.get('Spill Volume Threshold (m3)', 0.0)),
+        )
+
+
+@dataclass
+class AnalysisScenario:
+    """
+    Specific analysis scenario - combines CSO + Configuration + Interventions.
+    
+    This represents a specific "what-if" case to run.
+    Multiple scenarios can use the same CSO and Configuration with different interventions.
+    
+    Attributes:
+        cso_name: Reference to CSOAsset.name
+        config_name: Reference to AnalysisConfiguration.name
+        scenario_name: Unique scenario identifier
+        pff_increase: Pass forward flow increase (m³/s)
+        tank_volume: Storage tank volume (m³) - required for Model 2
+        pumping_mode: "Fixed" or "Variable"
+        pump_rate: Pump rate (m³/s)
+        flow_return_threshold: Flow threshold for pump return (m³/s)
+        depth_return_threshold: Depth threshold for pump return (m)
+        time_delay: Pump activation delay (hours)
+        run_suffix: Output file suffix
+    """
+    cso_name: str  # Reference to CSOAsset.name
+    config_name: str  # Reference to AnalysisConfiguration.name
+    scenario_name: str  # Unique identifier for this scenario
+    
+    # Intervention parameters
+    pff_increase: float = 0.0  # m³/s
+    tank_volume: Optional[float] = None  # m³ - required for Model 2
+    
+    # Pumping configuration
+    pumping_mode: str = "Fixed"  # "Fixed" or "Variable"
+    pump_rate: float = 0.0  # m³/s
+    flow_return_threshold: float = 0.0  # m³/s
+    depth_return_threshold: float = 0.0  # m
+    time_delay: int = 0  # hours
+    
+    # Output identification
+    run_suffix: str = "001"
+
+    def __post_init__(self):
+        """Validate scenario configuration."""
+        if not self.cso_name or not self.cso_name.strip():
+            raise ValueError("CSO name cannot be empty")
+        
+        if not self.config_name or not self.config_name.strip():
+            raise ValueError("Configuration name cannot be empty")
+        
+        if not self.scenario_name or not self.scenario_name.strip():
+            raise ValueError("Scenario name cannot be empty")
+        
+        if self.pumping_mode not in ["Fixed", "Variable"]:
+            raise ValueError(f"Invalid pumping mode: {self.pumping_mode}")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for CSV export."""
+        return {
+            'CSO Name': self.cso_name,
+            'Configuration': self.config_name,
+            'Scenario Name': self.scenario_name,
+            'PFF Increase (m3/s)': self.pff_increase,
+            'Tank Volume (m3)': self.tank_volume if self.tank_volume is not None else '',
+            'Pumping Mode': self.pumping_mode,
+            'Pump Rate (m3/s)': self.pump_rate,
+            'Flow Return Threshold (m3/s)': self.flow_return_threshold,
+            'Depth Return Threshold (m)': self.depth_return_threshold,
+            'Time Delay (hours)': self.time_delay,
+            'Run Suffix': self.run_suffix,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'AnalysisScenario':
+        """Create from dictionary (CSV import)."""
+        tank_vol = data.get('Tank Volume (m3)')
+        if tank_vol == '' or tank_vol is None:
+            tank_vol = None
+        else:
+            tank_vol = float(tank_vol)
+        
+        return cls(
+            cso_name=data['CSO Name'],
+            config_name=data['Configuration'],
+            scenario_name=data['Scenario Name'],
+            pff_increase=float(data.get('PFF Increase (m3/s)', 0.0)),
+            tank_volume=tank_vol,
+            pumping_mode=data.get('Pumping Mode', 'Fixed'),
+            pump_rate=float(data.get('Pump Rate (m3/s)', 0.0)),
+            flow_return_threshold=float(data.get('Flow Return Threshold (m3/s)', 0.0)),
+            depth_return_threshold=float(data.get('Depth Return Threshold (m)', 0.0)),
+            time_delay=int(data.get('Time Delay (hours)', 0)),
+            run_suffix=data.get('Run Suffix', '001'),
+        )
+    
+    def to_legacy_format(self, asset: CSOAsset, config: AnalysisConfiguration) -> Dict[str, Any]:
+        """Convert scenario + asset + config to legacy Storage_Modeller format."""
+        return {
+            'cso_name': asset.name,
+            'overflow_links': asset.overflow_links,
+            'continuation_link': asset.continuation_link,
+            'is_effective_link': asset.is_effective_link,
+            'effective_link_components': asset.effective_link_components,
+            'mode': config.mode,
+            'model': config.model,
+            'start_date': config.start_date,
+            'end_date': config.end_date,
+            'spill_target': config.spill_target,
+            'spill_target_bathing': config.spill_target_bathing,
+            'bathing_season_start': config.bathing_season_start,
+            'bathing_season_end': config.bathing_season_end,
+            'spill_flow_threshold': config.spill_flow_threshold,
+            'spill_volume_threshold': config.spill_volume_threshold,
+            'pff_increase': self.pff_increase,
+            'tank_volume': self.tank_volume,
+            'pumping_mode': self.pumping_mode,
+            'pump_rate': self.pump_rate,
+            'flow_return_threshold': self.flow_return_threshold,
+            'depth_return_threshold': self.depth_return_threshold,
+            'time_delay': self.time_delay,
+            'run_suffix': self.run_suffix,
+        }
+
+
+# Keep old to_legacy_format for backwards compatibility
+def create_legacy_config(asset: CSOAsset, config: AnalysisConfiguration, scenario: AnalysisScenario) -> Dict[str, Any]:
+    """Helper function to create legacy config from new three-level structure."""
+    return scenario.to_legacy_format(asset, config)
+
+
+def get_available_models_for_mode(mode: str) -> list[int]:
+        """Create from dictionary (CSV import)."""
+        # Parse dates
+        start_date = datetime.strptime(
+            data['Start Date (dd/mm/yy hh:mm:ss)'], '%d/%m/%Y %H:%M:%S')
+        end_date = datetime.strptime(
+            data['End Date (dd/mm/yy hh:mm:ss)'], '%d/%m/%Y %H:%M:%S')
+
+        # Parse optional bathing parameters
+        spill_target_bathing = None
+        if data.get('Spill Target (Bathing Seasons)') and str(data['Spill Target (Bathing Seasons)']).strip():
+            spill_target_bathing = int(data['Spill Target (Bathing Seasons)'])
+
+        bathing_start = data.get('Bathing Season Start (dd/mm)') or None
+        if bathing_start and not bathing_start.strip():
+            bathing_start = None
+
+        bathing_end = data.get('Bathing Season End (dd/mm)') or None
+        if bathing_end and not bathing_end.strip():
+            bathing_end = None
+
+        # Parse optional tank volume
+        tank_volume = None
+        if data.get('Tank Volume (m3)') and str(data['Tank Volume (m3)']).strip():
+            tank_volume = float(data['Tank Volume (m3)'])
+
+        return cls(
+            cso_name=data['CSO Name'],
+            scenario_name=data['Scenario Name'],
+            mode=data['Mode'],
+            model=int(data['Model']),
+            start_date=start_date,
+            end_date=end_date,
+            spill_target=int(data['Spill Target (Entire Period)']),
+            spill_target_bathing=spill_target_bathing,
+            bathing_season_start=bathing_start,
+            bathing_season_end=bathing_end,
+            pff_increase=float(data.get('PFF Increase (m3/s)', 0.0)),
+            tank_volume=tank_volume,
+            pumping_mode=data.get('Pumping Mode', 'Fixed'),
+            pump_rate=float(data.get('Pump Rate (m3/s)', 0.0)),
+            flow_return_threshold=float(
+                data.get('Flow Return Threshold (m3/s)', 0.0)),
+            depth_return_threshold=float(
+                data.get('Depth Return Threshold (m)', 0.0)),
+            time_delay=int(data.get('Time Delay (hours)', 0)),
+            run_suffix=data.get('Run Suffix', '001'),
+        )
+
+    def to_legacy_format(self, asset: CSOAsset) -> Dict[str, Any]:
+        """
+        Convert to legacy Storage_Modeller format.
+
+        This combines the scenario with its referenced asset to create
+        the flat dictionary format expected by the legacy code.
+        """
+        return {
+            'CSO Name': self.cso_name,
+            'Continuation Link': asset.continuation_link,
+            'Run Suffix': f"{self.scenario_name}_{self.run_suffix}",
+            'File Type': asset.file_type,
+            'Model Identifier': self.model,
+            'Timestep Length (seconds)': asset.timestep_length,
+            'Start Date (dd/mm/yy hh:mm:ss)': self.start_date.strftime('%d/%m/%Y %H:%M:%S'),
+            'End Date (dd/mm/yy hh:mm:ss)': self.end_date.strftime('%d/%m/%Y %H:%M:%S'),
+            'Spill Target (Entire Period)': self.spill_target,
+            'Spill Target (Bathing Seasons)': self.spill_target_bathing if self.spill_target_bathing is not None else 0,
+            'Bathing Season Start (dd/mm)': self.bathing_season_start or '15/05',
+            'Bathing Season End (dd/mm)': self.bathing_season_end or '30/09',
+            'PFF Increase (m3/s)': self.pff_increase,
+            'Tank Volume (m3)': self.tank_volume if self.tank_volume is not None else 0,
+            'Pumping Mode': self.pumping_mode,
+            'Pump Rate (m3/s)': self.pump_rate,
+            'Flow Return Threshold (m3/s)': self.flow_return_threshold,
+            'Depth Return Threshold (m)': self.depth_return_threshold,
+            'Time Delay (hours)': self.time_delay,
+            'Spill Flow Threshold (m3/s)': asset.spill_flow_threshold,
+            'Spill Volume Threshold (m3)': asset.spill_volume_threshold,
+            'Data Folder': asset.data_folder,
+        }
+
+    def get_display_name(self) -> str:
+        """Get a human-readable display name for this scenario."""
+        model_names = {
+            1: "Classical",
+            2: "Fixed Tank",
+            3: "Yorkshire Water",
+            4: "Bathing Season"
+        }
+        return f"{self.scenario_name} ({model_names.get(self.model, f'Model {self.model}')})"
+
+
+def get_available_models_for_mode(mode: str) -> list[int]:
+    """
+    Get the list of valid models for a given analysis mode.
+
+    Args:
+        mode: Analysis mode ("Default", "Catchment", "WWTW")
+
+    Returns:
+        List of valid model identifiers
+    """
+    # Currently all modes support all models, but this may change
+    # Default mode: All models available
+    if mode == "Default":
+        return [1, 2, 3, 4]
+
+    # Catchment mode: Classical and Bathing Season
+    elif mode == "Catchment":
+        return [1, 4]
+
+    # WWTW mode: TBD (currently skeleton)
+    elif mode == "WWTW":
+        return [1]  # Placeholder until WWTW is implemented
+
+    return [1, 2, 3, 4]  # Default to all
+
+
+def get_model_name(model: int) -> str:
+    """Get human-readable name for model identifier."""
+    names = {
+        1: "Classical Approach",
+        2: "Fixed Tank Method",
+        3: "Yorkshire Water Method",
+        4: "Bathing Season Assessment"
+    }
+    return names.get(model, f"Model {model}")
+
+
+def get_model_description(model: int) -> str:
+    """Get description of model behavior."""
+    descriptions = {
+        1: "Iterative bisection with tank draindown. Searches for exact target spill count.",
+        2: "Single iteration with user-specified tank volume. No optimization.",
+        3: "Yorkshire Water heuristic: mean nth-largest spill volume per year. Instant tank emptying, single iteration.",
+        4: "Iterative bisection with dual constraints (entire period + bathing season). Searches for exact targets."
+    }
+    return descriptions.get(model, "")

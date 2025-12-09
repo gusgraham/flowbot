@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Database, Activity, CheckCircle, Droplets, ArrowRight } from 'lucide-react';
+import { Database, Activity, CheckCircle, Droplets, ArrowRight, Container } from 'lucide-react';
 import { useCurrentUser } from '../api/hooks';
 
 const Hub: React.FC = () => {
@@ -46,6 +46,16 @@ const Hub: React.FC = () => {
             bg: 'bg-cyan-50',
             text: 'text-cyan-700',
             hasAccess: user?.access_wq
+        },
+        {
+            name: 'Spill Storage Design',
+            description: 'Calculate required tank sizes to meet spill targets.',
+            path: '/ssd',
+            icon: Container,
+            color: 'bg-orange-500',
+            bg: 'bg-orange-50',
+            text: 'text-orange-700',
+            hasAccess: user?.access_ssd
         }
     ];
 

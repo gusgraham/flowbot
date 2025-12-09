@@ -53,7 +53,8 @@ def register_user(
         access_fsm=False,  # Not included by default
         access_fsa=True,
         access_wq=True,
-        access_verification=True
+        access_verification=True,
+        access_ssd=True  # SSD enabled by default
     )
     
     session.add(db_user)
