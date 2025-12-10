@@ -1,6 +1,6 @@
 """
 FSA Service Adapters
-These classes wrap the existing analysis services to work with FSA domain models.
+These classes wrap the existing Flow Survey Analysis to work with FSA domain models.
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime

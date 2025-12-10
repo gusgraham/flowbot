@@ -14,22 +14,22 @@ const MainLayout: React.FC = () => {
     const { data: user } = useCurrentUser();
 
     const navItems = [
-        { name: 'Hub', path: '/', icon: LayoutDashboard },
-        { name: 'FSM', path: '/fsm', icon: Database, hasAccess: user?.access_fsm },
-        { name: 'Analysis', path: '/analysis', icon: Activity, hasAccess: user?.access_fsa },
-        { name: 'Verification', path: '/verification', icon: CheckCircle, hasAccess: user?.access_verification },
-        { name: 'Water Quality', path: '/wq', icon: Droplets, hasAccess: user?.access_wq },
-        { name: 'SSD', path: '/ssd', icon: Container, hasAccess: user?.access_ssd },
+        { name: 'FlowBot Hub', shortName: 'Hub', path: '/', icon: LayoutDashboard },
+        { name: 'Flow Survey Management', shortName: 'FSM', path: '/fsm', icon: Database, hasAccess: user?.access_fsm },
+        { name: 'Flow Survey Analysis', shortName: 'FSA', path: '/analysis', icon: Activity, hasAccess: user?.access_fsa },
+        { name: 'Model Verification', shortName: 'MV', path: '/verification', icon: CheckCircle, hasAccess: user?.access_verification },
+        { name: 'Water Quality Monitoring', shortName: 'WQ', path: '/wq', icon: Droplets, hasAccess: user?.access_wq },
+        { name: 'Spill Storage Design', shortName: 'SSD', path: '/ssd', icon: Container, hasAccess: user?.access_ssd },
     ];
 
     const filteredNavItems = navItems.filter(item =>
-        item.name === 'Hub' || // Hub is always accessible
+        item.name === 'FlowBot Hub' || // Hub is always accessible
         user?.is_superuser || // Superuser sees all
         item.hasAccess // Check permission
     );
 
     if (user?.is_superuser || user?.role === 'Admin') {
-        filteredNavItems.push({ name: 'Users', path: '/admin/users', icon: Users });
+        filteredNavItems.push({ name: 'Users', shortName: 'Users', path: '/admin/users', icon: Users });
     }
 
     const handleSignOut = () => {
@@ -43,14 +43,14 @@ const MainLayout: React.FC = () => {
             {/* Sidebar */}
             <aside className={cn(
                 "bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out",
-                isCollapsed ? "w-16" : "w-64"
+                isCollapsed ? "w-16" : "w-72"
             )}>
                 <div className={cn(
                     "p-6 border-b border-gray-100 flex items-center",
                     isCollapsed ? "justify-center p-4" : "justify-between"
                 )}>
                     {!isCollapsed && (
-                        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent">
+                        <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent truncate">
                             FlowBot Hub
                         </h1>
                     )}
@@ -69,6 +69,7 @@ const MainLayout: React.FC = () => {
                         const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
 
                         return (
+
                             <Link
                                 key={item.path}
                                 to={item.path}
@@ -77,12 +78,12 @@ const MainLayout: React.FC = () => {
                                     isActive
                                         ? "bg-blue-50 text-blue-700"
                                         : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
-                                    isCollapsed && "justify-center"
+                                    isCollapsed && "justify-center px-2"
                                 )}
                                 title={isCollapsed ? item.name : undefined}
                             >
-                                <Icon size={20} />
-                                {!isCollapsed && item.name}
+                                <Icon size={20} className="shrink-0" />
+                                {!isCollapsed && <span className="truncate">{item.name}</span>}
                             </Link>
                         );
                     })}
@@ -93,11 +94,11 @@ const MainLayout: React.FC = () => {
                         onClick={handleSignOut}
                         className={cn(
                             "flex items-center gap-3 px-4 py-3 w-full text-left text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-red-600 rounded-lg transition-colors",
-                            isCollapsed && "justify-center"
+                            isCollapsed && "justify-center px-2"
                         )}
                         title={isCollapsed ? "Sign Out" : undefined}
                     >
-                        <LogOut size={20} />
+                        <LogOut size={20} className="shrink-0" />
                         {!isCollapsed && "Sign Out"}
                     </button>
                 </div>

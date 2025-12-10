@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
-    ArrowLeft, Upload, Container, MapPin, Building, Settings,
+    ArrowLeft, Upload, Package, Settings,
     Layers, Play, BarChart2, Loader2
 } from 'lucide-react';
 import { useSSDProject, useSSDScenarioAnalysis } from '../../api/hooks';
 import DataImportTab from './DataImportTab';
-import CSOAssetsTab from './CSOAssetsTab';
+import AssetsTab from './AssetsTab';
 import AnalysisConfigTab from './AnalysisConfigTab';
 import ScenariosTab from './ScenariosTab';
 import AnalysisTab from './AnalysisTab';
@@ -14,37 +14,11 @@ import ResultsTab from './ResultsTab';
 
 // Type definitions
 
-interface SpillEvent {
-    start_time: string;
-    end_time: string;
-    duration_hours: number;
-    volume_m3: number;
-    peak_flow_m3s: number;
-    is_bathing_season: boolean;
-}
-
-interface SSDAnalysisResult {
-    success: boolean;
-    cso_name: string;
-    converged: boolean;
-    iterations: number;
-    final_storage_m3: number;
-    spill_count: number;
-    bathing_spill_count: number;
-    total_spill_volume_m3: number;
-    bathing_spill_volume_m3: number;
-    total_spill_duration_hours: number;
-    spill_events: SpillEvent[];
-    error?: string;
-}
-
-type TabId = 'data-import' | 'cso-assets' | 'catchments' | 'wwtw-assets' | 'analysis-configs' | 'analysis-scenarios' | 'analysis' | 'results';
+type TabId = 'data-import' | 'assets' | 'analysis-configs' | 'analysis-scenarios' | 'analysis' | 'results';
 
 const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
     { id: 'data-import', label: 'Data Import', icon: Upload },
-    { id: 'cso-assets', label: 'CSO Assets', icon: Container },
-    { id: 'catchments', label: 'Catchments', icon: MapPin },
-    { id: 'wwtw-assets', label: 'WwTW Assets', icon: Building },
+    { id: 'assets', label: 'Assets', icon: Package },
     { id: 'analysis-configs', label: 'Analysis Configs', icon: Settings },
     { id: 'analysis-scenarios', label: 'Scenarios', icon: Layers },
     { id: 'analysis', label: 'Analysis', icon: Play },
@@ -64,9 +38,7 @@ export default function SSDDashboard() {
     // Tab state
     const [activeTab, setActiveTab] = useState<TabId>('data-import');
 
-    // Results state
-    const [analysisResult, setAnalysisResult] = useState<SSDAnalysisResult | null>(null);
-    const [scenarioResults, setScenarioResults] = useState<any>(null);
+    // Results state - now stored in database, not local state
 
 
     const handleRunAnalysis = async (scenarioIds: number[]) => {
@@ -77,8 +49,7 @@ export default function SSDDashboard() {
                 scenarioIds
             });
             console.log('Analysis complete, result:', result);
-            setScenarioResults(result);
-            // Return result so AnalysisTab can display engine logs
+            // Results are auto-saved to database by backend
             return result;
         } catch (error) {
             console.error('Analysis failed:', error);
@@ -154,42 +125,8 @@ export default function SSDDashboard() {
                     </div>
                 )}
 
-                {activeTab === 'cso-assets' && (
-                    <div className="p-6">
-                        <h2 className="text-xl font-bold text-gray-900 mb-2">CSO Assets</h2>
-                        <p className="text-gray-500 mb-6">
-                            Define Combined Sewer Overflow (CSO) configurations and link mappings.
-                        </p>
-                        <CSOAssetsTab projectId={numericProjectId} />
-                    </div>
-                )}
-
-                {activeTab === 'catchments' && (
-                    <div className="p-6">
-                        <h2 className="text-xl font-bold text-gray-900 mb-2">Catchments</h2>
-                        <p className="text-gray-500 mb-6">
-                            Define catchment areas and groupings for analysis.
-                        </p>
-                        <div className="text-center py-16 text-gray-400">
-                            <MapPin size={48} className="mx-auto mb-4 opacity-50" />
-                            <p>Coming Soon</p>
-                            <p className="text-sm mt-2">Catchment management will be available in a future update.</p>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'wwtw-assets' && (
-                    <div className="p-6">
-                        <h2 className="text-xl font-bold text-gray-900 mb-2">WwTW Assets</h2>
-                        <p className="text-gray-500 mb-6">
-                            Define Wastewater Treatment Works configurations.
-                        </p>
-                        <div className="text-center py-16 text-gray-400">
-                            <Building size={48} className="mx-auto mb-4 opacity-50" />
-                            <p>Coming Soon</p>
-                            <p className="text-sm mt-2">WwTW asset management will be available in a future update.</p>
-                        </div>
-                    </div>
+                {activeTab === 'assets' && (
+                    <AssetsTab projectId={numericProjectId} />
                 )}
 
                 {activeTab === 'analysis-configs' && (
@@ -232,7 +169,7 @@ export default function SSDDashboard() {
                         <p className="text-gray-500 mb-6">
                             View storage requirements, spill events, and analysis outputs.
                         </p>
-                        <ResultsTab result={analysisResult} />
+                        <ResultsTab projectId={numericProjectId} />
                     </div>
                 )}
             </div>

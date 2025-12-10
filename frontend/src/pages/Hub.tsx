@@ -8,7 +8,7 @@ const Hub: React.FC = () => {
 
     const modules = [
         {
-            name: 'Field Survey Management',
+            name: 'Flow Survey Management',
             description: 'Manage projects, sites, monitors, and installation logistics.',
             path: '/fsm',
             icon: Database,
@@ -18,7 +18,7 @@ const Hub: React.FC = () => {
             hasAccess: user?.access_fsm
         },
         {
-            name: 'Analysis Services',
+            name: 'Flow Survey Analysis',
             description: 'Hydraulic analysis, rainfall event detection, and scatter graphs.',
             path: '/analysis',
             icon: Activity,

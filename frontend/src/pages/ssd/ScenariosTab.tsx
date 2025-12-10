@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit2, Trash2, Play, Loader2, AlertTriangle, CheckCircle, ChevronDown, Zap, Gauge } from 'lucide-react';
+import { Plus, Edit2, Trash2, Play, Loader2, AlertTriangle, CheckCircle, ChevronDown, Zap, Gauge, X } from 'lucide-react';
 import {
     useSSDScenarios, useCreateScenario, useUpdateScenario, useDeleteScenario,
     useSSDCSOAssets, useSSDAnalysisConfigs,
@@ -24,6 +24,15 @@ interface EditingScenario {
     tank_volume: number | null;
 }
 
+interface DevelopFormData {
+    baseName: string;
+    csoAssetId: number | null;
+    configId: number | null;
+    pffIncrease: number;
+    pffAtFs: number;
+    dwf: number;
+}
+
 const getDefaultScenario = (): EditingScenario => ({
     scenario_name: '',
     cso_asset_id: null,
@@ -37,6 +46,15 @@ const getDefaultScenario = (): EditingScenario => ({
     tank_volume: null,
 });
 
+const defaultDevelopData: DevelopFormData = {
+    baseName: '',
+    csoAssetId: null,
+    configId: null,
+    pffIncrease: 0,
+    pffAtFs: 0,
+    dwf: 0
+};
+
 const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
     const { data: scenarios, isLoading: scenariosLoading } = useSSDScenarios(projectId);
     const { data: csoAssets, isLoading: assetsLoading } = useSSDCSOAssets(projectId);
@@ -47,6 +65,11 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
 
     const [editingScenario, setEditingScenario] = useState<EditingScenario | null>(null);
     const [showAdvanced, setShowAdvanced] = useState(false);
+
+    // Develop Scenarios State
+    const [developModalOpen, setDevelopModalOpen] = useState(false);
+    const [developData, setDevelopData] = useState<DevelopFormData>(defaultDevelopData);
+    const [isDeveloping, setIsDeveloping] = useState(false);
 
     const hasAssets = (csoAssets?.length || 0) > 0;
     const hasConfigs = (configs?.length || 0) > 0;
@@ -152,6 +175,70 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
         }
     };
 
+    const openDevelopModal = () => {
+        const firstAsset = csoAssets?.[0];
+        const firstConfig = configs?.[0];
+        setDevelopData({
+            ...defaultDevelopData,
+            csoAssetId: firstAsset?.id || null,
+            configId: firstConfig?.id || null
+        });
+        setDevelopModalOpen(true);
+    };
+
+    const handleDevelopSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        const { baseName, csoAssetId, configId, pffIncrease, pffAtFs, dwf } = developData;
+
+        if (!baseName.trim() || !csoAssetId || !configId) {
+            alert('Please fill in all required fields');
+            return;
+        }
+
+        setIsDeveloping(true);
+
+        try {
+            const calcScenario = (suffix: string, frt: number) => {
+                const pumpRate = (0.95 * pffAtFs) - frt;
+                // Ensure pumpRate is not negative
+                const safePumpRate = Math.max(0, pumpRate);
+
+                return {
+                    scenario_name: `${baseName}${suffix}`,
+                    cso_asset_id: csoAssetId,
+                    config_id: configId,
+                    pff_increase: pffIncrease,
+                    pumping_mode: 'Fixed',
+                    pump_rate: safePumpRate,
+                    time_delay: 0,
+                    flow_return_threshold: frt,
+                    depth_return_threshold: 10,
+                    tank_volume: null // Optimise tank volume
+                };
+            };
+
+            const scenariosToCreate = [
+                calcScenario('_Avg', (pffAtFs + 3 * dwf) / 2),
+                calcScenario('_3DWF', 3 * dwf),
+                calcScenario('_2DWF', 2 * dwf),
+                calcScenario('_DWF', dwf)
+            ];
+
+            await Promise.all(scenariosToCreate.map(scenario =>
+                createMutation.mutateAsync({ projectId, scenario })
+            ));
+
+            setDevelopModalOpen(false);
+            setDevelopData(defaultDevelopData);
+        } catch (error) {
+            console.error("Failed to develop scenarios:", error);
+            alert("Failed to create scenarios. Please check the logs.");
+        } finally {
+            setIsDeveloping(false);
+        }
+    };
+
     if (scenariosLoading || assetsLoading || configsLoading) {
         return (
             <div className="flex justify-center items-center h-32">
@@ -187,19 +274,30 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
                 </div>
             )}
 
-            {/* Add button */}
+            {/* Action Bar */}
             <div className="flex justify-between items-center">
                 <p className="text-sm text-gray-500">
                     {scenarios?.length || 0} scenario{scenarios?.length !== 1 ? 's' : ''} defined
                 </p>
-                <button
-                    onClick={startNewScenario}
-                    disabled={!canCreateScenarios || !!editingScenario}
-                    className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
-                >
-                    <Plus size={18} />
-                    Add Scenario
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={openDevelopModal}
+                        disabled={!canCreateScenarios || !!editingScenario}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium shadow-sm"
+                        title="Auto-create 4 standard scenarios"
+                    >
+                        <Zap size={18} />
+                        Develop Scenarios
+                    </button>
+                    <button
+                        onClick={startNewScenario}
+                        disabled={!canCreateScenarios || !!editingScenario}
+                        className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium shadow-sm"
+                    >
+                        <Plus size={18} />
+                        Add Scenario
+                    </button>
+                </div>
             </div>
 
             {/* New/Edit form card */}
@@ -208,8 +306,8 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
                     <h3 className="text-lg font-semibold text-orange-800 mb-4">
                         {editingScenario.id ? 'Edit Scenario' : 'New Scenario'}
                     </h3>
+                    {/* Existing Scenario Form Fields */}
                     <div className="space-y-4">
-                        {/* Scenario Name */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Scenario Name *</label>
                             <input
@@ -221,7 +319,6 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
                             />
                         </div>
 
-                        {/* CSO Asset and Configuration */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">CSO Asset *</label>
@@ -251,7 +348,6 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
                             </div>
                         </div>
 
-                        {/* PFF Increase */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">PFF Increase (m³/s)</label>
                             <input
@@ -261,10 +357,8 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
                                 onChange={(e) => setEditingScenario({ ...editingScenario, pff_increase: parseFloat(e.target.value) || 0 })}
                                 className="w-40 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                             />
-                            <span className="text-xs text-gray-500 ml-2">Pass Forward Flow increase</span>
                         </div>
 
-                        {/* Advanced Settings Toggle */}
                         <button
                             type="button"
                             onClick={() => setShowAdvanced(!showAdvanced)}
@@ -276,7 +370,6 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
 
                         {showAdvanced && (
                             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
-                                {/* Pumping */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Pumping Mode</label>
@@ -309,8 +402,6 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
                                         />
                                     </div>
                                 </div>
-
-                                {/* Flow Return Thresholds */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Flow Return Threshold (m³/s)</label>
@@ -333,8 +424,6 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
                                         />
                                     </div>
                                 </div>
-
-                                {/* Tank Volume */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Tank Volume (m³)</label>
                                     <input
@@ -424,7 +513,7 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
                                     <Gauge size={14} /> Pump Rate
                                 </p>
                                 <span className="font-medium text-gray-900">
-                                    {scenario.pump_rate > 0 ? `${scenario.pump_rate} m³/s` : 'None'}
+                                    {scenario.pump_rate > 0 ? `${scenario.pump_rate.toFixed(3)} m³/s` : 'None'}
                                 </span>
                             </div>
                             {scenario.tank_volume !== null && (
@@ -451,6 +540,136 @@ const ScenariosTab: React.FC<ScenariosTabProps> = ({ projectId }) => {
                             ? 'Click "Add Scenario" to create one.'
                             : 'Define CSO assets and configurations first.'}
                     </p>
+                </div>
+            )}
+
+            {/* Develop Scenarios Modal */}
+            {developModalOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl max-w-2xl w-full p-6 shadow-xl">
+                        <div className="flex justify-between items-center mb-6">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 bg-indigo-100 rounded-lg">
+                                    <Zap className="text-indigo-600" size={24} />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900">Develop Scenarios</h2>
+                                    <p className="text-sm text-gray-500">Auto-generate 4 standard scenarios based on flow parameters</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setDevelopModalOpen(false)}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                <X size={20} className="text-gray-500" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleDevelopSubmit} className="space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Left Column: Basic Setup */}
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-semibold text-gray-900 border-b pb-2">Configuration</h3>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Base Name *</label>
+                                        <input
+                                            className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                            placeholder="e.g. Beech Ave"
+                                            value={developData.baseName}
+                                            onChange={(e) => setDevelopData({ ...developData, baseName: e.target.value })}
+                                            required
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">Suffixes (_Avg, _3DWF, etc.) will be added</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">CSO Asset *</label>
+                                        <select
+                                            value={developData.csoAssetId || ''}
+                                            onChange={(e) => setDevelopData({ ...developData, csoAssetId: parseInt(e.target.value) || null })}
+                                            className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                            required
+                                        >
+                                            <option value="">Select CSO asset...</option>
+                                            {csoAssets?.map((asset) => (
+                                                <option key={asset.id} value={asset.id}>{asset.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Configuration *</label>
+                                        <select
+                                            value={developData.configId || ''}
+                                            onChange={(e) => setDevelopData({ ...developData, configId: parseInt(e.target.value) || null })}
+                                            className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                            required
+                                        >
+                                            <option value="">Select configuration...</option>
+                                            {configs?.map((config) => (
+                                                <option key={config.id} value={config.id}>{config.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Right Column: Flow Parameters */}
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-semibold text-gray-900 border-b pb-2">Flow Parameters</h3>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">PFF Increase (m³/s)</label>
+                                        <input
+                                            type="number"
+                                            step="0.001"
+                                            className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                            value={developData.pffIncrease}
+                                            onChange={(e) => setDevelopData({ ...developData, pffIncrease: parseFloat(e.target.value) || 0 })}
+                                        />
+                                    </div>
+                                    <div className="bg-indigo-50 p-4 rounded-xl space-y-4 border border-indigo-100">
+                                        <div>
+                                            <label className="block text-sm font-bold text-indigo-900 mb-1">PFF @ First Spill (m³/s)</label>
+                                            <input
+                                                type="number"
+                                                step="0.001"
+                                                className="w-full border border-indigo-200 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white"
+                                                value={developData.pffAtFs}
+                                                onChange={(e) => setDevelopData({ ...developData, pffAtFs: parseFloat(e.target.value) || 0 })}
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-indigo-900 mb-1">Dry Weather Flow (DWF) (m³/s)</label>
+                                            <input
+                                                type="number"
+                                                step="0.001"
+                                                className="w-full border border-indigo-200 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white"
+                                                value={developData.dwf}
+                                                onChange={(e) => setDevelopData({ ...developData, dwf: parseFloat(e.target.value) || 0 })}
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                                <button
+                                    type="button"
+                                    onClick={() => setDevelopModalOpen(false)}
+                                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isDeveloping}
+                                    className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center shadow-md font-medium"
+                                >
+                                    {isDeveloping && <Loader2 className="animate-spin mr-2" size={16} />}
+                                    Generate 4 Scenarios
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             )}
         </div>

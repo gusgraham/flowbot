@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Play, Loader2, CheckCircle, AlertTriangle, XCircle, Square, CheckSquare, Layers, Terminal, Trash2 } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { Play, Loader2, CheckCircle, AlertTriangle, XCircle, Square, CheckSquare, Layers, Terminal, Trash2, Clock } from 'lucide-react';
 import {
-    useSSDScenarios, useSSDCSOAssets, useSSDAnalysisConfigs, useSSDFiles,
+    useSSDScenarios, useSSDCSOAssets, useSSDAnalysisConfigs, useSSDFiles, useSSDResults,
 } from '../../api/hooks';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -31,6 +31,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ projectId, onRunAnalysis, isR
     const { data: csoAssets, isLoading: assetsLoading } = useSSDCSOAssets(projectId);
     const { data: configs, isLoading: configsLoading } = useSSDAnalysisConfigs(projectId);
     const { data: scenarios, isLoading: scenariosLoading } = useSSDScenarios(projectId);
+    const { data: savedResults } = useSSDResults(projectId);
 
     const [selectedScenarios, setSelectedScenarios] = useState<Set<number>>(new Set());
     const [analysisLog, setAnalysisLog] = useState<LogEntry[]>([]);
@@ -93,6 +94,18 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ projectId, onRunAnalysis, isR
     const getConfigName = (id: number): string => {
         return configs?.find(c => c.id === id)?.name || `Config #${id}`;
     };
+
+    // Helper to get latest result for a scenario
+    const getScenarioResult = useMemo(() => {
+        return (scenarioId: number) => {
+            if (!savedResults) return null;
+            // Find results matching this scenario_id, sorted by date desc
+            const matching = savedResults
+                .filter(r => r.scenario_id === scenarioId)
+                .sort((a, b) => new Date(b.analysis_date).getTime() - new Date(a.analysis_date).getTime());
+            return matching.length > 0 ? matching[0] : null;
+        };
+    }, [savedResults]);
 
     // Toggle scenario selection
     const toggleScenario = (scenarioId: number) => {
@@ -234,33 +247,55 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ projectId, onRunAnalysis, isR
                     <p className="text-sm text-gray-500 mb-4">
                         Select which scenarios to run. Each scenario combines a CSO asset with a configuration and intervention parameters.
                     </p>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {scenarios.map((scenario) => (
-                            <div
-                                key={scenario.id}
-                                onClick={() => toggleScenario(scenario.id)}
-                                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${selectedScenarios.has(scenario.id)
-                                    ? 'bg-orange-50 border border-orange-200'
-                                    : 'bg-gray-50 border border-gray-100 hover:border-gray-200'
-                                    }`}
-                            >
-                                {selectedScenarios.has(scenario.id) ? (
-                                    <CheckSquare size={20} className="text-orange-600 flex-shrink-0" />
-                                ) : (
-                                    <Square size={20} className="text-gray-400 flex-shrink-0" />
-                                )}
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-medium text-gray-900 truncate">{scenario.scenario_name}</p>
-                                    <p className="text-xs text-gray-500 truncate">
-                                        {getCSOName(scenario.cso_asset_id)} • {getConfigName(scenario.config_id)}
-                                    </p>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {scenarios.map((scenario) => {
+                            const result = getScenarioResult(scenario.id);
+                            const hasBeenRun = !!result;
+
+                            return (
+                                <div
+                                    key={scenario.id}
+                                    onClick={() => toggleScenario(scenario.id)}
+                                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${selectedScenarios.has(scenario.id)
+                                        ? 'bg-orange-50 border border-orange-200'
+                                        : hasBeenRun
+                                            ? 'bg-green-50 border border-green-200 hover:border-green-300'
+                                            : 'bg-gray-50 border border-gray-100 hover:border-gray-200'
+                                        }`}
+                                >
+                                    {selectedScenarios.has(scenario.id) ? (
+                                        <CheckSquare size={20} className="text-orange-600 flex-shrink-0" />
+                                    ) : (
+                                        <Square size={20} className={hasBeenRun ? 'text-green-500' : 'text-gray-400'} />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-medium text-gray-900 truncate">{scenario.scenario_name}</p>
+                                            {hasBeenRun && (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                                                    <CheckCircle size={10} className="mr-1" />
+                                                    Run
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-gray-500 truncate">
+                                            {getCSOName(scenario.cso_asset_id)} • {getConfigName(scenario.config_id)}
+                                        </p>
+                                        {hasBeenRun && result && (
+                                            <p className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
+                                                <Clock size={10} />
+                                                {new Date(result.analysis_date).toLocaleDateString()} —
+                                                {result.final_storage_m3.toLocaleString()} m³, {result.spill_count} spills
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="text-right text-xs text-gray-400 flex-shrink-0">
+                                        <p>PFF: +{scenario.pff_increase} m³/s</p>
+                                        {scenario.pump_rate > 0 && <p>Pump: {scenario.pump_rate} m³/s</p>}
+                                    </div>
                                 </div>
-                                <div className="text-right text-xs text-gray-400">
-                                    <p>PFF: +{scenario.pff_increase} m³/s</p>
-                                    {scenario.pump_rate > 0 && <p>Pump: {scenario.pump_rate} m³/s</p>}
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}

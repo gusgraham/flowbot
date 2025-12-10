@@ -11,6 +11,9 @@ class SSDProject(SQLModel, table=True):
     job_number: str
     description: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
+    # Date format for CSV parsing (e.g., '%d/%m/%Y %H:%M:%S')
+    # None means auto-detect
+    date_format: Optional[str] = None
     
     # Relationships
     datasets: List["SSDDataset"] = Relationship(back_populates="project")
@@ -29,6 +32,13 @@ class SSDProjectRead(SQLModel):
     job_number: str
     description: Optional[str] = None
     created_at: datetime
+    date_format: Optional[str] = None
+
+class SSDProjectUpdate(SQLModel):
+    name: Optional[str] = None
+    client: Optional[str] = None
+    job_number: Optional[str] = None
+    description: Optional[str] = None
 
 # Dataset Model (stores file paths)
 class SSDDataset(SQLModel, table=True):
@@ -43,30 +53,92 @@ class SSDDataset(SQLModel, table=True):
 
     project: Optional[SSDProject] = Relationship(back_populates="datasets")
 
-# Result Model
+# Result Model - stores analysis results per scenario
 class SSDResult(SQLModel, table=True):
     __tablename__ = "ssdresult"
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="ssdproject.id")
+    project_id: int = Field(foreign_key="ssdproject.id", index=True)
+    scenario_id: int = Field(foreign_key="analysisscenario.id", index=True)
     analysis_date: datetime = Field(default_factory=datetime.now)
     
-    # Configuration Snapshot
+    # Scenario identifiers (snapshot at time of analysis)
+    scenario_name: str
     cso_name: str
+    config_name: str
+    
+    # Analysis parameters (snapshot)
     start_date: datetime
     end_date: datetime
     pff_increase: float
-    tank_volume: float
+    spill_target: int
+    tank_volume: float = 0.0  # Tank volume used in analysis
     
     # Key Metrics
+    converged: bool
+    iterations: int
     final_storage_m3: float
     spill_count: int
     bathing_spill_count: int
     total_spill_volume_m3: float
+    bathing_spill_volume_m3: float
+    total_spill_duration_hours: float
     
-    # Detailed result file path (for full time series)
-    result_artifact_path: str
+    # Spill events as JSON array
+    spill_events: List[dict] = Field(default=[], sa_type=JSON)
+    
+    # Path to Parquet file with time-series data
+    timeseries_path: Optional[str] = None
     
     project: Optional[SSDProject] = Relationship(back_populates="results")
+
+
+class SSDResultCreate(SQLModel):
+    scenario_id: int
+    scenario_name: str
+    cso_name: str
+    config_name: str
+    start_date: datetime
+    end_date: datetime
+    pff_increase: float
+    spill_target: int
+    tank_volume: float = 0.0
+    converged: bool
+    iterations: int
+    final_storage_m3: float
+    spill_count: int
+    bathing_spill_count: int
+    total_spill_volume_m3: float
+    bathing_spill_volume_m3: float
+    total_spill_duration_hours: float
+    spill_events: List[dict] = []
+    timeseries_path: Optional[str] = None
+
+
+class SSDResultRead(SQLModel):
+    id: int
+    project_id: int
+    scenario_id: int
+    analysis_date: datetime
+    scenario_name: str
+    cso_name: str
+    config_name: str
+    start_date: datetime
+    end_date: datetime
+    pff_increase: float
+    spill_target: int
+    tank_volume: float
+    converged: bool
+    iterations: int
+    final_storage_m3: float
+    spill_count: int
+    bathing_spill_count: int
+    total_spill_volume_m3: float
+    bathing_spill_volume_m3: float
+    total_spill_duration_hours: float
+    spill_events: List[dict]
+    timeseries_path: Optional[str]
+
+
 
 
 # CSO Asset Model - defines which links represent a CSO

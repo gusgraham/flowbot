@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import api from './client';
 
 // Types
@@ -883,7 +883,7 @@ export const useInstallTimeseries = (
             return data;
         },
         enabled: !!installId,
-        keepPreviousData: true,
+        placeholderData: keepPreviousData,
     });
 };
 
@@ -1400,6 +1400,32 @@ export function useCreateSSDProject() {
     });
 }
 
+export function useUpdateSSDProject() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, data }: { id: number; data: Partial<SSDProjectCreate> }) => {
+            const response = await api.put(`/ssd/projects/${id}`, data);
+            return response.data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-projects'] });
+            queryClient.invalidateQueries({ queryKey: ['ssd-project', data.id] });
+        },
+    });
+}
+
+export function useDeleteSSDProject() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (projectId: number) => {
+            await api.delete(`/ssd/projects/${projectId}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-projects'] });
+        },
+    });
+}
+
 export function useSSDFiles(projectId: number) {
     return useQuery({
         queryKey: ['ssd-files', projectId],
@@ -1696,6 +1722,41 @@ export function useDeleteAnalysisConfig() {
     });
 }
 
+// Detect date format from project files
+export interface DateFormatDetectionResponse {
+    can_auto_parse: boolean;
+    detected_format: string | null;
+    sample_dates: string[];
+    current_format: string | null;
+}
+
+export function useDetectDateFormat(projectId: number) {
+    return useQuery({
+        queryKey: ['ssd-date-format', projectId],
+        queryFn: async () => {
+            const response = await api.get<DateFormatDetectionResponse>(`/ssd/projects/${projectId}/detect-date-format`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+// Update project date format
+export function useUpdateDateFormat() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, dateFormat }: { projectId: number; dateFormat: string | null }) => {
+            const response = await api.patch(`/ssd/projects/${projectId}/date-format`, { date_format: dateFormat });
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-date-format', variables.projectId] });
+            queryClient.invalidateQueries({ queryKey: ['ssd-project', variables.projectId] });
+        },
+    });
+}
+
+
 // ==========================================
 // ANALYSIS SCENARIOS
 // ==========================================
@@ -1797,3 +1858,111 @@ export function useDeleteScenario() {
 }
 
 
+// ==========================================
+// SSD RESULTS
+// ==========================================
+
+export interface SpillEvent {
+    start_time: string;
+    end_time: string;
+    duration_hours: number;
+    volume_m3: number;
+    peak_flow_m3s: number;
+    is_bathing_season: boolean;
+}
+
+export interface SSDResultData {
+    id: number;
+    project_id: number;
+    scenario_id: number;
+    analysis_date: string;
+    scenario_name: string;
+    cso_name: string;
+    config_name: string;
+    start_date: string;
+    end_date: string;
+    pff_increase: number;
+    tank_volume: number;
+    spill_target: number;
+    converged: boolean;
+    iterations: number;
+    final_storage_m3: number;
+    spill_count: number;
+    bathing_spill_count: number;
+    total_spill_volume_m3: number;
+    bathing_spill_volume_m3: number;
+    total_spill_duration_hours: number;
+    spill_events: SpillEvent[];
+    timeseries_path: string | null;
+}
+
+export interface TimeseriesData {
+    columns: string[];
+    data: Record<string, unknown>[];
+    total_points: number;
+    original_points?: number;
+    downsampled: boolean;
+}
+
+// List saved analysis results for a project
+export function useSSDResults(projectId: number) {
+    return useQuery({
+        queryKey: ['ssd-results', projectId],
+        queryFn: async () => {
+            const response = await api.get<SSDResultData[]>(`/ssd/projects/${projectId}/results`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+// Get a single result by ID
+export function useSSDResult(projectId: number, resultId: number) {
+    return useQuery({
+        queryKey: ['ssd-result', projectId, resultId],
+        queryFn: async () => {
+            const response = await api.get<SSDResultData>(`/ssd/projects/${projectId}/results/${resultId}`);
+            return response.data;
+        },
+        enabled: !!projectId && !!resultId,
+    });
+}
+
+// Get time-series data for charting with optional date range zoom
+export function useSSDResultTimeseries(
+    projectId: number,
+    resultId: number | null,
+    downsample: number = 10,
+    startDate?: string | null,
+    endDate?: string | null
+) {
+    return useQuery({
+        queryKey: ['ssd-result-timeseries', projectId, resultId, downsample, startDate, endDate],
+        queryFn: async () => {
+            const params: Record<string, unknown> = { downsample };
+            if (startDate) params.start_date = startDate;
+            if (endDate) params.end_date = endDate;
+
+            const response = await api.get<TimeseriesData>(
+                `/ssd/projects/${projectId}/results/${resultId}/timeseries`,
+                { params }
+            );
+            return response.data;
+        },
+        enabled: !!projectId && !!resultId,
+    });
+}
+
+// Delete a result
+export function useDeleteSSDResult() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, resultId }: { projectId: number; resultId: number }) => {
+            const response = await api.delete(`/ssd/projects/${projectId}/results/${resultId}`);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd-results', variables.projectId] });
+        },
+    });
+}

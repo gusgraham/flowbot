@@ -10,7 +10,7 @@ import pandas as pd
 
 # Import domain models
 from domain.ssd import (
-    SSDProject, SSDProjectCreate, SSDProjectRead, SSDDataset, SSDResult,
+    SSDProject, SSDProjectCreate, SSDProjectRead, SSDProjectUpdate, SSDDataset, SSDResult, SSDResultRead,
     CSOAsset, CSOAssetCreate, CSOAssetRead, CSOAssetUpdate,
     AnalysisConfig, AnalysisConfigCreate, AnalysisConfigRead, AnalysisConfigUpdate,
     AnalysisScenario, AnalysisScenarioCreate, AnalysisScenarioRead, AnalysisScenarioUpdate
@@ -28,6 +28,153 @@ router = APIRouter(prefix="/ssd", tags=["Spill Storage Design"])
 
 DATA_DIR = Path("data/ssd")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def lttb_downsample(df: pd.DataFrame, target_points: int) -> pd.DataFrame:
+    """
+    LTTB (Largest Triangle Three Buckets) downsampling algorithm.
+    
+    Preserves visual shape of the data by selecting points that create the largest triangles,
+    effectively keeping peaks and troughs while reducing point count.
+    
+    Args:
+        df: DataFrame with time-series data
+        target_points: Approximate number of points to keep
+        
+    Returns:
+        Downsampled DataFrame
+    """
+    import numpy as np
+    
+    n_points = len(df)
+    if target_points >= n_points or target_points < 3:
+        return df
+    
+    # Use the first numeric column as the value column for LTTB
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if not numeric_cols:
+        # Fall back to simple downsampling if no numeric columns
+        return df.iloc[::max(1, n_points // target_points)]
+    
+    # Use Spill_Flow or first numeric column as the primary value for point selection
+    value_col = 'Spill_Flow' if 'Spill_Flow' in numeric_cols else numeric_cols[0]
+    
+    # LTTB algorithm
+    selected_indices = [0]  # Always keep first point
+    bucket_size = (n_points - 2) / (target_points - 2)
+    
+    values = df[value_col].values
+    x_values = np.arange(n_points)  # Use index as x-axis
+    
+    a = 0  # Point a (selected in previous bucket)
+    
+    for i in range(target_points - 2):
+        # Calculate bucket boundaries
+        bucket_start = int((i + 1) * bucket_size) + 1
+        bucket_end = int((i + 2) * bucket_size) + 1
+        bucket_end = min(bucket_end, n_points)
+        
+        next_bucket_start = int((i + 2) * bucket_size) + 1
+        next_bucket_end = int((i + 3) * bucket_size) + 1
+        next_bucket_end = min(next_bucket_end, n_points)
+        
+        # Calculate average point for next bucket
+        if next_bucket_end <= n_points and next_bucket_end > next_bucket_start:
+            avg_x = np.mean(x_values[next_bucket_start:next_bucket_end])
+            avg_y = np.mean(values[next_bucket_start:next_bucket_end])
+        else:
+            avg_x = x_values[-1]
+            avg_y = values[-1]
+        
+        # Find the point in current bucket that creates largest triangle
+        max_area = -1
+        max_area_idx = bucket_start
+        
+        for j in range(bucket_start, bucket_end):
+            # Calculate triangle area using cross product
+            area = abs(
+                (x_values[a] - avg_x) * (values[j] - values[a]) -
+                (x_values[a] - x_values[j]) * (avg_y - values[a])
+            )
+            if area > max_area:
+                max_area = area
+                max_area_idx = j
+        
+        selected_indices.append(max_area_idx)
+        a = max_area_idx
+    
+    selected_indices.append(n_points - 1)  # Always keep last point
+    
+    return df.iloc[selected_indices].reset_index(drop=True)
+
+
+def detect_csv_date_format(csv_file: str | Path, sample_size: int = 10) -> str | None:
+    """
+    Auto-detect the date format in a CSV file's Time column.
+    
+    Samples the Time column and tries common ICM export formats to find
+    the fastest explicit format for parsing (avoids slow dateutil fallback).
+    
+    Args:
+        csv_file: Path to CSV file to sample
+        sample_size: Number of rows to sample
+        
+    Returns:
+        Date format string (e.g., '%d/%m/%Y %H:%M:%S') or None if auto-detection works
+    """
+    import warnings
+    
+    try:
+        # Read sample rows without parsing dates
+        df_sample = pd.read_csv(csv_file, nrows=sample_size)
+        
+        if 'Time' not in df_sample.columns:
+            return None
+        
+        # Try to parse with pandas auto-detection (dayfirst=True)
+        # Check if pandas can infer a consistent format (fast path)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            try:
+                pd.to_datetime(df_sample['Time'], dayfirst=True, errors='raise')
+                
+                # Check if we got the "could not infer format" warning
+                # This means pandas is using slow dateutil fallback
+                has_infer_warning = any(
+                    "Could not infer format" in str(warning.message)
+                    for warning in w
+                )
+                
+                if not has_infer_warning:
+                    # Success - pandas can efficiently auto-parse, no explicit format needed
+                    return None
+            except Exception:
+                pass
+        
+        # Try common ICM export formats
+        common_formats = [
+            '%d/%m/%Y %H:%M:%S',  # 01/12/2023 14:30:00
+            '%d-%m-%y %H:%M',      # 01-12-23 14:30
+            '%d/%m/%Y %H:%M',      # 01/12/2023 14:30
+            '%Y-%m-%d %H:%M:%S',   # 2023-12-01 14:30:00
+            '%d/%m/%y %H:%M:%S',   # 01/12/23 14:30:00
+            '%d-%m-%Y %H:%M:%S',   # 01-12-2023 14:30:00
+            '%Y-%m-%dT%H:%M:%S',   # 2023-12-01T14:30:00 (ISO)
+        ]
+        
+        for fmt in common_formats:
+            try:
+                pd.to_datetime(df_sample['Time'], format=fmt, errors='raise')
+                # Success - found matching format
+                return fmt
+            except Exception:
+                continue
+        
+        # Could not find an explicit format, return None to use slow fallback
+        return None
+        
+    except Exception:
+        return None
 
 
 # ==========================================
@@ -138,6 +285,159 @@ def get_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
+
+
+class DateFormatDetectionResponse(BaseModel):
+    """Response from date format detection endpoint."""
+    can_auto_parse: bool
+    detected_format: Optional[str] = None
+    sample_dates: List[str] = []
+    current_format: Optional[str] = None
+    
+
+@router.get("/projects/{project_id}/detect-date-format", response_model=DateFormatDetectionResponse)
+def detect_date_format_endpoint(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Detect date format from project's CSV files."""
+    project = session.get(SSDProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project_dir = DATA_DIR / str(project_id)
+    csv_files = list(project_dir.glob("*.csv"))
+    
+    if not csv_files:
+        return DateFormatDetectionResponse(
+            can_auto_parse=True,
+            detected_format=None,
+            sample_dates=[],
+            current_format=project.date_format
+        )
+    
+    # Sample dates from first file
+    sample_dates = []
+    try:
+        df_sample = pd.read_csv(csv_files[0], nrows=5)
+        if 'Time' in df_sample.columns:
+            sample_dates = df_sample['Time'].astype(str).tolist()
+    except Exception:
+        pass
+    
+    # Detect format
+    detected_format = detect_csv_date_format(csv_files[0])
+    
+    return DateFormatDetectionResponse(
+        can_auto_parse=(detected_format is None),
+        detected_format=detected_format,
+        sample_dates=sample_dates,
+        current_format=project.date_format
+    )
+
+
+class DateFormatUpdateRequest(BaseModel):
+    """Request to update project's date format."""
+    date_format: Optional[str] = None  # None means auto-detect
+
+
+@router.patch("/projects/{project_id}/date-format")
+def update_date_format(
+    project_id: int,
+    request: DateFormatUpdateRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Update project's date format setting."""
+    project = session.get(SSDProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project.date_format = request.date_format
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    
+    return {
+        "message": f"Date format updated to: {request.date_format or 'auto-detect'}",
+        "date_format": project.date_format
+    }
+
+
+@router.put("/projects/{project_id}", response_model=SSDProjectRead)
+def update_project(
+    project_id: int,
+    project_update: SSDProjectUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Update an SSD project."""
+    project = session.get(SSDProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project_data = project_update.dict(exclude_unset=True)
+    for key, value in project_data.items():
+        setattr(project, key, value)
+    
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    return project
+
+
+@router.delete("/projects/{project_id}")
+def delete_project(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Delete an SSD project and all associated data."""
+    project = session.get(SSDProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # 1. Delete associated database records
+    
+    # Datasets
+    datasets = session.exec(select(SSDDataset).where(SSDDataset.project_id == project_id)).all()
+    for dataset in datasets:
+        session.delete(dataset)
+        
+    # Results
+    results = session.exec(select(SSDResult).where(SSDResult.project_id == project_id)).all()
+    for result in results:
+        session.delete(result)
+
+    # Analysis Scenarios
+    scenarios = session.exec(select(AnalysisScenario).where(AnalysisScenario.project_id == project_id)).all()
+    for scenario in scenarios:
+        session.delete(scenario)
+
+    # CSO Assets
+    assets = session.exec(select(CSOAsset).where(CSOAsset.project_id == project_id)).all()
+    for asset in assets:
+        session.delete(asset)
+        
+    # Analysis Configs
+    configs = session.exec(select(AnalysisConfig).where(AnalysisConfig.project_id == project_id)).all()
+    for config in configs:
+        session.delete(config)
+        
+    # 2. Delete Project record
+    session.delete(project)
+    session.commit()
+    
+    # 3. Clean up files
+    project_dir = DATA_DIR / str(project_id)
+    if project_dir.exists() and project_dir.is_dir():
+        try:
+            shutil.rmtree(project_dir)
+        except Exception as e:
+            print(f"Error deleting project directory: {e}")
+            
+    return {"ok": True}
 
 
 # ==========================================
@@ -287,8 +587,12 @@ def get_date_range(
                     break
             
             if time_col:
-                # Parse dates
-                df[time_col] = pd.to_datetime(df[time_col], dayfirst=True)
+                # Parse dates using project format if available
+                if project.date_format:
+                    df[time_col] = pd.to_datetime(df[time_col], format=project.date_format)
+                else:
+                    df[time_col] = pd.to_datetime(df[time_col], dayfirst=True)
+                
                 file_min = df[time_col].min()
                 file_max = df[time_col].max()
                 
@@ -752,7 +1056,11 @@ def run_scenario_analysis(
             # Setup data source - detect timestep from first CSV
             csv_files = list(project_dir.glob("*.csv"))
             timestep_seconds = 120  # Default: 2 minutes
+            date_format = None
             if csv_files:
+                # Detect date format for fast parsing
+                date_format = detect_csv_date_format(csv_files[0])
+                
                 try:
                     df_sample = pd.read_csv(csv_files[0], nrows=10)
                     if 'Time' in df_sample.columns:
@@ -767,7 +1075,8 @@ def run_scenario_analysis(
             data_source = DataSourceInfo(
                 data_folder=project_dir,
                 file_type="csv",
-                timestep_seconds=timestep_seconds
+                timestep_seconds=timestep_seconds,
+                date_format=date_format
             )
             
             # Setup scenario settings
@@ -807,8 +1116,43 @@ def run_scenario_analysis(
                     "is_bathing_season": is_bathing
                 })
             
+            # Save time-series to Parquet file
+            results_dir = project_dir / "results"
+            results_dir.mkdir(parents=True, exist_ok=True)
+            ts_filename = f"ts_{scenario.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
+            ts_path = results_dir / ts_filename
+            result.time_series.to_parquet(ts_path, index=False)
+            
+            # Save result to database
+            db_result = SSDResult(
+                project_id=project_id,
+                scenario_id=scenario.id,
+                scenario_name=scenario.scenario_name,
+                cso_name=cso_asset.name,
+                config_name=config.name,
+                start_date=config.start_date,
+                end_date=config.end_date,
+                pff_increase=scenario.pff_increase,
+                tank_volume=scenario.tank_volume or 0.0,
+                spill_target=config.spill_target,
+                converged=result.converged,
+                iterations=result.iterations_count,
+                final_storage_m3=round(result.final_storage_m3, 1),
+                spill_count=result.spill_count,
+                bathing_spill_count=result.bathing_spills_count,
+                total_spill_volume_m3=round(result.total_spill_volume_m3, 1),
+                bathing_spill_volume_m3=round(result.bathing_spill_volume_m3, 1),
+                total_spill_duration_hours=round(result.total_spill_duration_hours, 2),
+                spill_events=spill_events,
+                timeseries_path=str(ts_path)
+            )
+            session.add(db_result)
+            session.commit()
+            session.refresh(db_result)
+            
             results.append({
                 "scenario_id": scenario.id,
+                "result_id": db_result.id,  # Include saved result ID
                 "scenario_name": scenario.scenario_name,
                 "cso_name": cso_asset.name,
                 "config_name": config.name,
@@ -895,10 +1239,14 @@ def run_analysis(
         if errors:
             raise HTTPException(status_code=400, detail=f"Configuration error: {', '.join(errors)}")
         
-        # Setup data source
+        # Setup data source with date format detection for fast parsing
+        csv_files = list(project_dir.glob("*.csv"))
+        date_format = detect_csv_date_format(csv_files[0]) if csv_files else None
+        
         data_source = DataSourceInfo(
             data_folder=project_dir,
-            file_type="csv"
+            file_type="csv",
+            date_format=date_format
         )
         
         # Setup scenario
@@ -961,3 +1309,149 @@ def run_analysis(
             spill_events=[],
             error=str(e)
         )
+
+
+# ==========================================
+# RESULTS ENDPOINTS
+# ==========================================
+
+@router.get("/projects/{project_id}/results", response_model=List[SSDResultRead])
+def list_results(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """List all saved analysis results for a project."""
+    project = session.get(SSDProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    statement = select(SSDResult).where(SSDResult.project_id == project_id).order_by(SSDResult.analysis_date.desc())
+    results = session.exec(statement).all()
+    return results
+
+
+@router.get("/projects/{project_id}/results/{result_id}", response_model=SSDResultRead)
+def get_result(
+    project_id: int,
+    result_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get a specific analysis result."""
+    result = session.get(SSDResult, result_id)
+    if not result or result.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Result not found")
+    return result
+
+
+@router.get("/projects/{project_id}/results/{result_id}/timeseries")
+def get_result_timeseries(
+    project_id: int,
+    result_id: int,
+    downsample: int = Query(default=1, ge=1, description="Target number of points (1 = all points, otherwise approx N points)"),
+    start_date: str = Query(default=None, description="Start date for zoom (ISO format)"),
+    end_date: str = Query(default=None, description="End date for zoom (ISO format)"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get time-series data for a result (for charting) with smart downsampling and optional date range zoom."""
+    result = session.get(SSDResult, result_id)
+    if not result or result.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Result not found")
+    
+    if not result.timeseries_path:
+        raise HTTPException(status_code=404, detail="Time-series data not available")
+    
+    # Handle path resolution - stored path may be relative
+    ts_path = Path(result.timeseries_path)
+    if not ts_path.is_absolute():
+        # Resolve relative to the backend directory (api/ssd.py -> api -> backend)
+        ts_path = Path(__file__).parent.parent / result.timeseries_path
+    
+    if not ts_path.exists():
+        raise HTTPException(status_code=404, detail=f"Time-series file not found: {ts_path}")
+    
+    try:
+        df = pd.read_parquet(ts_path)
+        full_data_count = len(df)
+        
+        # Parse and filter by date range if provided (for zoom feature)
+        if start_date or end_date:
+            # Ensure Time column is datetime
+            if not pd.api.types.is_datetime64_any_dtype(df['Time']):
+                df['Time'] = pd.to_datetime(df['Time'])
+            
+            if start_date:
+                start_dt = pd.to_datetime(start_date)
+                df = df[df['Time'] >= start_dt]
+            if end_date:
+                end_dt = pd.to_datetime(end_date)
+                df = df[df['Time'] <= end_dt]
+        
+        # Select columns for charting
+        chart_columns = ['Time', 'CSO_Flow_Original', 'Cont_Flow_Original', 'Spill_Flow', 'Tank_Volume']
+        available_cols = [c for c in chart_columns if c in df.columns]
+        
+        # Also include any columns matching the continuation link pattern
+        for col in df.columns:
+            if col not in available_cols and not col.endswith('_Depth') and col != 'Spill_in_Time_Delay':
+                available_cols.append(col)
+        
+        df_chart = df[available_cols].copy()
+        original_count = len(df_chart)
+        
+        # Apply LTTB (Largest Triangle Three Buckets) downsampling if requested
+        # This algorithm preserves the visual shape by keeping peaks and troughs
+        if downsample > 1 and len(df_chart) > downsample:
+            df_chart = lttb_downsample(df_chart, downsample)
+        
+        df_chart['Time'] = df_chart['Time'].astype(str)  # Convert datetime for JSON
+        
+        # Replace NaN and Inf values with None for JSON serialization
+        import numpy as np
+        df_chart = df_chart.replace([np.inf, -np.inf], np.nan)
+        
+        # Convert to dict and replace NaN with None (null in JSON)
+        data_records = df_chart.to_dict(orient='records')
+        for record in data_records:
+            for key, value in record.items():
+                if isinstance(value, float) and (pd.isna(value) or np.isinf(value)):
+                    record[key] = None
+        
+        return {
+            "columns": list(df_chart.columns),
+            "data": data_records,
+            "total_points": len(df_chart),
+            "original_points": original_count,
+            "downsampled": len(df_chart) < original_count
+        }
+    except Exception as e:
+        import traceback
+        raise HTTPException(status_code=500, detail=f"Error reading time-series: {str(e)}\n{traceback.format_exc()}")
+
+
+@router.delete("/projects/{project_id}/results/{result_id}")
+def delete_result(
+    project_id: int,
+    result_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Delete an analysis result and its time-series file."""
+    result = session.get(SSDResult, result_id)
+    if not result or result.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Result not found")
+    
+    # Delete Parquet file if it exists
+    if result.timeseries_path:
+        ts_path = Path(result.timeseries_path)
+        if ts_path.exists():
+            ts_path.unlink()
+    
+    # Delete from database
+    session.delete(result)
+    session.commit()
+    
+    return {"success": True, "message": "Result deleted successfully"}
+

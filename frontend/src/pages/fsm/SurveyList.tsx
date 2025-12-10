@@ -58,7 +58,7 @@ const SurveyList: React.FC = () => {
         <div>
             <div className="flex justify-between items-center mb-8">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Field Surveys</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">Flow Surveys</h1>
                     <p className="text-gray-500 mt-1">Manage your ongoing and past flow surveys.</p>
                 </div>
                 <div className="flex gap-3 items-center">

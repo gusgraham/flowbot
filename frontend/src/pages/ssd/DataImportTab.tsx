@@ -1,6 +1,6 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { Upload, File, X, Loader2, CheckCircle, Trash2 } from 'lucide-react';
-import { useSSDFiles, useSSDUpload, useDeleteSSDFile } from '../../api/hooks';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Upload, File, X, Loader2, CheckCircle, Trash2, Calendar, Settings, AlertTriangle } from 'lucide-react';
+import { useSSDFiles, useSSDUpload, useDeleteSSDFile, useDetectDateFormat, useUpdateDateFormat } from '../../api/hooks';
 
 interface DataImportTabProps {
     projectId: number;
@@ -8,12 +8,33 @@ interface DataImportTabProps {
 
 const DataImportTab: React.FC<DataImportTabProps> = ({ projectId }) => {
     const { data: files, isLoading } = useSSDFiles(projectId);
+    const { data: dateDetection, refetch: refetchDateDetection } = useDetectDateFormat(projectId);
     const uploadMutation = useSSDUpload();
     const deleteFileMutation = useDeleteSSDFile();
+    const updateDateFormatMutation = useUpdateDateFormat();
 
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [isDragging, setIsDragging] = useState(false);
+    const [showFormatConfig, setShowFormatConfig] = useState(false);
+    const [customFormat, setCustomFormat] = useState('');
+
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Refresh detection when files change
+    useEffect(() => {
+        if (files && files.length > 0) {
+            refetchDateDetection();
+        }
+    }, [files, refetchDateDetection]);
+
+    // Initialize custom format input from current setting
+    useEffect(() => {
+        if (dateDetection?.current_format) {
+            setCustomFormat(dateDetection.current_format);
+        } else if (dateDetection?.detected_format) {
+            setCustomFormat(dateDetection.detected_format);
+        }
+    }, [dateDetection]);
 
     const handleFileSelect = (fileList: FileList | null) => {
         if (!fileList) return;
@@ -46,6 +67,8 @@ const DataImportTab: React.FC<DataImportTabProps> = ({ projectId }) => {
         try {
             await uploadMutation.mutateAsync({ projectId, files: selectedFiles });
             setSelectedFiles([]);
+            // Backend detection happens on GET request, so just refetching is enough
+            setTimeout(() => refetchDateDetection(), 500);
         } catch (error) {
             console.error('Upload failed:', error);
         }
@@ -54,10 +77,31 @@ const DataImportTab: React.FC<DataImportTabProps> = ({ projectId }) => {
     const handleDeleteFile = async (filename: string) => {
         try {
             await deleteFileMutation.mutateAsync({ projectId, filename });
+            // Refetch after deletion
+            setTimeout(() => refetchDateDetection(), 500);
         } catch (error) {
             console.error('Delete failed:', error);
         }
     };
+
+    const handleUpdateFormat = async (format: string | null) => {
+        try {
+            await updateDateFormatMutation.mutateAsync({ projectId, dateFormat: format });
+            setShowFormatConfig(false);
+            refetchDateDetection();
+        } catch (error) {
+            console.error('Failed to update date format:', error);
+        }
+    };
+
+    const commonFormats = [
+        { label: 'Auto-detect (dayfirst)', value: null },
+        { label: 'DD/MM/YYYY HH:mm:ss', value: '%d/%m/%Y %H:%M:%S' },
+        { label: 'DD-MM-YY HH:mm', value: '%d-%m-%y %H:%M' },
+        { label: 'DD/MM/YYYY HH:mm', value: '%d/%m/%Y %H:%M' },
+        { label: 'YYYY-MM-DD HH:mm:ss', value: '%Y-%m-%d %H:%M:%S' },
+        { label: 'DD/MM/YY HH:mm:ss', value: '%d/%m/%y %H:%M:%S' },
+    ];
 
     if (isLoading) {
         return (
@@ -86,8 +130,8 @@ const DataImportTab: React.FC<DataImportTabProps> = ({ projectId }) => {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition ${isDragging
-                        ? 'border-orange-500 bg-orange-50'
-                        : 'border-gray-300 hover:border-orange-400 bg-gray-50 hover:bg-orange-50/50'
+                    ? 'border-orange-500 bg-orange-50'
+                    : 'border-gray-300 hover:border-orange-400 bg-gray-50 hover:bg-orange-50/50'
                     }`}
             >
                 <Upload className={`mx-auto mb-3 ${isDragging ? 'text-orange-500' : 'text-gray-400'}`} size={40} />
@@ -125,6 +169,97 @@ const DataImportTab: React.FC<DataImportTabProps> = ({ projectId }) => {
                         {uploadMutation.isPending ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} />}
                         Upload {selectedFiles.length} File{selectedFiles.length > 1 ? 's' : ''}
                     </button>
+                </div>
+            )}
+
+            {/* Date Format Configuration */}
+            {files && files.length > 0 && dateDetection && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+                    <div className="flex items-start justify-between">
+                        <div className="flex gap-3">
+                            <Calendar className="text-blue-500 mt-1" size={20} />
+                            <div>
+                                <h3 className="font-semibold text-gray-900">Date Format Configuration</h3>
+                                <p className="text-sm text-gray-600 mt-1">
+                                    {dateDetection.current_format
+                                        ? <span className="flex items-center gap-2">
+                                            Using configured format:
+                                            <span className="font-mono bg-blue-100 px-1 rounded">{dateDetection.current_format}</span>
+                                        </span>
+                                        : dateDetection.can_auto_parse
+                                            ? <span className="text-green-700 flex items-center gap-1.5 font-medium">
+                                                <CheckCircle size={15} />
+                                                Fast auto-detection supported - manual configuration not required
+                                            </span>
+                                            : dateDetection.detected_format
+                                                ? <span className="text-green-700 flex items-center gap-1.5 font-medium">
+                                                    <CheckCircle size={15} />
+                                                    <span>Detected optimal format: <span className="font-mono bg-green-100 px-1 rounded text-green-800">{dateDetection.detected_format}</span> - manual configuration not required</span>
+                                                </span>
+                                                : <span className="text-amber-700 flex items-center gap-1.5 font-medium">
+                                                    <AlertTriangle size={15} />
+                                                    Complex format detected - manual configuration recommended for speed
+                                                </span>
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setShowFormatConfig(!showFormatConfig)}
+                            className="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center gap-2"
+                        >
+                            <Settings size={16} />
+                            Configure
+                        </button>
+                    </div>
+
+                    {showFormatConfig && (
+                        <div className="mt-4 pt-4 border-t border-blue-200">
+                            <h4 className="text-sm font-medium text-gray-900 mb-2">Sample Dates from File:</h4>
+                            <div className="bg-gray-900 text-gray-300 p-3 rounded-lg font-mono text-xs mb-4">
+                                {dateDetection.sample_dates.length > 0
+                                    ? dateDetection.sample_dates.slice(0, 3).map((d, i) => <div key={i}>{d}</div>)
+                                    : <span className="text-gray-500">No sample dates available</span>
+                                }
+                            </div>
+
+                            <h4 className="text-sm font-medium text-gray-900 mb-2">Select Format:</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+                                {commonFormats.map((fmt, idx) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => handleUpdateFormat(fmt.value)}
+                                        className={`text-left px-3 py-2 rounded-lg text-sm border ${(dateDetection.current_format === fmt.value)
+                                            ? 'bg-blue-100 border-blue-300 text-blue-800'
+                                            : 'bg-white border-gray-200 hover:border-blue-300 text-gray-700'
+                                            }`}
+                                    >
+                                        <div className="font-medium">{fmt.label}</div>
+                                        {fmt.value && <div className="text-xs text-gray-500 font-mono">{fmt.value}</div>}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="Or enter custom format..."
+                                    value={customFormat}
+                                    onChange={(e) => setCustomFormat(e.target.value)}
+                                    className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2"
+                                />
+                                <button
+                                    onClick={() => handleUpdateFormat(customFormat || null)}
+                                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700"
+                                >
+                                    Save Custom
+                                </button>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">
+                                Specifying an explicit format significantly improves CSV parsing speed compared to auto-detection (dateutil).
+                            </p>
+                        </div>
+                    )}
                 </div>
             )}
 

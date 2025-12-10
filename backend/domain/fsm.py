@@ -1,6 +1,6 @@
 """
-Field Survey Management (FSM) Domain Models
-All models related to field survey management are consolidated here.
+Flow Survey Management (FSM) Domain Models
+All models related to Flow Survey management are consolidated here.
 """
 from typing import Optional, List
 from datetime import datetime

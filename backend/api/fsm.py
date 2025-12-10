@@ -1,6 +1,6 @@
 """
-Field Survey Management (FSM) API Endpoints
-All API endpoints related to field survey management are consolidated here.
+Flow Survey Management (FSM) API Endpoints
+All API endpoints related to Flow Survey management are consolidated here.
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime
