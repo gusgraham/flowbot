@@ -159,6 +159,172 @@ export const useDeleteAnalysisProject = () => {
     });
 };
 
+export const useUpdateAnalysisProject = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, data }: { id: number; data: Partial<AnalysisProjectCreate> }) => {
+            const response = await api.put(`/fsa/projects/${id}`, data);
+            return response.data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['analysis_projects'] });
+            queryClient.invalidateQueries({ queryKey: ['analysis_projects', data.id] });
+        },
+    });
+};
+
+// FSA Collaborators
+export const useFsaProjectCollaborators = (projectId: number) => {
+    return useQuery({
+        queryKey: ['fsa_project_collaborators', projectId],
+        queryFn: async () => {
+            const { data } = await api.get<User[]>(`/fsa/projects/${projectId}/collaborators`);
+            return data;
+        },
+        enabled: !!projectId,
+    });
+};
+
+export const useAddFsaCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, username }: { projectId: number; username: string }) => {
+            const { data } = await api.post<User>(`/fsa/projects/${projectId}/collaborators?username=${encodeURIComponent(username)}`);
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['fsa_project_collaborators', variables.projectId] });
+            queryClient.invalidateQueries({ queryKey: ['analysis_projects'] });
+        },
+    });
+};
+
+export const useRemoveFsaCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, userId }: { projectId: number; userId: number }) => {
+            await api.delete(`/fsa/projects/${projectId}/collaborators/${userId}`);
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['fsa_project_collaborators', variables.projectId] });
+        },
+    });
+};
+
+// Verification Collaborators
+export const useVerificationProjectCollaborators = (projectId: number) => {
+    return useQuery({
+        queryKey: ['verification_project_collaborators', projectId],
+        queryFn: async () => {
+            const { data } = await api.get<User[]>(`/verification/projects/${projectId}/collaborators`);
+            return data;
+        },
+        enabled: !!projectId,
+    });
+};
+
+export const useAddVerificationCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, username }: { projectId: number; username: string }) => {
+            const { data } = await api.post<User>(`/verification/projects/${projectId}/collaborators?username=${encodeURIComponent(username)}`);
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification_project_collaborators', variables.projectId] });
+            queryClient.invalidateQueries({ queryKey: ['verification_projects'] });
+        },
+    });
+};
+
+export const useRemoveVerificationCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, userId }: { projectId: number; userId: number }) => {
+            await api.delete(`/verification/projects/${projectId}/collaborators/${userId}`);
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification_project_collaborators', variables.projectId] });
+        },
+    });
+};
+
+// WQ Collaborators
+export const useWqProjectCollaborators = (projectId: number) => {
+    return useQuery({
+        queryKey: ['wq_project_collaborators', projectId],
+        queryFn: async () => {
+            const { data } = await api.get<User[]>(`/wq/projects/${projectId}/collaborators`);
+            return data;
+        },
+        enabled: !!projectId,
+    });
+};
+
+export const useAddWqCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, username }: { projectId: number; username: string }) => {
+            const { data } = await api.post<User>(`/wq/projects/${projectId}/collaborators?username=${encodeURIComponent(username)}`);
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['wq_project_collaborators', variables.projectId] });
+            queryClient.invalidateQueries({ queryKey: ['wq_projects'] });
+        },
+    });
+};
+
+export const useRemoveWqCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, userId }: { projectId: number; userId: number }) => {
+            await api.delete(`/wq/projects/${projectId}/collaborators/${userId}`);
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['wq_project_collaborators', variables.projectId] });
+        },
+    });
+};
+
+// SSD Collaborators
+export const useSsdProjectCollaborators = (projectId: number) => {
+    return useQuery({
+        queryKey: ['ssd_project_collaborators', projectId],
+        queryFn: async () => {
+            const { data } = await api.get<User[]>(`/ssd/projects/${projectId}/collaborators`);
+            return data;
+        },
+        enabled: !!projectId,
+    });
+};
+
+export const useAddSsdCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, username }: { projectId: number; username: string }) => {
+            const { data } = await api.post<User>(`/ssd/projects/${projectId}/collaborators?username=${encodeURIComponent(username)}`);
+            return data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd_project_collaborators', variables.projectId] });
+            queryClient.invalidateQueries({ queryKey: ['ssd-projects'] });
+        },
+    });
+};
+
+export const useRemoveSsdCollaborator = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, userId }: { projectId: number; userId: number }) => {
+            await api.delete(`/ssd/projects/${projectId}/collaborators/${userId}`);
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['ssd_project_collaborators', variables.projectId] });
+        },
+    });
+};
+
 // Verification Projects
 export interface VerificationProject {
     id: number;
@@ -201,6 +367,31 @@ export const useCreateVerificationProject = () => {
     });
 };
 
+export const useUpdateVerificationProject = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, data }: { id: number; data: Partial<VerificationProjectCreate> }) => {
+            const response = await api.put(`/verification/projects/${id}`, data);
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['verification_projects'] });
+        },
+    });
+};
+
+export const useDeleteVerificationProject = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (projectId: number) => {
+            await api.delete(`/verification/projects/${projectId}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['verification_projects'] });
+        },
+    });
+};
+
 // Water Quality Projects
 export interface WaterQualityProject {
     id: number;
@@ -236,6 +427,31 @@ export const useCreateWQProject = () => {
         mutationFn: async (newProject: WaterQualityProjectCreate) => {
             const { data } = await api.post<WaterQualityProject>('/wq/projects', newProject);
             return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['wq_projects'] });
+        },
+    });
+};
+
+export const useUpdateWQProject = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, data }: { id: number; data: Partial<WaterQualityProjectCreate> }) => {
+            const response = await api.put(`/wq/projects/${id}`, data);
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['wq_projects'] });
+        },
+    });
+};
+
+export const useDeleteWQProject = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (projectId: number) => {
+            await api.delete(`/wq/projects/${projectId}`);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['wq_projects'] });

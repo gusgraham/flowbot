@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Upload, Package, Settings,
-    Layers, Play, BarChart2, Loader2
+    Layers, Play, BarChart2, Loader2, Pencil
 } from 'lucide-react';
 import { useSSDProject, useSSDScenarioAnalysis } from '../../api/hooks';
 import DataImportTab from './DataImportTab';
@@ -29,6 +29,7 @@ const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
 
 export default function SSDDashboard() {
     const { projectId } = useParams();
+    const navigate = useNavigate();
     const numericProjectId = parseInt(projectId || '0', 10);
 
     // Data hooks
@@ -81,10 +82,21 @@ export default function SSDDashboard() {
                     <ArrowLeft size={16} className="mr-1" /> Back to Projects
                 </Link>
 
-                <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
-                <p className="text-gray-500 mt-1">
-                    {project.client} • {project.job_number}
-                </p>
+                <div className="flex justify-between items-start">
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
+                        <p className="text-gray-500 mt-1">
+                            {project.client} • {project.job_number}
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => navigate('/ssd', { state: { editProjectId: numericProjectId } })}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                        <Pencil size={16} />
+                        Edit Project
+                    </button>
+                </div>
             </div>
 
             {/* Tab Navigation */}

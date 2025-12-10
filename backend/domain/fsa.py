@@ -15,6 +15,11 @@ class FsaProjectBase(SQLModel):
     end_date: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
+class FsaProjectCollaborator(SQLModel, table=True):
+    """Link table for FSA project collaborators (many-to-many)"""
+    project_id: int = Field(foreign_key="fsaproject.id", primary_key=True)
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
+
 class FsaProject(FsaProjectBase, table=True):
     __tablename__ = "fsaproject"
     
@@ -23,6 +28,7 @@ class FsaProject(FsaProjectBase, table=True):
     
     datasets: List["FsaDataset"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     events: List["SurveyEvent"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    collaborators: List["User"] = Relationship(link_model=FsaProjectCollaborator)
 
 class FsaProjectCreate(SQLModel):
     name: str

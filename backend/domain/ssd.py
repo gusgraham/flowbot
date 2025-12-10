@@ -3,6 +3,11 @@ from datetime import datetime, date
 from sqlmodel import SQLModel, Field, Relationship, JSON
 
 # Base Project Model
+class SSDProjectCollaborator(SQLModel, table=True):
+    """Link table for SSD project collaborators (many-to-many)"""
+    project_id: int = Field(foreign_key="ssdproject.id", primary_key=True)
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
+
 class SSDProject(SQLModel, table=True):
     __tablename__ = "ssdproject"
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -11,6 +16,7 @@ class SSDProject(SQLModel, table=True):
     job_number: str
     description: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
+    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
     # Date format for CSV parsing (e.g., '%d/%m/%Y %H:%M:%S')
     # None means auto-detect
     date_format: Optional[str] = None
@@ -18,6 +24,7 @@ class SSDProject(SQLModel, table=True):
     # Relationships
     datasets: List["SSDDataset"] = Relationship(back_populates="project")
     results: List["SSDResult"] = Relationship(back_populates="project")
+    collaborators: List["User"] = Relationship(link_model=SSDProjectCollaborator)
 
 class SSDProjectCreate(SQLModel):
     name: str

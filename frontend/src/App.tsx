@@ -17,6 +17,7 @@ import AnalysisWorkbench from './pages/analysis/AnalysisWorkbench';
 import VerificationProjectList from './pages/verification/VerificationProjectList';
 import VerificationDashboard from './pages/verification/VerificationDashboard';
 import WQProjectList from './pages/wq/WQProjectList';
+import WQDashboard from './pages/wq/WQDashboard';
 import UserManagement from './pages/admin/UserManagement';
 import { useCurrentUser } from './api/hooks';
 import SSDProjectList from './pages/ssd/SSDProjectList';
@@ -106,6 +107,7 @@ function App() {
                 {/* WQ Routes */}
                 <Route element={<RequireAccess module="wq" />}>
                   <Route path="wq" element={<WQProjectList />} />
+                  <Route path="wq/:projectId" element={<WQDashboard />} />
                 </Route>
 
                 {/* SSD Routes */}

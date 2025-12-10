@@ -257,10 +257,27 @@ def list_projects(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_active_user)
 ):
-    """List all SSD projects."""
-    projects = session.exec(
-        select(SSDProject).offset(offset).limit(limit)
-    ).all()
+    """List all SSD projects (owned or collaborative)."""
+    from domain.ssd import SSDProjectCollaborator
+    from sqlmodel import or_, col
+    
+    if current_user.is_superuser or current_user.role == 'Admin':
+        projects = session.exec(
+            select(SSDProject).offset(offset).limit(limit)
+        ).all()
+    else:
+        # Include owned projects OR collaborative projects
+        collab_subquery = select(SSDProjectCollaborator.project_id).where(
+            SSDProjectCollaborator.user_id == current_user.id
+        )
+        projects = session.exec(
+            select(SSDProject).where(
+                or_(
+                    SSDProject.owner_id == current_user.id,
+                    col(SSDProject.id).in_(collab_subquery)
+                )
+            ).offset(offset).limit(limit)
+        ).all()
     return projects
 
 
@@ -272,6 +289,7 @@ def create_project(
 ):
     """Create a new SSD project."""
     db_project = SSDProject.model_validate(project)
+    db_project.owner_id = current_user.id
     session.add(db_project)
     session.commit()
     session.refresh(db_project)
@@ -1807,3 +1825,88 @@ def delete_result(
     
     return {"success": True, "message": "Result deleted successfully"}
 
+
+# ==========================================
+# COLLABORATORS
+# ==========================================
+
+@router.get("/projects/{project_id}/collaborators")
+def list_collaborators(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """List all collaborators for a project."""
+    from domain.ssd import SSDProjectCollaborator
+    
+    project = session.get(SSDProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    statement = select(User).join(SSDProjectCollaborator).where(
+        SSDProjectCollaborator.project_id == project_id
+    )
+    return session.exec(statement).all()
+
+@router.post("/projects/{project_id}/collaborators")
+def add_collaborator(
+    project_id: int,
+    username: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Add a collaborator to a project."""
+    from domain.ssd import SSDProjectCollaborator
+    
+    project = session.get(SSDProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+        raise HTTPException(status_code=403, detail="Only the owner can add collaborators")
+    
+    user_to_add = session.exec(select(User).where(User.username == username)).first()
+    if not user_to_add:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    existing = session.exec(select(SSDProjectCollaborator).where(
+        SSDProjectCollaborator.project_id == project_id,
+        SSDProjectCollaborator.user_id == user_to_add.id
+    )).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail="User is already a collaborator")
+    
+    link = SSDProjectCollaborator(project_id=project_id, user_id=user_to_add.id)
+    session.add(link)
+    session.commit()
+    
+    return user_to_add
+
+@router.delete("/projects/{project_id}/collaborators/{user_id}")
+def remove_collaborator(
+    project_id: int,
+    user_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Remove a collaborator from a project."""
+    from domain.ssd import SSDProjectCollaborator
+    
+    project = session.get(SSDProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+        raise HTTPException(status_code=403, detail="Only the owner can remove collaborators")
+    
+    link = session.exec(select(SSDProjectCollaborator).where(
+        SSDProjectCollaborator.project_id == project_id,
+        SSDProjectCollaborator.user_id == user_id
+    )).first()
+    
+    if link:
+        session.delete(link)
+        session.commit()
+    
+    return {"message": "Collaborator removed"}

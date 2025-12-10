@@ -47,10 +47,24 @@ def read_projects(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_active_user)
 ):
+    from domain.fsa import FsaProjectCollaborator
+    from sqlmodel import or_, col
+    
     if current_user.is_superuser or current_user.role == 'Admin':
         projects = session.exec(select(FsaProject).offset(offset).limit(limit)).all()
     else:
-        projects = session.exec(select(FsaProject).where(FsaProject.owner_id == current_user.id).offset(offset).limit(limit)).all()
+        # Include owned projects OR collaborative projects
+        collab_subquery = select(FsaProjectCollaborator.project_id).where(
+            FsaProjectCollaborator.user_id == current_user.id
+        )
+        projects = session.exec(
+            select(FsaProject).where(
+                or_(
+                    FsaProject.owner_id == current_user.id,
+                    col(FsaProject.id).in_(collab_subquery)
+                )
+            ).offset(offset).limit(limit)
+        ).all()
     return projects
 
 @router.get("/projects/{project_id}", response_model=FsaProjectRead)
@@ -757,3 +771,95 @@ def delete_survey_event(
     session.commit()
     
     return {"message": "Event deleted successfully"}
+
+# ==========================================
+# COLLABORATORS
+# ==========================================
+
+@router.get("/projects/{project_id}/collaborators")
+def list_collaborators(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """List all collaborators for a project."""
+    from domain.fsa import FsaProject, FsaProjectCollaborator
+    from domain.auth import User as UserModel
+    
+    project = session.get(FsaProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    statement = select(UserModel).join(FsaProjectCollaborator).where(
+        FsaProjectCollaborator.project_id == project_id
+    )
+    return session.exec(statement).all()
+
+@router.post("/projects/{project_id}/collaborators")
+def add_collaborator(
+    project_id: int,
+    username: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Add a collaborator to a project. Only owner or admin can add."""
+    from domain.fsa import FsaProject, FsaProjectCollaborator
+    from domain.auth import User as UserModel
+    
+    project = session.get(FsaProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Only owner or admin can add collaborators
+    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+        raise HTTPException(status_code=403, detail="Only the owner can add collaborators")
+    
+    # Find user by username
+    user_to_add = session.exec(select(UserModel).where(UserModel.username == username)).first()
+    if not user_to_add:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if already a collaborator
+    existing = session.exec(select(FsaProjectCollaborator).where(
+        FsaProjectCollaborator.project_id == project_id,
+        FsaProjectCollaborator.user_id == user_to_add.id
+    )).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail="User is already a collaborator")
+    
+    # Add collaborator
+    link = FsaProjectCollaborator(project_id=project_id, user_id=user_to_add.id)
+    session.add(link)
+    session.commit()
+    
+    return user_to_add
+
+@router.delete("/projects/{project_id}/collaborators/{user_id}")
+def remove_collaborator(
+    project_id: int,
+    user_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Remove a collaborator from a project. Only owner or admin can remove."""
+    from domain.fsa import FsaProject, FsaProjectCollaborator
+    
+    project = session.get(FsaProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Only owner or admin can remove collaborators
+    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+        raise HTTPException(status_code=403, detail="Only the owner can remove collaborators")
+    
+    link = session.exec(select(FsaProjectCollaborator).where(
+        FsaProjectCollaborator.project_id == project_id,
+        FsaProjectCollaborator.user_id == user_id
+    )).first()
+    
+    if link:
+        session.delete(link)
+        session.commit()
+    
+    return {"message": "Collaborator removed"}

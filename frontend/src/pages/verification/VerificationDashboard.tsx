@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProject, useSites, useMonitors } from '../../api/hooks';
-import { ArrowLeft, Upload, BarChart2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Upload, BarChart2, Loader2, Pencil } from 'lucide-react';
 
 const VerificationDashboard: React.FC = () => {
     const { projectId } = useParams<{ projectId: string }>();
+    const navigate = useNavigate();
     const id = parseInt(projectId || '0');
 
     const { data: project } = useProject(id);
@@ -35,7 +36,16 @@ const VerificationDashboard: React.FC = () => {
                 <Link to="/verification" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-900 mb-2">
                     <ArrowLeft size={16} className="mr-1" /> Back to Projects
                 </Link>
-                <h1 className="text-2xl font-bold text-gray-900">{project.name} - Verification</h1>
+                <div className="flex items-center justify-between">
+                    <h1 className="text-2xl font-bold text-gray-900">{project.name} - Verification</h1>
+                    <button
+                        onClick={() => navigate('/verification', { state: { editProjectId: id } })}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                        <Pencil size={16} />
+                        Edit Project
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 flex gap-6 overflow-hidden">
@@ -66,7 +76,7 @@ const VerificationDashboard: React.FC = () => {
                             disabled={!selectedSiteId}
                         >
                             {monitors?.map(monitor => (
-                                <option key={monitor.id} value={monitor.id}>{monitor.name}</option>
+                                <option key={monitor.id} value={monitor.id}>{monitor.monitor_asset_id}</option>
                             ))}
                         </select>
                     </div>

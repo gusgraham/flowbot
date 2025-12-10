@@ -1,16 +1,23 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useSSDProjects, useCreateSSDProject, useUpdateSSDProject, useDeleteSSDProject } from '../../api/hooks';
-import { Container, ArrowRight, Loader2, Plus, X, Pencil, Trash2 } from 'lucide-react';
+import {
+    useSSDProjects, useCreateSSDProject, useUpdateSSDProject, useDeleteSSDProject,
+    useSsdProjectCollaborators, useAddSsdCollaborator, useRemoveSsdCollaborator,
+    useCurrentUser
+} from '../../api/hooks';
+import { Container, ArrowRight, Loader2, Plus, X, Pencil, Trash2, Settings, Users } from 'lucide-react';
+import CollaboratorsPanel from '../../components/CollaboratorsPanel';
 
 const SSDProjectList: React.FC = () => {
     const { data: projects, isLoading, error } = useSSDProjects();
     const createProject = useCreateSSDProject();
     const updateProject = useUpdateSSDProject();
     const deleteProject = useDeleteSSDProject();
+    const { data: currentUser } = useCurrentUser();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
+    const [activeTab, setActiveTab] = useState<'general' | 'collaborators'>('general');
 
     // Form state
     const [formData, setFormData] = useState({
@@ -20,9 +27,20 @@ const SSDProjectList: React.FC = () => {
         description: ''
     });
 
+    // Collaborator hooks - only enabled when editing
+    const { data: collaborators, isLoading: loadingCollabs } = useSsdProjectCollaborators(editingId || 0);
+    const addCollaborator = useAddSsdCollaborator();
+    const removeCollaborator = useRemoveSsdCollaborator();
+
+    // Get owner_id from the project being edited
+    const editingProject = projects?.find(p => p.id === editingId);
+    const isOwner = currentUser?.is_superuser || currentUser?.role === 'Admin' ||
+        (editingProject && (editingProject as any).owner_id === currentUser?.id);
+
     const handleCreateClick = () => {
         setEditingId(null);
         setFormData({ name: '', client: '', job_number: '', description: '' });
+        setActiveTab('general');
         setIsModalOpen(true);
     };
 
@@ -35,6 +53,7 @@ const SSDProjectList: React.FC = () => {
             description: project.description || ''
         });
         setEditingId(project.id);
+        setActiveTab('general');
         setIsModalOpen(true);
     };
 
@@ -71,6 +90,16 @@ const SSDProjectList: React.FC = () => {
                 }
             });
         }
+    };
+
+    const handleAddCollaborator = async (username: string) => {
+        if (!editingId) return;
+        await addCollaborator.mutateAsync({ projectId: editingId, username });
+    };
+
+    const handleRemoveCollaborator = (userId: number) => {
+        if (!editingId) return;
+        removeCollaborator.mutate({ projectId: editingId, userId });
     };
 
     const isSubmitting = createProject.isPending || updateProject.isPending;
@@ -130,7 +159,7 @@ const SSDProjectList: React.FC = () => {
                                         className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                         title="Edit Project"
                                     >
-                                        <Pencil size={14} />
+                                        <Pencil size={16} />
                                     </button>
                                     <button
                                         onClick={(e) => handleDeleteClick(e, project)}
@@ -138,9 +167,9 @@ const SSDProjectList: React.FC = () => {
                                         title="Delete Project"
                                     >
                                         {deleteProject.isPending && deleteProject.variables === project.id ? (
-                                            <Loader2 size={14} className="animate-spin" />
+                                            <Loader2 size={16} className="animate-spin" />
                                         ) : (
-                                            <Trash2 size={14} />
+                                            <Trash2 size={16} />
                                         )}
                                     </button>
                                 </div>
@@ -171,83 +200,126 @@ const SSDProjectList: React.FC = () => {
             </div>
 
             {/* Create/Edit Project Modal */}
-            {isModalOpen && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-bold text-gray-900">
-                                {editingId ? 'Edit SSD Project' : 'New SSD Project'}
-                            </h2>
-                            <button
-                                onClick={() => setIsModalOpen(false)}
-                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                            >
-                                <X size={20} className="text-gray-500" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
-                                <input
-                                    className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                                    placeholder="e.g. Beech Ave CSO Analysis"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Client</label>
-                                <input
-                                    className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                                    placeholder="e.g. Yorkshire Water"
-                                    value={formData.client}
-                                    onChange={(e) => setFormData({ ...formData, client: e.target.value })}
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Job Number</label>
-                                <input
-                                    className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                                    placeholder="e.g. J12345"
-                                    value={formData.job_number}
-                                    onChange={(e) => setFormData({ ...formData, job_number: e.target.value })}
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
-                                <textarea
-                                    className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
-                                    placeholder="Brief description of the project..."
-                                    rows={3}
-                                    value={formData.description}
-                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                />
-                            </div>
-                            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+            {
+                isModalOpen && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl max-h-[90vh] flex flex-col">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold text-gray-900">
+                                    {editingId ? 'Edit SSD Project' : 'New SSD Project'}
+                                </h2>
                                 <button
-                                    type="button"
                                     onClick={() => setIsModalOpen(false)}
-                                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                                 >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting}
-                                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 flex items-center"
-                                >
-                                    {isSubmitting && <Loader2 className="animate-spin mr-2" size={16} />}
-                                    {editingId ? 'Save Changes' : 'Create Project'}
+                                    <X size={20} className="text-gray-500" />
                                 </button>
                             </div>
-                        </form>
+
+                            {/* Tabs - only show when editing */}
+                            {editingId && (
+                                <div className="flex border-b border-gray-200 mb-6">
+                                    <button
+                                        onClick={() => setActiveTab('general')}
+                                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'general'
+                                            ? 'border-orange-600 text-orange-600'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        <Settings size={16} />
+                                        General
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('collaborators')}
+                                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'collaborators'
+                                            ? 'border-orange-600 text-orange-600'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        <Users size={16} />
+                                        Collaborators
+                                    </button>
+                                </div>
+                            )}
+
+                            <div className="flex-1 overflow-y-auto">
+                                {activeTab === 'general' ? (
+                                    <form onSubmit={handleSubmit} className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
+                                            <input
+                                                className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
+                                                placeholder="e.g. Beech Ave CSO Analysis"
+                                                value={formData.name}
+                                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Client</label>
+                                            <input
+                                                className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
+                                                placeholder="e.g. Yorkshire Water"
+                                                value={formData.client}
+                                                onChange={(e) => setFormData({ ...formData, client: e.target.value })}
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Job Number</label>
+                                            <input
+                                                className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
+                                                placeholder="e.g. J12345"
+                                                value={formData.job_number}
+                                                onChange={(e) => setFormData({ ...formData, job_number: e.target.value })}
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
+                                            <textarea
+                                                className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition"
+                                                placeholder="Brief description of the project..."
+                                                rows={3}
+                                                value={formData.description}
+                                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsModalOpen(false)}
+                                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                disabled={isSubmitting}
+                                                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 flex items-center"
+                                            >
+                                                {isSubmitting && <Loader2 className="animate-spin mr-2" size={16} />}
+                                                {editingId ? 'Save Changes' : 'Create Project'}
+                                            </button>
+                                        </div>
+                                    </form>
+                                ) : (
+                                    <CollaboratorsPanel
+                                        collaborators={collaborators}
+                                        isLoading={loadingCollabs}
+                                        isOwner={isOwner ?? false}
+                                        onAdd={handleAddCollaborator}
+                                        onRemove={handleRemoveCollaborator}
+                                        isAdding={addCollaborator.isPending}
+                                        accentColor="amber"
+                                    />
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 

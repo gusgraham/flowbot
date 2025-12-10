@@ -10,13 +10,19 @@ class VerificationProjectBase(SQLModel):
     description: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
+class VerificationProjectCollaborator(SQLModel, table=True):
+    """Link table for Verification project collaborators (many-to-many)"""
+    project_id: int = Field(foreign_key="verificationproject.id", primary_key=True)
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
+
 class VerificationProject(VerificationProjectBase, table=True):
     __tablename__ = "verificationproject"
     
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
     
-    # Future: Relationships to verification runs, model results
+    # Collaborators (Many-to-Many)
+    collaborators: List["User"] = Relationship(link_model=VerificationProjectCollaborator)
 
 class VerificationProjectCreate(SQLModel):
     name: str
