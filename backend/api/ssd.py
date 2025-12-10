@@ -1,10 +1,14 @@
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select, Field
 from pydantic import BaseModel
 import shutil
 import os
+import json
+import queue
+import threading
 from pathlib import Path
 import pandas as pd
 
@@ -576,31 +580,53 @@ def get_date_range(
     min_date = None
     max_date = None
     
+    import warnings
+    
     for csv_file in project_dir.glob("*.csv"):
         try:
-            df = pd.read_csv(csv_file)
-            # Find time column
+            # Only read first and last few rows for efficiency
+            # First, peek at header to find time column
+            df_head = pd.read_csv(csv_file, nrows=5)
+            
             time_col = None
-            for col in df.columns:
+            for col in df_head.columns:
                 if col.lower() in ['time', 'datetime', 'date', 'timestamp']:
                     time_col = col
                     break
             
-            if time_col:
-                # Parse dates using project format if available
+            if not time_col:
+                continue
+            
+            # Read just first and last rows for min/max dates
+            # Read first rows
+            df_first = pd.read_csv(csv_file, nrows=10, usecols=[time_col])
+            
+            # Read last rows using tail - need to count lines first
+            with open(csv_file, 'r') as f:
+                total_lines = sum(1 for _ in f)
+            
+            skip_rows = max(1, total_lines - 10)  # Skip all but last 10 rows (keep header)
+            df_last = pd.read_csv(csv_file, skiprows=range(1, skip_rows), usecols=[time_col])
+            
+            # Combine and parse dates
+            df_combined = pd.concat([df_first, df_last], ignore_index=True)
+            
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
                 if project.date_format:
-                    df[time_col] = pd.to_datetime(df[time_col], format=project.date_format)
+                    df_combined[time_col] = pd.to_datetime(df_combined[time_col], format=project.date_format)
                 else:
-                    df[time_col] = pd.to_datetime(df[time_col], dayfirst=True)
-                
-                file_min = df[time_col].min()
-                file_max = df[time_col].max()
-                
-                if min_date is None or file_min < min_date:
-                    min_date = file_min
-                if max_date is None or file_max > max_date:
-                    max_date = file_max
-        except Exception:
+                    df_combined[time_col] = pd.to_datetime(df_combined[time_col], dayfirst=True)
+            
+            file_min = df_combined[time_col].min()
+            file_max = df_combined[time_col].max()
+            
+            if min_date is None or file_min < min_date:
+                min_date = file_min
+            if max_date is None or file_max > max_date:
+                max_date = file_max
+        except Exception as e:
+            print(f"Error parsing {csv_file.name}: {e}")
             continue
     
     return DateRangeResponse(
@@ -1123,7 +1149,22 @@ def run_scenario_analysis(
             ts_path = results_dir / ts_filename
             result.time_series.to_parquet(ts_path, index=False)
             
-            # Save result to database
+            # Delete existing result(s) for this scenario (overwrite behavior)
+            existing_results = session.exec(
+                select(SSDResult).where(SSDResult.scenario_id == scenario.id)
+            ).all()
+            for old_result in existing_results:
+                # Delete old timeseries file if exists
+                if old_result.timeseries_path:
+                    old_ts = Path(old_result.timeseries_path)
+                    if old_ts.exists():
+                        try:
+                            old_ts.unlink()
+                        except Exception:
+                            pass  # Ignore file deletion errors
+                session.delete(old_result)
+            
+            # Save new result to database
             db_result = SSDResult(
                 project_id=project_id,
                 scenario_id=scenario.id,
@@ -1135,6 +1176,7 @@ def run_scenario_analysis(
                 pff_increase=scenario.pff_increase,
                 tank_volume=scenario.tank_volume or 0.0,
                 spill_target=config.spill_target,
+                spill_target_bathing=config.spill_target_bathing,
                 converged=result.converged,
                 iterations=result.iterations_count,
                 final_storage_m3=round(result.final_storage_m3, 1),
@@ -1190,6 +1232,316 @@ def run_scenario_analysis(
         "message": f"Completed {successful} of {len(results)} scenario(s)" + (f" ({failed} failed)" if failed > 0 else ""),
         "scenarios": results
     }
+
+
+@router.post("/projects/{project_id}/analyze-stream")
+def run_scenario_analysis_stream(
+    project_id: int,
+    request: ScenarioAnalysisRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Run storage analysis with real-time log streaming via SSE.
+    
+    This endpoint streams log messages as Server-Sent Events (SSE) so the
+    frontend can display progress in real-time during long-running analyses.
+    """
+    # Validate project and data
+    project = session.get(SSDProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project_dir = DATA_DIR / str(project_id)
+    if not project_dir.exists() or not list(project_dir.glob("*.csv")):
+        raise HTTPException(status_code=400, detail="No data files uploaded")
+    
+    if not request.scenario_ids:
+        raise HTTPException(status_code=400, detail="No scenarios selected")
+    
+    # Pre-fetch all scenario data (must be done before async generator starts)
+    scenarios_data = []
+    for scenario_id in request.scenario_ids:
+        scenario = session.get(AnalysisScenario, scenario_id)
+        if not scenario or scenario.project_id != project_id:
+            continue
+        cso_asset = session.get(CSOAsset, scenario.cso_asset_id)
+        config = session.get(AnalysisConfig, scenario.config_id)
+        if cso_asset and config:
+            scenarios_data.append({
+                'scenario': scenario,
+                'cso_asset': cso_asset,
+                'config': config,
+                'scenario_dict': {
+                    'id': scenario.id,
+                    'scenario_name': scenario.scenario_name,
+                    'pff_increase': scenario.pff_increase,
+                    'pump_rate': scenario.pump_rate,
+                    'pumping_mode': scenario.pumping_mode,
+                    'flow_return_threshold': scenario.flow_return_threshold,
+                    'depth_return_threshold': scenario.depth_return_threshold,
+                    'time_delay': scenario.time_delay,
+                    'tank_volume': scenario.tank_volume,
+                },
+                'cso_dict': {
+                    'name': cso_asset.name,
+                    'overflow_links': cso_asset.overflow_links,
+                    'continuation_link': cso_asset.continuation_link,
+                },
+                'config_dict': {
+                    'name': config.name,
+                    'start_date': config.start_date,
+                    'end_date': config.end_date,
+                    'spill_target': config.spill_target,
+                    'spill_target_bathing': config.spill_target_bathing,
+                    'bathing_season_start': config.bathing_season_start,
+                    'bathing_season_end': config.bathing_season_end,
+                    'spill_flow_threshold': config.spill_flow_threshold,
+                    'spill_volume_threshold': config.spill_volume_threshold,
+                }
+            })
+    
+    # Get date format from project
+    project_date_format = project.date_format
+    
+    def event_generator():
+        """Generator that yields SSE events during analysis."""
+        results = []
+        
+        for data in scenarios_data:
+            scenario_dict = data['scenario_dict']
+            cso_dict = data['cso_dict']
+            config_dict = data['config_dict']
+            
+            # Send scenario start event
+            yield f"data: {json.dumps({'type': 'scenario_start', 'scenario_name': scenario_dict['scenario_name'], 'cso_name': cso_dict['name']})}\n\n"
+            
+            try:
+                # Build CSOConfiguration
+                legacy_config = {
+                    'CSO Name': cso_dict['name'],
+                    'Overflow Links': cso_dict['overflow_links'],
+                    'Continuation Link': cso_dict['continuation_link'],
+                    'Run Suffix': scenario_dict['scenario_name'][:3].upper(),
+                    'Start Date (dd/mm/yy hh:mm:ss)': config_dict['start_date'].strftime('%d/%m/%Y %H:%M:%S'),
+                    'End Date (dd/mm/yy hh:mm:ss)': config_dict['end_date'].strftime('%d/%m/%Y %H:%M:%S'),
+                    'Spill Target (Entire Period)': config_dict['spill_target'],
+                    'Spill Target (Bathing Seasons)': config_dict['spill_target_bathing'] or 0,
+                    'Bathing Season Start (dd/mm)': config_dict['bathing_season_start'] or '15/05',
+                    'Bathing Season End (dd/mm)': config_dict['bathing_season_end'] or '30/09',
+                    'PFF Increase (m3/s)': scenario_dict['pff_increase'],
+                    'Tank Volume (m3)': scenario_dict['tank_volume'],
+                    'Pump Rate (m3/s)': scenario_dict['pump_rate'],
+                    'Pumping Mode': scenario_dict['pumping_mode'],
+                    'Flow Return Threshold (m3/s)': scenario_dict['flow_return_threshold'],
+                    'Depth Return Threshold (m)': scenario_dict['depth_return_threshold'],
+                    'Time Delay (hours)': scenario_dict['time_delay'],
+                    'Spill Flow Threshold (m3/s)': config_dict['spill_flow_threshold'],
+                    'Spill Volume Threshold (m3)': config_dict['spill_volume_threshold'],
+                }
+                
+                cso_config = CSOConfiguration.from_dict(legacy_config)
+                errors = cso_config.validate()
+                if errors:
+                    yield f"data: {json.dumps({'type': 'log', 'message': f'Configuration error: {errors}', 'level': 'error'})}\n\n"
+                    results.append({'scenario_id': scenario_dict['id'], 'status': 'error', 'message': str(errors)})
+                    continue
+                
+                # Setup data source
+                csv_files = list(project_dir.glob("*.csv"))
+                timestep_seconds = 120
+                date_format = project_date_format
+                if not date_format and csv_files:
+                    date_format = detect_csv_date_format(csv_files[0])
+                
+                if csv_files:
+                    try:
+                        df_sample = pd.read_csv(csv_files[0], nrows=10)
+                        if 'Time' in df_sample.columns:
+                            df_sample['Time'] = pd.to_datetime(df_sample['Time'], dayfirst=True)
+                            if len(df_sample) >= 2:
+                                delta = (df_sample['Time'].iloc[1] - df_sample['Time'].iloc[0]).total_seconds()
+                                if delta > 0:
+                                    timestep_seconds = int(delta)
+                    except Exception:
+                        pass
+                
+                data_source = DataSourceInfo(
+                    data_folder=project_dir,
+                    file_type="csv",
+                    timestep_seconds=timestep_seconds,
+                    date_format=date_format
+                )
+                
+                scenario_settings = ScenarioSettings(
+                    name=scenario_dict['scenario_name'],
+                    spill_target=config_dict['spill_target'],
+                    bathing_spill_target=config_dict['spill_target_bathing'] or 0,
+                    spill_flow_threshold=config_dict['spill_flow_threshold'],
+                    spill_volume_threshold=config_dict['spill_volume_threshold'],
+                )
+                
+                # Progress callback that yields SSE events
+                def progress_callback(message: str):
+                    # Can't yield from nested function, so we use a different approach
+                    pass
+                
+                # For SSE, we use threading with a queue for true real-time streaming
+                log_queue = queue.Queue()
+                analysis_done = threading.Event()
+                analysis_result = [None]  # Use list to store result from thread
+                analysis_error = [None]
+                
+                def run_analysis_thread():
+                    """Run analysis in separate thread, pushing logs to queue."""
+                    try:
+                        def progress_callback(message: str):
+                            log_queue.put(('log', message))
+                        
+                        analyzer = StorageAnalyzer(cso_config, data_source, scenario_settings, progress_callback=progress_callback)
+                        analysis_result[0] = analyzer.run()
+                    except Exception as e:
+                        analysis_error[0] = e
+                    finally:
+                        analysis_done.set()
+                
+                # Start analysis thread
+                thread = threading.Thread(target=run_analysis_thread)
+                thread.start()
+                
+                # Yield log messages as they arrive (real-time!)
+                while not analysis_done.is_set() or not log_queue.empty():
+                    try:
+                        msg_type, message = log_queue.get(timeout=0.1)
+                        if msg_type == 'log':
+                            yield f"data: {json.dumps({'type': 'log', 'message': message})}\n\n"
+                    except queue.Empty:
+                        continue
+                
+                thread.join()
+                
+                # Check for errors
+                if analysis_error[0]:
+                    raise analysis_error[0]
+                
+                result = analysis_result[0]
+                
+                # Process spill events
+                spill_events = []
+                for event in result.spill_events:
+                    is_bathing = event.is_in_bathing_season(
+                        cso_config.bathing_season_start.month,
+                        cso_config.bathing_season_start.day,
+                        cso_config.bathing_season_end.month,
+                        cso_config.bathing_season_end.day
+                    ) if (config_dict['spill_target_bathing'] or 0) > 0 else False
+                    
+                    spill_events.append({
+                        "start_time": event.start_time.isoformat(),
+                        "end_time": event.end_time.isoformat(),
+                        "duration_hours": round(event.spill_duration_hours, 2),
+                        "volume_m3": round(event.volume_m3, 1),
+                        "peak_flow_m3s": round(event.peak_flow_m3s, 4),
+                        "is_bathing_season": is_bathing
+                    })
+                
+                # Save timeseries
+                results_dir = project_dir / "results"
+                results_dir.mkdir(parents=True, exist_ok=True)
+                ts_filename = f"ts_{scenario_dict['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
+                ts_path = results_dir / ts_filename
+                result.time_series.to_parquet(ts_path, index=False)
+                
+                # Save to database - DELETE existing result first (overwrite behavior)
+                from database import engine
+                from sqlmodel import Session as SQLModelSession
+                with SQLModelSession(engine) as db_session:
+                    # Delete existing result(s) for this scenario
+                    existing_results = db_session.exec(
+                        select(SSDResult).where(SSDResult.scenario_id == scenario_dict['id'])
+                    ).all()
+                    for old_result in existing_results:
+                        # Delete old timeseries file if exists
+                        if old_result.timeseries_path:
+                            old_ts = Path(old_result.timeseries_path)
+                            if old_ts.exists():
+                                try:
+                                    old_ts.unlink()
+                                except Exception:
+                                    pass  # Ignore file deletion errors
+                        db_session.delete(old_result)
+                    
+                    # Now add new result
+                    db_result = SSDResult(
+                        project_id=project_id,
+                        scenario_id=scenario_dict['id'],
+                        scenario_name=scenario_dict['scenario_name'],
+                        cso_name=cso_dict['name'],
+                        config_name=config_dict['name'],
+                        start_date=config_dict['start_date'],
+                        end_date=config_dict['end_date'],
+                        pff_increase=scenario_dict['pff_increase'],
+                        tank_volume=scenario_dict['tank_volume'] or 0.0,
+                        spill_target=config_dict['spill_target'],
+                        spill_target_bathing=config_dict['spill_target_bathing'],
+                        converged=result.converged,
+                        iterations=result.iterations_count,
+                        final_storage_m3=round(result.final_storage_m3, 1),
+                        spill_count=result.spill_count,
+                        bathing_spill_count=result.bathing_spills_count,
+                        total_spill_volume_m3=round(result.total_spill_volume_m3, 1),
+                        bathing_spill_volume_m3=round(result.bathing_spill_volume_m3, 1),
+                        total_spill_duration_hours=round(result.total_spill_duration_hours, 2),
+                        spill_events=spill_events,
+                        timeseries_path=str(ts_path)
+                    )
+                    db_session.add(db_result)
+                    db_session.commit()
+                    db_session.refresh(db_result)
+                    result_id = db_result.id
+                
+                scenario_result = {
+                    "scenario_id": scenario_dict['id'],
+                    "result_id": result_id,
+                    "scenario_name": scenario_dict['scenario_name'],
+                    "cso_name": cso_dict['name'],
+                    "config_name": config_dict['name'],
+                    "status": "success",
+                    "converged": result.converged,
+                    "iterations": result.iterations_count,
+                    "final_storage_m3": round(result.final_storage_m3, 1),
+                    "spill_count": result.spill_count,
+                    "bathing_spill_count": result.bathing_spills_count,
+                }
+                results.append(scenario_result)
+                
+                # Send scenario complete event
+                yield f"data: {json.dumps({'type': 'scenario_complete', 'result': scenario_result})}\n\n"
+                
+            except Exception as e:
+                import traceback
+                error_msg = str(e)
+                yield f"data: {json.dumps({'type': 'log', 'message': f'Error: {error_msg}', 'level': 'error'})}\n\n"
+                results.append({
+                    "scenario_id": scenario_dict['id'],
+                    "scenario_name": scenario_dict['scenario_name'],
+                    "status": "error",
+                    "message": error_msg
+                })
+        
+        # Send final complete event
+        successful = sum(1 for r in results if r.get("status") == "success")
+        failed = len(results) - successful
+        yield f"data: {json.dumps({'type': 'complete', 'success': successful > 0, 'message': f'Completed {successful} of {len(results)} scenario(s)', 'scenarios': results})}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Disable nginx buffering
+        }
+    )
 
 
 @router.post("/projects/{project_id}/analyze", response_model=SSDAnalysisResponse)

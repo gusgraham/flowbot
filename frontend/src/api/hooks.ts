@@ -1884,6 +1884,7 @@ export interface SSDResultData {
     pff_increase: number;
     tank_volume: number;
     spill_target: number;
+    spill_target_bathing: number | null;
     converged: boolean;
     iterations: number;
     final_storage_m3: number;

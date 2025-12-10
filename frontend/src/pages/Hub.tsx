@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Database, Activity, CheckCircle, Droplets, ArrowRight, Container } from 'lucide-react';
+import { ClipboardList, Activity, CheckCircle, Droplets, ArrowRight, Container } from 'lucide-react';
 import { useCurrentUser } from '../api/hooks';
 
 const Hub: React.FC = () => {
@@ -11,7 +11,7 @@ const Hub: React.FC = () => {
             name: 'Flow Survey Management',
             description: 'Manage projects, sites, monitors, and installation logistics.',
             path: '/fsm',
-            icon: Database,
+            icon: ClipboardList,
             color: 'bg-blue-500',
             bg: 'bg-blue-50',
             text: 'text-blue-700',

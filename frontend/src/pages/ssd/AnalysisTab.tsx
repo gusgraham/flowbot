@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Play, Loader2, CheckCircle, AlertTriangle, XCircle, Square, CheckSquare, Layers, Terminal, Trash2, Clock } from 'lucide-react';
+import { Play, Loader2, CheckCircle, AlertTriangle, XCircle, Square, CheckSquare, Layers, Terminal, Trash2, Clock, StopCircle } from 'lucide-react';
 import {
     useSSDScenarios, useSSDCSOAssets, useSSDAnalysisConfigs, useSSDFiles, useSSDResults,
 } from '../../api/hooks';
+import { useQueryClient } from '@tanstack/react-query';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnalysisResult = any;  // Full result type from API
@@ -26,18 +27,22 @@ interface LogEntry {
     type: 'info' | 'success' | 'warning' | 'error';
 }
 
-const AnalysisTab: React.FC<AnalysisTabProps> = ({ projectId, onRunAnalysis, isRunning }) => {
+const AnalysisTab: React.FC<AnalysisTabProps> = ({ projectId, isRunning: _isRunning }) => {
     const { data: files, isLoading: filesLoading } = useSSDFiles(projectId);
     const { data: csoAssets, isLoading: assetsLoading } = useSSDCSOAssets(projectId);
     const { data: configs, isLoading: configsLoading } = useSSDAnalysisConfigs(projectId);
     const { data: scenarios, isLoading: scenariosLoading } = useSSDScenarios(projectId);
-    const { data: savedResults } = useSSDResults(projectId);
+    const { data: savedResults, refetch: refetchResults } = useSSDResults(projectId);
+    const queryClient = useQueryClient();
 
     const [selectedScenarios, setSelectedScenarios] = useState<Set<number>>(new Set());
     const [analysisLog, setAnalysisLog] = useState<LogEntry[]>([]);
+    const [isRunningStream, setIsRunningStream] = useState(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
     const logEndRef = useRef<HTMLDivElement>(null);
 
     const isLoading = filesLoading || assetsLoading || configsLoading || scenariosLoading;
+    const isRunning = isRunningStream;
 
     // Auto-scroll log to bottom when new entries added
     useEffect(() => {
@@ -130,6 +135,14 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ projectId, onRunAnalysis, isR
         setSelectedScenarios(new Set());
     };
 
+    // Stop running analysis
+    const handleStop = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            addLog('⏹ Analysis cancelled by user', 'warning');
+        }
+    };
+
     const handleRun = async () => {
         if (selectedScenarios.size === 0) {
             alert('Please select at least one scenario to run');
@@ -137,47 +150,103 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ projectId, onRunAnalysis, isR
         }
 
         const selectedIds = Array.from(selectedScenarios);
+        const token = localStorage.getItem('token');
+
+        // Create abort controller for cancellation
+        abortControllerRef.current = new AbortController();
 
         // Log the start
         addLog(`=== Analysis Run Started ===`, 'info');
-        addLog(`Processing ${selectedScenarios.size} scenario(s)...`, 'info');
+        addLog(`Processing ${selectedScenarios.size} scenario(s) with real-time logging...`, 'info');
         addLog('', 'info');
 
+        setIsRunningStream(true);
+
         try {
-            const result = await onRunAnalysis(selectedIds);
+            // Use SSE streaming endpoint
+            const response = await fetch(`/api/ssd/projects/${projectId}/analyze-stream`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({ scenario_ids: selectedIds }),
+                signal: abortControllerRef.current.signal,
+            });
 
-            // Process each scenario result and display engine logs
-            if (result?.scenarios) {
-                for (const scenarioResult of result.scenarios) {
-                    addLog(`▸ ${scenarioResult.scenario_name} (${scenarioResult.cso_name})`, 'info');
-
-                    // Display engine logs if available
-                    if (scenarioResult.log && scenarioResult.log.length > 0) {
-                        for (const logLine of scenarioResult.log) {
-                            addLog(logLine, 'info');
-                        }
-                    }
-
-                    if (scenarioResult.status === 'success') {
-                        addLog(`  ✓ ${scenarioResult.spill_count} spills, ${scenarioResult.final_storage_m3} m³ storage`, 'success');
-                    } else {
-                        addLog(`  ✗ Error: ${scenarioResult.message}`, 'error');
-                    }
-                    addLog('', 'info');
-                }
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            addLog('✓ Analysis completed successfully', 'success');
-            addLog('  Navigate to the Results tab to view output.', 'info');
-            addLog(`=== Analysis Run Complete ===`, 'info');
+            const reader = response.body?.getReader();
+            if (!reader) throw new Error('No response body');
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop() || ''; // Keep incomplete chunk
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+
+                            switch (data.type) {
+                                case 'scenario_start':
+                                    addLog(`▸ Starting ${data.scenario_name} (${data.cso_name})`, 'info');
+                                    break;
+
+                                case 'log':
+                                    addLog(data.message, data.level === 'error' ? 'error' : 'info');
+                                    break;
+
+                                case 'scenario_complete':
+                                    if (data.result.status === 'success') {
+                                        addLog(`  ✓ ${data.result.spill_count} spills, ${data.result.final_storage_m3} m³ storage`, 'success');
+                                    } else {
+                                        addLog(`  ✗ Error: ${data.result.message}`, 'error');
+                                    }
+                                    addLog('', 'info');
+                                    break;
+
+                                case 'complete':
+                                    addLog('', 'info');
+                                    addLog(`✓ ${data.message}`, data.success ? 'success' : 'warning');
+                                    addLog('  Navigate to the Results tab to view output.', 'info');
+                                    addLog(`=== Analysis Run Complete ===`, 'info');
+                                    // Refetch results to update the UI
+                                    refetchResults();
+                                    queryClient.invalidateQueries({ queryKey: ['ssd-results', projectId] });
+                                    break;
+                            }
+                        } catch (e) {
+                            console.warn('Failed to parse SSE event:', line, e);
+                        }
+                    }
+                }
+            }
         } catch (error) {
-            addLog('', 'info');
-            addLog(`✗ Analysis failed: ${error instanceof Error ? error.message : String(error)}`, 'error');
-            addLog(`=== Analysis Run Failed ===`, 'error');
+            if ((error as Error).name === 'AbortError') {
+                addLog(`=== Analysis Cancelled ===`, 'warning');
+            } else {
+                addLog('', 'info');
+                addLog(`✗ Analysis failed: ${error instanceof Error ? error.message : String(error)}`, 'error');
+                addLog(`=== Analysis Run Failed ===`, 'error');
+            }
+        } finally {
+            setIsRunningStream(false);
+            abortControllerRef.current = null;
         }
     };
 
     // Format timestamp for log
+
     const formatTime = (date: Date) => {
         return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     };
@@ -302,23 +371,35 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ projectId, onRunAnalysis, isR
 
             {/* Run Button */}
             <div className="flex flex-col items-center py-6">
-                <button
-                    onClick={handleRun}
-                    disabled={isRunning || !readyToRun}
-                    className="bg-orange-600 text-white px-12 py-4 rounded-xl hover:bg-orange-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 font-semibold text-lg shadow-lg hover:shadow-xl"
-                >
-                    {isRunning ? (
-                        <>
-                            <Loader2 className="animate-spin" size={24} />
-                            Running Analysis...
-                        </>
-                    ) : (
-                        <>
-                            <Play size={24} />
-                            Run Analysis ({selectedScenarios.size} scenario{selectedScenarios.size !== 1 ? 's' : ''})
-                        </>
+                <div className="flex gap-3">
+                    <button
+                        onClick={handleRun}
+                        disabled={isRunning || !readyToRun}
+                        className="bg-orange-600 text-white px-12 py-4 rounded-xl hover:bg-orange-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 font-semibold text-lg shadow-lg hover:shadow-xl"
+                    >
+                        {isRunning ? (
+                            <>
+                                <Loader2 className="animate-spin" size={24} />
+                                Running Analysis...
+                            </>
+                        ) : (
+                            <>
+                                <Play size={24} />
+                                Run Analysis ({selectedScenarios.size} scenario{selectedScenarios.size !== 1 ? 's' : ''})
+                            </>
+                        )}
+                    </button>
+                    {isRunning && (
+                        <button
+                            onClick={handleStop}
+                            className="bg-red-600 text-white px-6 py-4 rounded-xl hover:bg-red-700 transition flex items-center gap-2 font-semibold text-lg shadow-lg"
+                            title="Stop Analysis"
+                        >
+                            <StopCircle size={24} />
+                            Stop
+                        </button>
                     )}
-                </button>
+                </div>
 
                 {!allChecksPassed && (
                     <p className="text-red-600 text-sm mt-4">

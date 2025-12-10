@@ -1,11 +1,13 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { BarChart2, Trash2, Download, Loader2, ChevronDown, ZoomIn, RotateCcw } from 'lucide-react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
+import { BarChart2, Trash2, Download, Loader2, ChevronDown, ZoomIn, RotateCcw, FileText } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
     ResponsiveContainer, ReferenceLine, ReferenceArea, Area, ComposedChart
 } from 'recharts';
 import { useSSDResults, useSSDResultTimeseries, useDeleteSSDResult } from '../../api/hooks';
 import type { SpillEvent } from '../../api/hooks';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface ResultsTabProps {
     projectId: number;
@@ -78,6 +80,257 @@ const ResultsTab: React.FC<ResultsTabProps> = ({ projectId }) => {
         a.download = `${selectedResult.scenario_name}_spill_events.csv`;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+    // State for PDF generation
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+    const chartsContainerRef = useRef<HTMLDivElement>(null);
+
+    const exportToPDF = async () => {
+        if (!selectedResult) return;
+        setIsGeneratingPDF(true);
+
+        try {
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 15;
+            const contentWidth = pageWidth - 2 * margin;
+            let yPos = margin;
+
+            // Helper to add page header
+            const addHeader = () => {
+                pdf.setFontSize(8);
+                pdf.setTextColor(128);
+                pdf.text(`SSD Analysis Report - ${selectedResult.scenario_name}`, margin, 8);
+                pdf.text(new Date().toLocaleDateString(), pageWidth - margin - 20, 8);
+                pdf.setDrawColor(200);
+                pdf.line(margin, 10, pageWidth - margin, 10);
+            };
+
+            // Helper to check and add new page
+            const checkNewPage = (requiredSpace: number) => {
+                if (yPos + requiredSpace > pageHeight - margin) {
+                    pdf.addPage();
+                    addHeader();
+                    yPos = 20;
+                    return true;
+                }
+                return false;
+            };
+
+            // Page 1: Summary
+            addHeader();
+            yPos = 20;
+
+            // Title
+            pdf.setFontSize(20);
+            pdf.setTextColor(0);
+            pdf.text('Storage Analysis Report', margin, yPos);
+            yPos += 12;
+
+            // Scenario details
+            pdf.setFontSize(12);
+            pdf.setTextColor(80);
+            pdf.text(`Scenario: ${selectedResult.scenario_name}`, margin, yPos);
+            yPos += 7;
+            pdf.text(`CSO Asset: ${selectedResult.cso_name}`, margin, yPos);
+            yPos += 7;
+            pdf.text(`Configuration: ${selectedResult.config_name}`, margin, yPos);
+            yPos += 7;
+            pdf.text(`Analysis Date: ${new Date(selectedResult.analysis_date).toLocaleString()}`, margin, yPos);
+            yPos += 7;
+            pdf.text(`Period: ${new Date(selectedResult.start_date).toLocaleDateString()} - ${new Date(selectedResult.end_date).toLocaleDateString()}`, margin, yPos);
+            yPos += 15;
+
+            // Key Metrics box
+            pdf.setFillColor(255, 247, 237); // Orange-50
+            pdf.roundedRect(margin, yPos, contentWidth, 35, 3, 3, 'F');
+            yPos += 8;
+
+            pdf.setFontSize(10);
+            pdf.setTextColor(100);
+            const col1 = margin + 5;
+            const col2 = margin + contentWidth / 4;
+            const col3 = margin + contentWidth / 2;
+            const col4 = margin + 3 * contentWidth / 4;
+
+            pdf.text('Required Storage', col1, yPos);
+            pdf.text('Total Spills', col2, yPos);
+            pdf.text('Bathing Spills', col3, yPos);
+            pdf.text('Status', col4, yPos);
+            yPos += 8;
+
+            pdf.setFontSize(16);
+            pdf.setTextColor(0);
+            pdf.text(`${selectedResult.final_storage_m3.toLocaleString()} m³`, col1, yPos);
+            pdf.text(`${selectedResult.spill_count}`, col2, yPos);
+            pdf.text(`${selectedResult.bathing_spill_count}`, col3, yPos);
+            pdf.text(selectedResult.converged ? '✓ Converged' : '○ Not Converged', col4, yPos);
+            yPos += 10;
+
+            pdf.setFontSize(8);
+            pdf.setTextColor(120);
+            pdf.text(`Target: ${selectedResult.spill_target} spills/year`, col1, yPos);
+            pdf.text(`Iterations: ${selectedResult.iterations}`, col2, yPos);
+            yPos += 20;
+
+            // Additional stats
+            pdf.setFontSize(11);
+            pdf.setTextColor(60);
+            pdf.text('Additional Statistics', margin, yPos);
+            yPos += 8;
+
+            pdf.setFontSize(10);
+            pdf.setTextColor(80);
+            pdf.text(`Total Spill Volume: ${selectedResult.total_spill_volume_m3.toLocaleString()} m³`, margin, yPos);
+            yPos += 6;
+            pdf.text(`Total Spill Duration: ${selectedResult.total_spill_duration_hours.toFixed(1)} hours`, margin, yPos);
+            yPos += 6;
+            pdf.text(`PFF Increase: ${selectedResult.pff_increase} m³/s`, margin, yPos);
+            yPos += 6;
+            pdf.text(`Tank Volume: ${(selectedResult.tank_volume || 0).toLocaleString()} m³`, margin, yPos);
+
+            // Page 2: Charts in LANDSCAPE
+            if (chartsContainerRef.current) {
+                pdf.addPage('l'); // 'l' for landscape
+                const landscapeWidth = pdf.internal.pageSize.getWidth();
+                const landscapeHeight = pdf.internal.pageSize.getHeight();
+                const landscapeContentWidth = landscapeWidth - 2 * margin;
+
+                // Landscape header
+                pdf.setFontSize(8);
+                pdf.setTextColor(128);
+                pdf.text(`SSD Analysis Report - ${selectedResult.scenario_name}`, margin, 8);
+                pdf.text(new Date().toLocaleDateString(), landscapeWidth - margin - 20, 8);
+                pdf.setDrawColor(200);
+                pdf.line(margin, 10, landscapeWidth - margin, 10);
+
+                yPos = 20;
+                pdf.setFontSize(14);
+                pdf.setTextColor(60);
+                pdf.text('Time Series Charts', margin, yPos);
+                yPos += 10;
+
+                try {
+                    const canvas = await html2canvas(chartsContainerRef.current, {
+                        scale: 2,
+                        backgroundColor: '#ffffff',
+                        logging: false,
+                    });
+                    const imgData = canvas.toDataURL('image/png');
+                    const imgWidth = landscapeContentWidth;
+                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                    // Fit to page
+                    const maxImgHeight = landscapeHeight - yPos - margin;
+                    const finalHeight = Math.min(imgHeight, maxImgHeight);
+                    const finalWidth = (finalHeight / imgHeight) * imgWidth;
+
+                    pdf.addImage(imgData, 'PNG', margin, yPos, finalWidth, finalHeight);
+                } catch (chartErr) {
+                    console.warn('Could not capture charts:', chartErr);
+                    pdf.setFontSize(9);
+                    pdf.setTextColor(150);
+                    pdf.text('Charts could not be captured.', margin, yPos);
+                }
+            }
+
+            // Page 3+: Spill Events Table in PORTRAIT
+            if (selectedResult.spill_events.length > 0) {
+                pdf.addPage('p'); // 'p' for portrait
+                const portraitWidth = pdf.internal.pageSize.getWidth();
+                const portraitHeight = pdf.internal.pageSize.getHeight();
+                const portraitContentWidth = portraitWidth - 2 * margin;
+
+                // Portrait header helper for this section
+                const addPortraitHeader = () => {
+                    pdf.setFontSize(8);
+                    pdf.setTextColor(128);
+                    pdf.text(`SSD Analysis Report - ${selectedResult.scenario_name}`, margin, 8);
+                    pdf.text(new Date().toLocaleDateString(), portraitWidth - margin - 20, 8);
+                    pdf.setDrawColor(200);
+                    pdf.line(margin, 10, portraitWidth - margin, 10);
+                };
+
+                addPortraitHeader();
+                yPos = 20;
+
+                pdf.setFontSize(14);
+                pdf.setTextColor(60);
+                pdf.text(`Spill Events (${selectedResult.spill_events.length} total)`, margin, yPos);
+                yPos += 10;
+
+                // Table header
+                const colWidths = [45, 45, 25, 30, 25, 20];
+                const headers = ['Start Time', 'End Time', 'Duration (h)', 'Volume (m³)', 'Peak (m³/s)', 'Bathing'];
+
+                const drawTableHeader = () => {
+                    pdf.setFillColor(245, 245, 245);
+                    pdf.rect(margin, yPos - 4, portraitContentWidth, 8, 'F');
+                    pdf.setFontSize(8);
+                    pdf.setTextColor(80);
+                    let xPos = margin + 2;
+                    headers.forEach((header, i) => {
+                        pdf.text(header, xPos, yPos);
+                        xPos += colWidths[i];
+                    });
+                    yPos += 6;
+                };
+
+                drawTableHeader();
+
+                // Table rows
+                pdf.setTextColor(60);
+                const rowHeight = 5;
+
+                selectedResult.spill_events.forEach((event: SpillEvent, idx: number) => {
+                    // Check if need new page
+                    if (yPos + rowHeight + 5 > portraitHeight - margin) {
+                        pdf.addPage('p');
+                        addPortraitHeader();
+                        yPos = 20;
+                        drawTableHeader();
+                    }
+
+                    // Alternate row background
+                    if (idx % 2 === 0) {
+                        pdf.setFillColor(252, 252, 252);
+                        pdf.rect(margin, yPos - 3, portraitContentWidth, rowHeight, 'F');
+                    }
+
+                    pdf.setTextColor(60);
+                    let rxPos = margin + 2;
+                    const startDate = new Date(event.start_time).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' });
+                    const endDate = new Date(event.end_time).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' });
+
+                    pdf.text(startDate, rxPos, yPos); rxPos += colWidths[0];
+                    pdf.text(endDate, rxPos, yPos); rxPos += colWidths[1];
+                    pdf.text(event.duration_hours.toFixed(2), rxPos, yPos); rxPos += colWidths[2];
+                    pdf.text(event.volume_m3.toFixed(1), rxPos, yPos); rxPos += colWidths[3];
+                    pdf.text(event.peak_flow_m3s.toFixed(4), rxPos, yPos); rxPos += colWidths[4];
+                    pdf.text(event.is_bathing_season ? 'Yes' : '', rxPos, yPos);
+
+                    yPos += rowHeight;
+                });
+            } else {
+                // No spill events - still add a portrait page
+                pdf.addPage('p');
+                addHeader();
+                yPos = 30;
+                pdf.setFontSize(10);
+                pdf.setTextColor(34, 139, 34); // Green
+                pdf.text('No spill events recorded - storage solution eliminates all spills.', margin, yPos);
+            }
+
+            // Save PDF
+            pdf.save(`${selectedResult.scenario_name}_report.pdf`);
+        } catch (err) {
+            console.error('PDF generation failed:', err);
+            alert('Failed to generate PDF. Please try again.');
+        } finally {
+            setIsGeneratingPDF(false);
+        }
     };
 
     // Format chart data - must be before handleChartClick
@@ -200,6 +453,18 @@ const ResultsTab: React.FC<ResultsTabProps> = ({ projectId }) => {
 
                 <div className="flex gap-2 pt-6">
                     <button
+                        onClick={exportToPDF}
+                        disabled={!selectedResult || isGeneratingPDF}
+                        className="flex items-center gap-2 px-4 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                        {isGeneratingPDF ? (
+                            <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                            <FileText size={16} />
+                        )}
+                        Export PDF
+                    </button>
+                    <button
                         onClick={exportToCSV}
                         disabled={!selectedResult}
                         className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors disabled:opacity-50"
@@ -230,10 +495,17 @@ const ResultsTab: React.FC<ResultsTabProps> = ({ projectId }) => {
                             <p className="text-3xl font-bold text-blue-700">{selectedResult.spill_count}</p>
                             <p className="text-sm text-blue-600 mt-1">Total Spills</p>
                         </div>
-                        <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-5 text-center">
-                            <p className="text-3xl font-bold text-cyan-700">{selectedResult.bathing_spill_count}</p>
-                            <p className="text-sm text-cyan-600 mt-1">Bathing Season Spills</p>
-                        </div>
+                        {selectedResult.spill_target_bathing && selectedResult.spill_target_bathing > 0 ? (
+                            <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-5 text-center">
+                                <p className="text-3xl font-bold text-cyan-700">{selectedResult.bathing_spill_count}</p>
+                                <p className="text-sm text-cyan-600 mt-1">Bathing Season Spills</p>
+                            </div>
+                        ) : (
+                            <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-center">
+                                <p className="text-3xl font-bold text-gray-400">N/A</p>
+                                <p className="text-sm text-gray-400 mt-1">Bathing Season Spills</p>
+                            </div>
+                        )}
                         <div className={`${selectedResult.converged ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'} border rounded-xl p-5 text-center`}>
                             <p className={`text-3xl font-bold ${selectedResult.converged ? 'text-green-700' : 'text-amber-700'}`}>
                                 {selectedResult.converged ? '✓' : '○'}
@@ -265,7 +537,7 @@ const ResultsTab: React.FC<ResultsTabProps> = ({ projectId }) => {
                     </div>
 
                     {/* Charts Section */}
-                    <div className="bg-white border border-gray-200 rounded-xl p-6">
+                    <div ref={chartsContainerRef} className="bg-white border border-gray-200 rounded-xl p-6">
                         <div className="flex flex-col gap-4 mb-4">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-semibold text-gray-900">Time Series Charts</h3>
@@ -598,7 +870,11 @@ const ResultsTab: React.FC<ResultsTabProps> = ({ projectId }) => {
                                         <td className="px-4 py-3 text-gray-700">{result.config_name}</td>
                                         <td className="px-4 py-3 text-right text-gray-700">{result.final_storage_m3.toLocaleString()}</td>
                                         <td className="px-4 py-3 text-right text-gray-700">{result.spill_count}</td>
-                                        <td className="px-4 py-3 text-right text-gray-700">{result.bathing_spill_count}</td>
+                                        <td className="px-4 py-3 text-right text-gray-700">
+                                            {result.spill_target_bathing && result.spill_target_bathing > 0
+                                                ? result.bathing_spill_count
+                                                : <span className="text-gray-400">N/A</span>}
+                                        </td>
                                         <td className="px-4 py-3 text-center">
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${result.converged
                                                 ? 'bg-green-100 text-green-800'

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Database, Activity, CheckCircle, Droplets, LogOut, Menu, X, Users, Container } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, Activity, CheckCircle, Droplets, LogOut, Menu, X, Users, Container } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/utils';
 import { useCurrentUser } from '../api/hooks';
@@ -15,7 +15,7 @@ const MainLayout: React.FC = () => {
 
     const navItems = [
         { name: 'FlowBot Hub', shortName: 'Hub', path: '/', icon: LayoutDashboard },
-        { name: 'Flow Survey Management', shortName: 'FSM', path: '/fsm', icon: Database, hasAccess: user?.access_fsm },
+        { name: 'Flow Survey Management', shortName: 'FSM', path: '/fsm', icon: ClipboardList, hasAccess: user?.access_fsm },
         { name: 'Flow Survey Analysis', shortName: 'FSA', path: '/analysis', icon: Activity, hasAccess: user?.access_fsa },
         { name: 'Model Verification', shortName: 'MV', path: '/verification', icon: CheckCircle, hasAccess: user?.access_verification },
         { name: 'Water Quality Monitoring', shortName: 'WQ', path: '/wq', icon: Droplets, hasAccess: user?.access_wq },

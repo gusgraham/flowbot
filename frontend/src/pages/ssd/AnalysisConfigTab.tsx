@@ -206,9 +206,10 @@ const AnalysisConfigsTab: React.FC<AnalysisConfigsTabProps> = ({ projectId }) =>
             {/* New/Edit form card */}
             {editingConfig && (
                 <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-5">
-                    <h3 className="text-lg font-semibold text-orange-800 mb-4">
+                    <h3 className="text-lg font-semibold text-orange-800 mb-2">
                         {editingConfig.id ? 'Edit Configuration' : 'New Configuration'}
                     </h3>
+                    <p className="text-sm text-gray-500 mb-4"><span className="text-red-500">*</span> indicates required fields</p>
                     <div className="space-y-4">
                         {/* Name */}
                         <div>
@@ -307,13 +308,63 @@ const AnalysisConfigsTab: React.FC<AnalysisConfigsTabProps> = ({ projectId }) =>
                             </div>
                             {editingConfig.model === 4 && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Spill Target (Bathing) *</label>
-                                    <input
-                                        type="number"
-                                        value={editingConfig.spill_target_bathing ?? ''}
-                                        onChange={(e) => setEditingConfig({ ...editingConfig, spill_target_bathing: e.target.value ? parseInt(e.target.value) : null })}
-                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                    />
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Bathing Spill Target (Entire Period) *</label>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            value={editingConfig.spill_target_bathing ?? ''}
+                                            onChange={(e) => setEditingConfig({ ...editingConfig, spill_target_bathing: e.target.value ? parseInt(e.target.value) : null })}
+                                            className="w-32 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                        />
+                                        {editingConfig.start_date && editingConfig.end_date && editingConfig.spill_target_bathing && (() => {
+                                            // Calculate accurate bathing season count
+                                            const analysisStart = new Date(editingConfig.start_date);
+                                            const analysisEnd = new Date(editingConfig.end_date);
+
+                                            // Parse bathing season dates (DD/MM format)
+                                            const parseSeasonDate = (ddmm: string, year: number): Date => {
+                                                const [day, month] = ddmm.split('/').map(Number);
+                                                return new Date(year, month - 1, day);
+                                            };
+
+                                            const seasonStartDDMM = editingConfig.bathing_season_start || '15/05';
+                                            const seasonEndDDMM = editingConfig.bathing_season_end || '30/09';
+
+                                            let totalSeasons = 0;
+                                            const startYear = analysisStart.getFullYear();
+                                            const endYear = analysisEnd.getFullYear();
+
+                                            for (let year = startYear; year <= endYear; year++) {
+                                                const seasonStart = parseSeasonDate(seasonStartDDMM, year);
+                                                const seasonEnd = parseSeasonDate(seasonEndDDMM, year);
+                                                const seasonDuration = seasonEnd.getTime() - seasonStart.getTime();
+
+                                                if (seasonDuration <= 0) continue;
+
+                                                // Calculate overlap between analysis period and this year's bathing season
+                                                const overlapStart = Math.max(analysisStart.getTime(), seasonStart.getTime());
+                                                const overlapEnd = Math.min(analysisEnd.getTime(), seasonEnd.getTime());
+                                                const overlapDuration = overlapEnd - overlapStart;
+
+                                                if (overlapDuration > 0) {
+                                                    // Partial or full season coverage
+                                                    totalSeasons += overlapDuration / seasonDuration;
+                                                }
+                                            }
+
+                                            if (totalSeasons <= 0) {
+                                                return <span className="text-sm font-medium text-gray-400">No bathing seasons in period</span>;
+                                            }
+
+                                            const perSeason = editingConfig.spill_target_bathing / totalSeasons;
+                                            return (
+                                                <span className="text-sm font-medium text-cyan-600">
+                                                    → {perSeason.toFixed(1)} spills/season ({totalSeasons.toFixed(1)} seasons)
+                                                </span>
+                                            );
+                                        })()}
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1">Total bathing season spills allowed across the entire analysis period</p>
                                 </div>
                             )}
                         </div>
@@ -469,7 +520,46 @@ const AnalysisConfigsTab: React.FC<AnalysisConfigsTabProps> = ({ projectId }) =>
                             {config.model === 4 && config.spill_target_bathing !== null && (
                                 <div>
                                     <p className="text-gray-500 mb-1">Bathing Target</p>
-                                    <span className="font-medium text-cyan-700">{config.spill_target_bathing} spills</span>
+                                    <span className="font-medium text-cyan-700">
+                                        {config.spill_target_bathing} spills
+                                        <span className="text-cyan-500 ml-1">
+                                            ({(() => {
+                                                // Calculate accurate bathing season count
+                                                const analysisStart = new Date(config.start_date);
+                                                const analysisEnd = new Date(config.end_date);
+
+                                                const parseSeasonDate = (ddmm: string, year: number): Date => {
+                                                    const [day, month] = ddmm.split('/').map(Number);
+                                                    return new Date(year, month - 1, day);
+                                                };
+
+                                                const seasonStartDDMM = config.bathing_season_start || '15/05';
+                                                const seasonEndDDMM = config.bathing_season_end || '30/09';
+
+                                                let totalSeasons = 0;
+                                                const startYear = analysisStart.getFullYear();
+                                                const endYear = analysisEnd.getFullYear();
+
+                                                for (let year = startYear; year <= endYear; year++) {
+                                                    const seasonStart = parseSeasonDate(seasonStartDDMM, year);
+                                                    const seasonEnd = parseSeasonDate(seasonEndDDMM, year);
+                                                    const seasonDuration = seasonEnd.getTime() - seasonStart.getTime();
+                                                    if (seasonDuration <= 0) continue;
+
+                                                    const overlapStart = Math.max(analysisStart.getTime(), seasonStart.getTime());
+                                                    const overlapEnd = Math.min(analysisEnd.getTime(), seasonEnd.getTime());
+                                                    const overlapDuration = overlapEnd - overlapStart;
+
+                                                    if (overlapDuration > 0) {
+                                                        totalSeasons += overlapDuration / seasonDuration;
+                                                    }
+                                                }
+
+                                                if (totalSeasons <= 0) return 'N/A';
+                                                return (config.spill_target_bathing / totalSeasons).toFixed(1);
+                                            })()} /season)
+                                        </span>
+                                    </span>
                                 </div>
                             )}
                             <div>

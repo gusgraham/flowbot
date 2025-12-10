@@ -71,6 +71,7 @@ class SSDResult(SQLModel, table=True):
     end_date: datetime
     pff_increase: float
     spill_target: int
+    spill_target_bathing: Optional[int] = None  # If set, bathing season analysis was used
     tank_volume: float = 0.0  # Tank volume used in analysis
     
     # Key Metrics
@@ -101,6 +102,7 @@ class SSDResultCreate(SQLModel):
     end_date: datetime
     pff_increase: float
     spill_target: int
+    spill_target_bathing: Optional[int] = None
     tank_volume: float = 0.0
     converged: bool
     iterations: int
@@ -126,6 +128,7 @@ class SSDResultRead(SQLModel):
     end_date: datetime
     pff_increase: float
     spill_target: int
+    spill_target_bathing: Optional[int]
     tank_volume: float
     converged: bool
     iterations: int
