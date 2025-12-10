@@ -146,6 +146,19 @@ export const useCreateAnalysisProject = () => {
     });
 };
 
+export const useDeleteAnalysisProject = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (projectId: number) => {
+            const { data } = await api.delete(`/fsa/projects/${projectId}`);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['analysis_projects'] });
+        },
+    });
+};
+
 // Verification Projects
 export interface VerificationProject {
     id: number;

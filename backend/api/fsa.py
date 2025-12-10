@@ -68,6 +68,60 @@ def read_project(
         
     return project
 
+@router.delete("/projects/{project_id}")
+def delete_project(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Delete a project and all associated data (datasets, events, files)"""
+    from domain.fsa import SurveyEvent
+    
+    project = session.get(FsaProject, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Check permissions
+    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized to delete this project")
+    
+    # Delete all timeseries data for datasets belonging to this project
+    datasets = session.exec(select(FsaDataset).where(FsaDataset.project_id == project_id)).all()
+    for dataset in datasets:
+        # Delete timeseries records
+        timeseries = session.exec(select(FsaTimeSeries).where(FsaTimeSeries.dataset_id == dataset.id)).all()
+        for ts in timeseries:
+            session.delete(ts)
+        
+        # Delete dataset file if exists
+        if dataset.file_path and os.path.exists(dataset.file_path):
+            try:
+                os.remove(dataset.file_path)
+            except Exception as e:
+                print(f"Warning: Could not delete file {dataset.file_path}: {e}")
+        
+        # Delete dataset record
+        session.delete(dataset)
+    
+    # Delete all survey events
+    events = session.exec(select(SurveyEvent).where(SurveyEvent.project_id == project_id)).all()
+    for event in events:
+        session.delete(event)
+    
+    # Delete project data directory if exists
+    project_dir = f"data/fsa/{project_id}"
+    if os.path.exists(project_dir):
+        try:
+            shutil.rmtree(project_dir)
+        except Exception as e:
+            print(f"Warning: Could not delete directory {project_dir}: {e}")
+    
+    # Delete the project
+    session.delete(project)
+    session.commit()
+    
+    return {"message": "Project deleted successfully", "project_id": project_id}
+
 # ==========================================
 # FILE UPLOAD
 # ==========================================

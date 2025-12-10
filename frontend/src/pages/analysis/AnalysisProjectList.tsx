@@ -1,12 +1,21 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAnalysisProjects } from '../../api/hooks';
-import { Activity, ArrowRight, Loader2, Plus } from 'lucide-react';
+import { useAnalysisProjects, useDeleteAnalysisProject } from '../../api/hooks';
+import { Activity, ArrowRight, Loader2, Plus, Trash2 } from 'lucide-react';
 import CreateAnalysisProjectModal from './CreateAnalysisProjectModal';
 
 const AnalysisProjectList: React.FC = () => {
     const { data: projects, isLoading, error } = useAnalysisProjects();
+    const deleteProject = useDeleteAnalysisProject();
     const [isModalOpen, setIsModalOpen] = useState(false);
+
+    const handleDelete = (e: React.MouseEvent, projectId: number, projectName: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm(`Delete project "${projectName}"? This will permanently delete all datasets, events, and associated files.`)) {
+            deleteProject.mutate(projectId);
+        }
+    };
 
     if (isLoading) {
         return (
@@ -51,9 +60,19 @@ const AnalysisProjectList: React.FC = () => {
                             <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
                                 <Activity size={24} />
                             </div>
-                            <span className="text-xs font-medium bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-                                {project.job_number}
-                            </span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
+                                    {project.job_number}
+                                </span>
+                                <button
+                                    onClick={(e) => handleDelete(e, project.id, project.name)}
+                                    disabled={deleteProject.isPending}
+                                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                                    title="Delete project"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
                         </div>
 
                         <h3 className="text-lg font-bold text-gray-900 mb-1">{project.name}</h3>
