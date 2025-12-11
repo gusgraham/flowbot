@@ -2196,3 +2196,364 @@ export function useDeleteSSDResult() {
         },
     });
 }
+
+
+// ==========================================
+// VERIFICATION MODULE HOOKS
+// ==========================================
+
+// Types
+export interface VerificationProjectData {
+    id: number;
+    name: string;
+    job_number: string;
+    client: string;
+    model_name?: string;
+    description?: string;
+    owner_id?: number;
+    created_at: string;
+}
+
+export interface VerificationEvent {
+    id: number;
+    project_id: number;
+    name: string;
+    event_type: string;
+    description?: string;
+    start_time?: string;
+    end_time?: string;
+    created_at: string;
+}
+
+export interface VerificationEventCreate {
+    name: string;
+    event_type?: string;
+    description?: string;
+    start_time?: string;
+    end_time?: string;
+}
+
+export interface VerificationFlowMonitor {
+    id: number;
+    project_id: number;
+    name: string;
+    icm_node_reference?: string;
+    is_critical: boolean;
+    is_surcharged: boolean;
+    created_at: string;
+}
+
+export interface VerificationFlowMonitorCreate {
+    name: string;
+    icm_node_reference?: string;
+    is_critical?: boolean;
+    is_surcharged?: boolean;
+}
+
+export interface VerificationFlowMonitorUpdate {
+    name?: string;
+    icm_node_reference?: string;
+    is_critical?: boolean;
+    is_surcharged?: boolean;
+}
+
+export interface TracePreviewMonitor {
+    page_index: number;
+    obs_location: string;
+    pred_location: string;
+    upstream_end: boolean;
+    timestep_minutes: number;
+    record_count: number;
+}
+
+export interface TracePreviewResult {
+    trace_id: string;
+    monitors_found: TracePreviewMonitor[];
+    predicted_profiles: string[];
+    errors: string[];
+}
+
+export interface VerificationRun {
+    id: number;
+    monitor_trace_id: number;
+    status: string;
+    is_final_for_monitor_event: boolean;
+    overall_flow_score?: number;
+    overall_depth_score?: number;
+    overall_status?: string;
+    nse?: number;
+    kge?: number;
+    cv_obs?: number;
+    created_at: string;
+    finalized_at?: string;
+}
+
+export interface VerificationMatrixCell {
+    status: string;
+    run_id?: number;
+    nse?: number;
+    flow_score?: number;
+    depth_score?: number;
+}
+
+export interface VerificationMatrix {
+    monitors: VerificationFlowMonitor[];
+    events: VerificationEvent[];
+    matrix: Record<string, Record<string, VerificationMatrixCell>>;
+}
+
+// Verification Project Hook
+export function useVerificationProject(projectId: number) {
+    return useQuery({
+        queryKey: ['verification-project', projectId],
+        queryFn: async () => {
+            const response = await api.get<VerificationProjectData>(`/verification/projects/${projectId}`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+// Events
+export function useVerificationEvents(projectId: number) {
+    return useQuery({
+        queryKey: ['verification-events', projectId],
+        queryFn: async () => {
+            const response = await api.get<VerificationEvent[]>(`/verification/projects/${projectId}/events`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+export function useCreateVerificationEvent() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, event }: { projectId: number; event: VerificationEventCreate }) => {
+            const response = await api.post<VerificationEvent>(`/verification/projects/${projectId}/events`, event);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification-events', variables.projectId] });
+        },
+    });
+}
+
+export function useDeleteVerificationEvent() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ eventId, projectId }: { eventId: number; projectId: number }) => {
+            const response = await api.delete(`/verification/events/${eventId}`);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification-events', variables.projectId] });
+        },
+    });
+}
+
+// Monitors
+export function useVerificationMonitors(projectId: number) {
+    return useQuery({
+        queryKey: ['verification-monitors', projectId],
+        queryFn: async () => {
+            const response = await api.get<VerificationFlowMonitor[]>(`/verification/projects/${projectId}/monitors`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+export function useCreateVerificationMonitor() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ projectId, monitor }: { projectId: number; monitor: VerificationFlowMonitorCreate }) => {
+            const response = await api.post<VerificationFlowMonitor>(`/verification/projects/${projectId}/monitors`, monitor);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification-monitors', variables.projectId] });
+        },
+    });
+}
+
+export function useUpdateVerificationMonitor() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ monitorId, update, projectId }: { monitorId: number; update: VerificationFlowMonitorUpdate; projectId: number }) => {
+            const response = await api.patch<VerificationFlowMonitor>(`/verification/monitors/${monitorId}`, update);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification-monitors', variables.projectId] });
+        },
+    });
+}
+
+export function useDeleteVerificationMonitor() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ monitorId, projectId }: { monitorId: number; projectId: number }) => {
+            const response = await api.delete(`/verification/monitors/${monitorId}`);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification-monitors', variables.projectId] });
+        },
+    });
+}
+
+// Trace Import
+export function usePreviewTraceImport() {
+    return useMutation({
+        mutationFn: async ({ eventId, file }: { eventId: number; file: File }) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await api.post<TracePreviewResult>(`/verification/events/${eventId}/preview-trace`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            return response.data;
+        },
+    });
+}
+
+export function useImportTrace() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ eventId, file, traceName, profileIndex, projectId }: {
+            eventId: number;
+            file: File;
+            traceName: string;
+            profileIndex: number;
+            projectId: number;
+        }) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('trace_name', traceName);
+            formData.append('profile_index', String(profileIndex));
+            const response = await api.post(`/verification/events/${eventId}/import-trace?trace_name=${encodeURIComponent(traceName)}&profile_index=${profileIndex}`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification-events', variables.projectId] });
+            queryClient.invalidateQueries({ queryKey: ['verification-monitors', variables.projectId] });
+            queryClient.invalidateQueries({ queryKey: ['verification-matrix', variables.projectId] });
+        },
+    });
+}
+
+// Matrix
+export function useVerificationMatrix(projectId: number) {
+    return useQuery({
+        queryKey: ['verification-matrix', projectId],
+        queryFn: async () => {
+            const response = await api.get<VerificationMatrix>(`/verification/projects/${projectId}/matrix`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+// Run Verification
+export interface VerificationRunResult {
+    event_id: number;
+    event_name: string;
+    results: Array<{
+        monitor: string;
+        status: 'success' | 'error' | 'skipped';
+        reason?: string;
+        run_id?: number;
+        overall_status?: string;
+        nse?: number;
+        flow_score?: number;
+    }>;
+    runs_created: number;
+}
+
+export function useRunVerification() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ eventId, projectId }: { eventId: number; projectId: number }) => {
+            const response = await api.post<VerificationRunResult>(`/verification/events/${eventId}/run-verification`);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification-matrix', variables.projectId] });
+        },
+    });
+}
+
+// Workspace
+export interface WorkspaceMetric {
+    name: string;
+    value: number;
+    band?: string;
+    points?: number;
+}
+
+export interface WorkspaceSeries {
+    time: string[];
+    values: number[];
+}
+
+export interface WorkspacePeak {
+    index: number;
+    time: string;
+    value: number;
+}
+
+export interface WorkspaceData {
+    run: {
+        id: number;
+        status: string;
+        overall_status: string;
+        nse: number;
+        kge: number;
+        cv_obs: number;
+        flow_score: number;
+        depth_score?: number;
+        created_at: string;
+        is_final: boolean;
+    };
+    monitor: {
+        id: number;
+        name: string;
+        is_critical: boolean;
+        is_surcharged: boolean;
+    };
+    event: {
+        id: number;
+        name: string;
+        event_type: string;
+    };
+    metrics: {
+        flow: WorkspaceMetric[];
+        depth: WorkspaceMetric[];
+    };
+    series: Record<string, WorkspaceSeries>;
+    peaks: Record<string, WorkspacePeak[]>;
+    timestep_minutes: number;
+}
+
+// Workspace Params
+export interface WorkspaceParams {
+    smoothing_obs?: number;
+    smoothing_pred?: number;
+    max_peaks_obs?: number;
+    max_peaks_pred?: number;
+}
+
+export function useWorkspaceData(runId: number | null, params?: WorkspaceParams) {
+    return useQuery({
+        queryKey: ['verification-workspace', runId, params],
+        queryFn: async () => {
+            const response = await api.get<WorkspaceData>(`/verification/runs/${runId}/workspace`, {
+                params: params
+            });
+            return response.data;
+        },
+        enabled: !!runId,
+    });
+}

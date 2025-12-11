@@ -16,6 +16,7 @@ import AnalysisProjectList from './pages/analysis/AnalysisProjectList';
 import AnalysisWorkbench from './pages/analysis/AnalysisWorkbench';
 import VerificationProjectList from './pages/verification/VerificationProjectList';
 import VerificationDashboard from './pages/verification/VerificationDashboard';
+import VerificationWorkspace from './pages/verification/verification/VerificationWorkspace';
 import WQProjectList from './pages/wq/WQProjectList';
 import WQDashboard from './pages/wq/WQDashboard';
 import UserManagement from './pages/admin/UserManagement';
@@ -102,6 +103,7 @@ function App() {
                 <Route element={<RequireAccess module="verification" />}>
                   <Route path="verification" element={<VerificationProjectList />} />
                   <Route path="verification/:projectId" element={<VerificationDashboard />} />
+                  <Route path="verification/workspace/:runId" element={<VerificationWorkspace />} />
                 </Route>
 
                 {/* WQ Routes */}

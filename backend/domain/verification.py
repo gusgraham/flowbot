@@ -2,6 +2,20 @@ from typing import Optional, List
 from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship
 
+# Import extended verification models
+from domain.verification_models import (
+    VerificationEvent, VerificationEventCreate, VerificationEventRead,
+    VerificationFlowMonitor, VerificationFlowMonitorCreate, VerificationFlowMonitorRead, VerificationFlowMonitorUpdate,
+    TraceSet, TraceSetCreate, TraceSetRead,
+    MonitorTraceVersion, MonitorTraceVersionRead,
+    VerificationTimeSeries, VerificationTimeSeriesRead,
+    ToleranceSet, ToleranceSetCreate, ToleranceSetRead, ToleranceSetUpdate,
+    VerificationRun, VerificationRunCreate, VerificationRunRead, VerificationRunUpdate,
+    VerificationMetric, VerificationMetricRead,
+    ManualAdjustment, ManualAdjustmentCreate, ManualAdjustmentRead,
+    EventType, RunStatus, VerificationStatus, ScoreBand, SeriesType
+)
+
 class VerificationProjectBase(SQLModel):
     name: str = Field(index=True)
     job_number: str = Field(index=True)
@@ -23,6 +37,17 @@ class VerificationProject(VerificationProjectBase, table=True):
     
     # Collaborators (Many-to-Many)
     collaborators: List["User"] = Relationship(link_model=VerificationProjectCollaborator)
+    
+    # Child relationships
+    events: List["VerificationEvent"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[VerificationEvent.project_id]"}
+    )
+    monitors: List["VerificationFlowMonitor"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[VerificationFlowMonitor.project_id]"}
+    )
+    tolerance_sets: List["ToleranceSet"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[ToleranceSet.project_id]"}
+    )
 
 class VerificationProjectCreate(SQLModel):
     name: str
