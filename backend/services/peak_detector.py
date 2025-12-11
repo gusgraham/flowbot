@@ -70,7 +70,7 @@ class PeakDetector:
         series: List[float],
         timestamps: List[datetime],
         smoothing_frac: float = None,
-        prominence: float = 0.0009,
+        prominence: Optional[float] = None,
         width: int = 1,
         distance: int = 1,
         n_peaks: Optional[int] = None
@@ -82,7 +82,7 @@ class PeakDetector:
             series: List of values
             timestamps: Corresponding timestamps
             smoothing_frac: Smoothing fraction (0.0 = no smoothing)
-            prominence: Minimum peak prominence
+            prominence: Minimum peak prominence (None = no threshold)
             width: Minimum peak width
             distance: Minimum distance between peaks
             n_peaks: If specified, return only the N most prominent peaks
@@ -101,13 +101,16 @@ class PeakDetector:
         else:
             smoothed = np.array(series)
         
+        # Configure find_peaks args
+        kwargs = {
+            'width': width,
+            'distance': distance
+        }
+        if prominence is not None:
+            kwargs['prominence'] = prominence
+
         # Find peaks
-        peak_indices, properties = find_peaks(
-            smoothed,
-            prominence=prominence,
-            width=width,
-            distance=distance
-        )
+        peak_indices, properties = find_peaks(smoothed, **kwargs)
         
         if len(peak_indices) == 0:
             return []

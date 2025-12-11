@@ -305,6 +305,9 @@ class VerificationRunBase(SQLModel):
     nse: Optional[float] = None
     kge: Optional[float] = None  # Kling-Gupta Efficiency
     cv_obs: Optional[float] = None  # Coefficient of Variation
+    
+    # Analysis Settings (Persisted)
+    analysis_settings: Optional[dict] = Field(default=None, sa_type=JSON)
 
 
 class VerificationRun(VerificationRunBase, table=True):

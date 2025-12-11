@@ -2286,6 +2286,7 @@ export interface VerificationRun {
     cv_obs?: number;
     created_at: string;
     finalized_at?: string;
+    analysis_settings?: AnalysisSettings;
 }
 
 export interface VerificationMatrixCell {
@@ -2555,5 +2556,30 @@ export function useWorkspaceData(runId: number | null, params?: WorkspaceParams)
             return response.data;
         },
         enabled: !!runId,
+    });
+}
+
+export interface AnalysisSettings {
+    smoothing_obs?: number;
+    smoothing_pred?: number;
+    max_peaks_obs?: number;
+    max_peaks_pred?: number;
+    peak_mode?: 'auto' | 'manual';
+    manual_peaks?: Record<string, Array<{ time: string, value: number }>>;
+}
+
+export function useUpdateVerificationRunSettings() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ runId, settings }: { runId: number; settings: AnalysisSettings }) => {
+            const response = await api.put<WorkspaceData['run']>(`/verification/runs/${runId}/analysis-settings`, {
+                analysis_settings: settings
+            });
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['verification-workspace', variables.runId] });
+            queryClient.invalidateQueries({ queryKey: ['verification-matrix'] });
+        },
     });
 }
