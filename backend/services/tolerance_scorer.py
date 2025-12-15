@@ -110,14 +110,14 @@ class ToleranceScorer:
         scores['nse'] = self._score_nse(metrics.nse)
         
         # Peak timing
-        scores['peak_time'] = self._score_flow_peak_time(metrics.peak_time_diff_hrs)
+        scores['peak_time_diff_hrs'] = self._score_flow_peak_time(metrics.peak_time_diff_hrs)
         
         # Peak flow magnitude
-        scores['peak_flow'] = self._score_flow_peak_magnitude(metrics.peak_diff_pct)
+        scores['peak_flow_diff_pcnt'] = self._score_flow_peak_magnitude(metrics.peak_diff_pct)
         
         # Volume
         if metrics.volume_diff_pct is not None:
-            scores['volume'] = self._score_flow_volume(metrics.volume_diff_pct)
+            scores['volume_diff_pcnt'] = self._score_flow_volume(metrics.volume_diff_pct)
         
         # Calculate totals
         total_points = sum(s.score_points for s in scores.values())
@@ -136,10 +136,10 @@ class ToleranceScorer:
         scores = {}
         
         # Peak timing
-        scores['peak_time'] = self._score_depth_peak_time(metrics.peak_time_diff_hrs)
+        scores['peak_time_diff_hrs'] = self._score_depth_peak_time(metrics.peak_time_diff_hrs)
         
         # Peak depth magnitude
-        scores['peak_depth'] = self._score_depth_peak_magnitude(
+        scores['peak_depth_diff_m'] = self._score_depth_peak_magnitude(
             metrics.peak_diff_pct, 
             metrics.peak_diff_abs
         )
@@ -190,7 +190,7 @@ class ToleranceScorer:
         
         if diff_hrs == -99999.0:
             return MetricScore(
-                metric_name='peak_time_diff',
+                metric_name='peak_time_diff_hrs',
                 value=diff_hrs,
                 score_band='NA',
                 score_points=0,
@@ -206,7 +206,7 @@ class ToleranceScorer:
             band, points = 'NO', 0
         
         return MetricScore(
-            metric_name='peak_time_diff',
+            metric_name='peak_time_diff_hrs',
             value=round(diff_hrs, 2),
             score_band=band,
             score_points=points,
@@ -220,7 +220,7 @@ class ToleranceScorer:
         
         if diff_pct == -99999.0 or diff_pct == 99999.0:
             return MetricScore(
-                metric_name='peak_diff_pct',
+                metric_name='peak_flow_diff_pcnt',
                 value=diff_pct,
                 score_band='NA',
                 score_points=0,
@@ -236,7 +236,7 @@ class ToleranceScorer:
             band, points = 'NO', 0
         
         return MetricScore(
-            metric_name='peak_diff_pct',
+            metric_name='peak_flow_diff_pcnt',
             value=round(diff_pct, 1),
             score_band=band,
             score_points=points,
@@ -250,7 +250,7 @@ class ToleranceScorer:
         
         if diff_pct == -99999.0:
             return MetricScore(
-                metric_name='volume_diff_pct',
+                metric_name='volume_diff_pcnt',
                 value=diff_pct,
                 score_band='NA',
                 score_points=0,
@@ -265,7 +265,7 @@ class ToleranceScorer:
             band, points = 'NO', 0
         
         return MetricScore(
-            metric_name='volume_diff_pct',
+            metric_name='volume_diff_pcnt',
             value=round(diff_pct, 1),
             score_band=band,
             score_points=points,
@@ -278,7 +278,7 @@ class ToleranceScorer:
         
         if diff_hrs == -99999.0:
             return MetricScore(
-                metric_name='peak_time_diff',
+                metric_name='peak_time_diff_hrs',
                 value=diff_hrs,
                 score_band='NA',
                 score_points=0,
@@ -294,7 +294,7 @@ class ToleranceScorer:
             band, points = 'NO', 0
         
         return MetricScore(
-            metric_name='peak_time_diff',
+            metric_name='peak_time_diff_hrs',
             value=round(diff_hrs, 2),
             score_band=band,
             score_points=points,
@@ -314,7 +314,7 @@ class ToleranceScorer:
         
         if diff_abs == -99999.0:
             return MetricScore(
-                metric_name='peak_diff',
+                metric_name='peak_depth_diff_m',
                 value=diff_abs,
                 score_band='NA',
                 score_points=0,
@@ -365,7 +365,7 @@ class ToleranceScorer:
             desc = f'±{abs_threshold}m or ±{pct_threshold}%'
         
         return MetricScore(
-            metric_name='peak_diff',
+            metric_name='peak_depth_diff_m',
             value=round(diff_abs, 3),
             score_band=band,
             score_points=points,

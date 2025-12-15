@@ -98,9 +98,9 @@ export default function ReviewTab({ projectId }: ReviewTabProps) {
         : null;
 
     return (
-        <div className="flex flex-col h-[calc(100vh-200px)] min-h-[600px]">
+        <div className="flex flex-col h-[calc(100vh-180px)] min-h-[600px]">
             {/* Top Bar: Event Selection and Run Verification */}
-            <div className="flex flex-wrap items-center justify-between gap-4 p-4 mb-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 mb-3 bg-white border border-gray-200 rounded-lg shadow-sm">
                 <div className="flex items-center gap-4 flex-1">
                     <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
                         Verification Event:
@@ -140,11 +140,11 @@ export default function ReviewTab({ projectId }: ReviewTabProps) {
             )}
 
             {/* Main Content Area - Split Pane */}
-            <div className="flex flex-1 gap-6 overflow-hidden">
+            <div className="flex flex-1 gap-4 overflow-hidden">
                 {/* Left Pane: Monitor List */}
-                <div className="w-1/3 min-w-[300px] max-w-[400px] flex flex-col bg-white border border-gray-200 rounded-lg shadow-sm">
+                <div className="w-64 flex-shrink-0 flex flex-col bg-white border border-gray-200 rounded-lg shadow-sm">
                     {/* Search/Filter */}
-                    <div className="p-3 border-b border-gray-200">
+                    <div className="p-2 border-b border-gray-200">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                             <input
@@ -158,7 +158,7 @@ export default function ReviewTab({ projectId }: ReviewTabProps) {
                     </div>
 
                     {/* Monitor List */}
-                    <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                    <div className="flex-1 overflow-y-auto p-1.5 space-y-1">
                         {filteredMonitors.map((monitor: any) => {
                             const eventName = selectedEvent?.name;
                             const cell = eventName ? matrix.matrix[monitor.name]?.[eventName] : null;
@@ -168,7 +168,7 @@ export default function ReviewTab({ projectId }: ReviewTabProps) {
                                 <button
                                     key={monitor.id}
                                     onClick={() => setSelectedMonitorId(monitor.id)}
-                                    className={`w-full text-left p-3 rounded-lg border transition-all ${isSelected
+                                    className={`w-full text-left p-2 rounded-lg border transition-all ${isSelected
                                         ? 'border-green-500 bg-green-50 shadow-sm ring-1 ring-green-500'
                                         : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
                                         }`}
@@ -178,7 +178,7 @@ export default function ReviewTab({ projectId }: ReviewTabProps) {
                                         {cell && (
                                             <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border ${getStatusColor(cell.status)}`}>
                                                 {getStatusIcon(cell.status)}
-                                                <span>{cell.status === 'NOT_VERIFIED' ? 'NO VER' : cell.status}</span>
+                                                <span>{cell.status === 'NOT_VERIFIED' ? 'NOT VERIFIED' : cell.status}</span>
                                             </div>
                                         )}
                                         {!cell && (
@@ -201,7 +201,7 @@ export default function ReviewTab({ projectId }: ReviewTabProps) {
                         })}
                     </div>
 
-                    <div className="p-3 border-t border-gray-200 text-xs text-gray-500 text-center">
+                    <div className="p-2 border-t border-gray-200 text-xs text-gray-500 text-center">
                         {filteredMonitors.length} monitors
                     </div>
                 </div>

@@ -685,11 +685,11 @@ def create_verification_run(
             
             # Create metric records
             for param, score in [('FLOW', scores['flow_score']), ('DEPTH', scores['depth_score'])]:
-                for metric_name, metric_score in score.metrics.items():
+                for metric_key, metric_score in score.metrics.items():
                     metric_record = VerificationMetric(
                         run_id=run.id,
                         parameter=param,
-                        metric_name=metric_name,
+                        metric_name=metric_score.metric_name,
                         value=metric_score.value,
                         score_band=metric_score.score_band,
                         score_points=metric_score.score_points
@@ -1050,11 +1050,11 @@ def run_verification_for_event(
                 # Create metric records for flow
                 flow_score_obj = scores_result['flow_score']
                 if flow_score_obj:
-                    for metric_name, metric_score in flow_score_obj.metrics.items():
+                    for metric_key, metric_score in flow_score_obj.metrics.items():
                         metric = VerificationMetric(
                             run_id=run.id,
                             parameter="FLOW",
-                            metric_name=metric_name,
+                            metric_name=metric_score.metric_name,
                             value=metric_score.value,
                             score_band=metric_score.score_band,
                             score_points=metric_score.score_points
@@ -1064,11 +1064,11 @@ def run_verification_for_event(
                 # Create metric records for depth
                 depth_score_obj = scores_result.get('depth_score')
                 if depth_score_obj:
-                    for metric_name, metric_score in depth_score_obj.metrics.items():
+                    for metric_key, metric_score in depth_score_obj.metrics.items():
                         metric = VerificationMetric(
                             run_id=run.id,
                             parameter="DEPTH",
-                            metric_name=metric_name,
+                            metric_name=metric_score.metric_name,
                             value=metric_score.value,
                             score_band=metric_score.score_band,
                             score_points=metric_score.score_points
@@ -1127,24 +1127,227 @@ def update_analysis_settings(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Update analysis settings (smoothing, peaks, etc.) for a run."""
+    """
+    Update analysis settings (smoothing, peaks, etc.) for a run.
+    Also recalculates and persists metrics based on the new settings.
+    """
+    import pandas as pd
+    from services.peak_detector import PeakDetector, PeakInfo
+    from services.tolerance_scorer import score_verification_results
+    from domain.verification_models import VerificationMetric
+    
     run = session.get(VerificationRun, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="VerificationRun not found")
     
+    # Save the settings
     run.analysis_settings = settings.analysis_settings
+    
+    # Get the monitor trace version
+    mtv = session.get(MonitorTraceVersion, run.monitor_trace_id)
+    if not mtv:
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        return run
+    
+    # Get monitor info
+    monitor = session.get(VerificationFlowMonitor, mtv.monitor_id)
+    
+    # Load time series data
+    time_series = session.exec(
+        select(VerificationTimeSeries).where(VerificationTimeSeries.monitor_trace_id == mtv.id)
+    ).all()
+    
+    series_data = {}
+    for ts in time_series:
+        try:
+            df = pd.read_parquet(ts.parquet_path)
+            series_data[ts.series_type] = {
+                "time": pd.to_datetime(df['time']).tolist(),
+                "values": df['value'].tolist()
+            }
+        except Exception as e:
+            print(f"Error loading parquet {ts.parquet_path}: {e}")
+    
+    # Extract settings
+    s = settings.analysis_settings
+    eff_smoothing_obs = s.get('smoothing_obs', 0.0)
+    eff_smoothing_pred = s.get('smoothing_pred', 0.0)
+    eff_max_peaks = s.get('max_peaks', 1)
+    peak_mode = s.get('peak_mode', 'auto')
+    manual_peaks = s.get('manual_peaks', {})
+    
+    peak_detector = PeakDetector()
+    timestep = mtv.timestep_minutes or 5
+    
+    def get_series(stype):
+        if stype in series_data:
+            return series_data[stype]["values"], series_data[stype]["time"]
+        return [], []
+    
+    # Calculate flow metrics
+    obs_flow, time_flow = get_series("obs_flow")
+    pred_flow, _ = get_series("pred_flow")
+    
+    if eff_smoothing_obs > 0 and len(obs_flow) > 0:
+        obs_flow = peak_detector.smooth_series(obs_flow, eff_smoothing_obs).tolist()
+    if eff_smoothing_pred > 0 and len(pred_flow) > 0:
+        pred_flow = peak_detector.smooth_series(pred_flow, eff_smoothing_pred).tolist()
+    
+    flow_metrics_obj = None
+    if len(obs_flow) > 0 and len(pred_flow) > 0:
+        flow_metrics_obj = peak_detector.calculate_all_metrics(
+            obs_series=obs_flow,
+            pred_series=pred_flow,
+            timestamps=time_flow,
+            parameter="FLOW",
+            timestep_minutes=timestep
+        )
+        
+        # Handle peak selection
+        if peak_mode == 'manual':
+            def restore_peaks(series_key):
+                raw_peaks = manual_peaks.get(series_key, [])
+                return [
+                    PeakInfo(
+                        index=-1,
+                        timestamp=datetime.fromisoformat(p['time']),
+                        value=p['value'],
+                        prominence=0
+                    ) for p in raw_peaks
+                ]
+            flow_metrics_obj.obs_peaks = restore_peaks('obs_flow')
+            flow_metrics_obj.pred_peaks = restore_peaks('pred_flow')
+            
+            # Recalculate peak-dependent metrics
+            if flow_metrics_obj.obs_peaks and flow_metrics_obj.pred_peaks:
+                flow_metrics_obj.peak_time_diff_hrs = peak_detector.calculate_peak_time_diff(
+                    flow_metrics_obj.obs_peaks, flow_metrics_obj.pred_peaks
+                )
+                peak_diff_pct, peak_diff_abs = peak_detector.calculate_peak_diff(
+                    flow_metrics_obj.obs_peaks, flow_metrics_obj.pred_peaks
+                )
+                flow_metrics_obj.peak_diff_pct = peak_diff_pct
+                flow_metrics_obj.peak_diff_abs = peak_diff_abs
+        else:
+            if eff_max_peaks is not None:
+                flow_metrics_obj.obs_peaks = peak_detector.detect_peaks(obs_flow, time_flow, smoothing_frac=0, n_peaks=eff_max_peaks)
+                flow_metrics_obj.pred_peaks = peak_detector.detect_peaks(pred_flow, time_flow, smoothing_frac=0, n_peaks=eff_max_peaks)
+    
+    # Calculate depth metrics
+    obs_depth, time_depth = get_series("obs_depth")
+    pred_depth, _ = get_series("pred_depth")
+    
+    if eff_smoothing_obs > 0 and len(obs_depth) > 0:
+        obs_depth = peak_detector.smooth_series(obs_depth, eff_smoothing_obs).tolist()
+    if eff_smoothing_pred > 0 and len(pred_depth) > 0:
+        pred_depth = peak_detector.smooth_series(pred_depth, eff_smoothing_pred).tolist()
+    
+    depth_metrics_obj = None
+    if len(obs_depth) > 0 and len(pred_depth) > 0:
+        depth_metrics_obj = peak_detector.calculate_all_metrics(
+            obs_series=obs_depth,
+            pred_series=pred_depth,
+            timestamps=time_depth,
+            parameter="DEPTH",
+            timestep_minutes=timestep
+        )
+        
+        if peak_mode == 'manual':
+            def restore_peaks_depth(series_key):
+                raw_peaks = manual_peaks.get(series_key, [])
+                return [
+                    PeakInfo(
+                        index=-1,
+                        timestamp=datetime.fromisoformat(p['time']),
+                        value=p['value'],
+                        prominence=0
+                    ) for p in raw_peaks
+                ]
+            depth_metrics_obj.obs_peaks = restore_peaks_depth('obs_depth')
+            depth_metrics_obj.pred_peaks = restore_peaks_depth('pred_depth')
+            
+            if depth_metrics_obj.obs_peaks and depth_metrics_obj.pred_peaks:
+                depth_metrics_obj.peak_time_diff_hrs = peak_detector.calculate_peak_time_diff(
+                    depth_metrics_obj.obs_peaks, depth_metrics_obj.pred_peaks
+                )
+                peak_diff_pct, peak_diff_abs = peak_detector.calculate_peak_diff(
+                    depth_metrics_obj.obs_peaks, depth_metrics_obj.pred_peaks
+                )
+                depth_metrics_obj.peak_diff_pct = peak_diff_pct
+                depth_metrics_obj.peak_diff_abs = peak_diff_abs
+        else:
+            if eff_max_peaks is not None:
+                depth_metrics_obj.obs_peaks = peak_detector.detect_peaks(obs_depth, time_depth, smoothing_frac=0, n_peaks=eff_max_peaks)
+                depth_metrics_obj.pred_peaks = peak_detector.detect_peaks(pred_depth, time_depth, smoothing_frac=0, n_peaks=eff_max_peaks)
+    
+    # Score the results
+    scores = score_verification_results(
+        flow_metrics=flow_metrics_obj,
+        depth_metrics=depth_metrics_obj,
+        is_critical=monitor.is_critical if monitor else False,
+        is_surcharged=monitor.is_surcharged if monitor else False
+    )
+    
+    # Update run with new metrics
+    if flow_metrics_obj:
+        run.nse = flow_metrics_obj.nse
+        run.kge = flow_metrics_obj.kge
+        run.cv_obs = flow_metrics_obj.cv_obs
+    
+    if scores["flow_score"]:
+        run.overall_flow_score = scores["flow_score"].score_fraction
+    if scores.get("depth_score"):
+        run.overall_depth_score = scores["depth_score"].score_fraction
+    run.overall_status = scores["overall_status"]
+    
+    # Update metric records in database
+    # First, delete existing metrics for this run
+    existing_metrics = session.exec(
+        select(VerificationMetric).where(VerificationMetric.run_id == run_id)
+    ).all()
+    for m in existing_metrics:
+        session.delete(m)
+    
+    # Add new metrics
+    if scores["flow_score"]:
+        for metric_key, metric_score in scores["flow_score"].metrics.items():
+            metric = VerificationMetric(
+                run_id=run.id,
+                parameter="FLOW",
+                metric_name=metric_score.metric_name,
+                value=metric_score.value,
+                score_band=metric_score.score_band,
+                score_points=metric_score.score_points
+            )
+            session.add(metric)
+    
+    if scores.get("depth_score"):
+        for metric_key, metric_score in scores["depth_score"].metrics.items():
+            metric = VerificationMetric(
+                run_id=run.id,
+                parameter="DEPTH",
+                metric_name=metric_score.metric_name,
+                value=metric_score.value,
+                score_band=metric_score.score_band,
+                score_points=metric_score.score_points
+            )
+            session.add(metric)
+    
     session.add(run)
     session.commit()
     session.refresh(run)
     return run
+
+
 
 @router.get("/verification/runs/{run_id}/workspace")
 def get_run_workspace(
     run_id: int,
     smoothing_obs: Optional[float] = None,
     smoothing_pred: Optional[float] = None,
-    max_peaks_obs: Optional[int] = None,
-    max_peaks_pred: Optional[int] = None,
+    max_peaks: Optional[int] = None,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_active_user)
 ) -> Dict[str, Any]:
@@ -1171,8 +1374,7 @@ def get_run_workspace(
         # Effective parameters (Query Param > Stored Setting > Default)
         eff_smoothing_obs = smoothing_obs if smoothing_obs is not None else settings.get('smoothing_obs', 0.0)
         eff_smoothing_pred = smoothing_pred if smoothing_pred is not None else settings.get('smoothing_pred', 0.0)
-        eff_max_peaks_obs = max_peaks_obs if max_peaks_obs is not None else settings.get('max_peaks_obs', None)
-        eff_max_peaks_pred = max_peaks_pred if max_peaks_pred is not None else settings.get('max_peaks_pred', None)
+        eff_max_peaks = max_peaks if max_peaks is not None else settings.get('max_peaks', 1)  # Default to 1 peak
         
         peak_mode = settings.get('peak_mode', 'auto') # 'auto' or 'manual'
         manual_peaks = settings.get('manual_peaks', {}) # {'obs_flow': [{'time':..., 'value':...}], ...}
@@ -1216,8 +1418,7 @@ def get_run_workspace(
         has_custom_params = (
             eff_smoothing_obs > 0 or 
             eff_smoothing_pred > 0 or 
-            eff_max_peaks_obs is not None or 
-            eff_max_peaks_pred is not None or 
+            eff_max_peaks is not None or 
             peak_mode == 'manual'
         )
         
@@ -1274,6 +1475,19 @@ def get_run_workspace(
                     timestep_minutes=timestep
                 )
                 
+                # DEBUG: Log flow metrics for F01
+                if monitor and monitor.name == "F01":
+                    print("\n=== DEBUG F01: PeakDetector Flow Metrics ===")
+                    print(f"  NSE: {flow_metrics_obj.nse}")
+                    print(f"  KGE: {flow_metrics_obj.kge}")
+                    print(f"  CV_OBS: {flow_metrics_obj.cv_obs}")
+                    print(f"  Peak Time Diff (hrs): {flow_metrics_obj.peak_time_diff_hrs}")
+                    print(f"  Peak Diff Pct: {flow_metrics_obj.peak_diff_pct}")
+                    print(f"  Peak Diff Abs: {flow_metrics_obj.peak_diff_abs}")
+                    print(f"  Volume Diff Pct: {flow_metrics_obj.volume_diff_pct}")
+                    print(f"  Obs Peaks: {[(p.timestamp, p.value) for p in flow_metrics_obj.obs_peaks]}")
+                    print(f"  Pred Peaks: {[(p.timestamp, p.value) for p in flow_metrics_obj.pred_peaks]}")
+                
                 # Handle Peak Selection (Auto vs Manual)
                 if peak_mode == 'manual':
                     # Use manually selected peaks from settings
@@ -1293,44 +1507,32 @@ def get_run_workspace(
                     flow_metrics_obj.obs_peaks = restore_peaks('obs_flow')
                     flow_metrics_obj.pred_peaks = restore_peaks('pred_flow')
                     
-                    # Re-calculate metrics based on NEW peaks?
-                    # calculate_all_metrics calculates metrics internally based on detect_peaks.
-                    # It calls self.calculate_metrics(obs_peaks, pred_peaks).
-                    # But verifying metrics logic: does it re-use the object?
-                    # The object `flow_metrics_obj` ALREADY has metrics calculated using Auto Peaks from line 1250.
-                    # We need to UPDATE the metrics using the MANUAL peaks.
-                    # But `calculate_all_metrics` runs everything in one go.
-                    # I should call `peak_detector.calculate_metrics(obs_peaks, pred_peaks, ...)` separately?
-                    # `calculate_all_metrics` calls `calculate_metrics`.
-                    # I'll manually call `calculate_metrics` to refresh nse/diffs based on manual peaks?
-                    # Actually `nse` / `kge` depend on SERIES, not peaks.
-                    # Only `peak_time_diff_hrs`, `peak_diff_pct` depend on peaks.
-                    
-                    # So I should update peak-dependent metrics.
-                    # PeakDetector doesn't expose a public `calculate_peak_metrics` easily? 
-                    # It has `calculate_peak_differences`.
-                    import numpy as np # ensure numpy availability
-                    
-                    # We need to re-match peaks and calculate diffs.
-                    # PeakDetector logic is encapsulated. 
-                    # Ideally I'd pass `peaks` to `calculate_all_metrics`, but it detects them internally.
-                    # Hack: overwrite peaks and manually recalc differences?
-                    # Or modify PeakDetector to accept external peaks.
-                    # For now, I'll just overwrite the peaks for VISUALIZATION.
-                    # Recalculating scores based on manual peaks is tricky without refactoring PeakDetector.
-                    # IF user wants SCORES to update based on manual peaks, I need server-side support.
-                    # Given the task complexity, I will ensure Visualization is correct first.
-                    # NOTE: Metrics calculation relies on matched peaks.
-                    pass 
+                    # Recalculate peak-dependent metrics based on manual peaks
+                    # NSE/KGE/CV depend on series, not peaks - no change needed
+                    # Peak time diff and peak magnitude diff need to be recalculated
+                    if flow_metrics_obj.obs_peaks and flow_metrics_obj.pred_peaks:
+                        flow_metrics_obj.peak_time_diff_hrs = peak_detector.calculate_peak_time_diff(
+                            flow_metrics_obj.obs_peaks, 
+                            flow_metrics_obj.pred_peaks
+                        )
+                        peak_diff_pct, peak_diff_abs = peak_detector.calculate_peak_diff(
+                            flow_metrics_obj.obs_peaks, 
+                            flow_metrics_obj.pred_peaks
+                        )
+                        flow_metrics_obj.peak_diff_pct = peak_diff_pct
+                        flow_metrics_obj.peak_diff_abs = peak_diff_abs
+                    else:
+                        # No peaks selected - set to sentinel values
+                        flow_metrics_obj.peak_time_diff_hrs = -99999.0
+                        flow_metrics_obj.peak_diff_pct = -99999.0
+                        flow_metrics_obj.peak_diff_abs = -99999.0
 
                 else:
-                    # Auto Mode - Use Max Peaks filter
-                    if eff_max_peaks_obs is not None:
-                         filtered_obs = peak_detector.detect_peaks(obs_flow, time_flow, smoothing_frac=0, n_peaks=eff_max_peaks_obs)
+                    # Auto Mode - Use unified Max Peaks filter
+                    if eff_max_peaks is not None:
+                         filtered_obs = peak_detector.detect_peaks(obs_flow, time_flow, smoothing_frac=0, n_peaks=eff_max_peaks)
                          flow_metrics_obj.obs_peaks = filtered_obs
-                         
-                    if eff_max_peaks_pred is not None:
-                         filtered_pred = peak_detector.detect_peaks(pred_flow, time_flow, smoothing_frac=0, n_peaks=eff_max_peaks_pred)
+                         filtered_pred = peak_detector.detect_peaks(pred_flow, time_flow, smoothing_frac=0, n_peaks=eff_max_peaks)
                          flow_metrics_obj.pred_peaks = filtered_pred
                 
                 # Update run stats
@@ -1378,11 +1580,28 @@ def get_run_workspace(
                         ]
                      depth_metrics_obj.obs_peaks = restore_peaks_depth('obs_depth')
                      depth_metrics_obj.pred_peaks = restore_peaks_depth('pred_depth')
+                     
+                     # Recalculate peak-dependent metrics for depth
+                     if depth_metrics_obj.obs_peaks and depth_metrics_obj.pred_peaks:
+                         depth_metrics_obj.peak_time_diff_hrs = peak_detector.calculate_peak_time_diff(
+                             depth_metrics_obj.obs_peaks, 
+                             depth_metrics_obj.pred_peaks
+                         )
+                         peak_diff_pct, peak_diff_abs = peak_detector.calculate_peak_diff(
+                             depth_metrics_obj.obs_peaks, 
+                             depth_metrics_obj.pred_peaks
+                         )
+                         depth_metrics_obj.peak_diff_pct = peak_diff_pct
+                         depth_metrics_obj.peak_diff_abs = peak_diff_abs
+                     else:
+                         # No peaks selected - set to sentinel values
+                         depth_metrics_obj.peak_time_diff_hrs = -99999.0
+                         depth_metrics_obj.peak_diff_pct = -99999.0
+                         depth_metrics_obj.peak_diff_abs = -99999.0
                 else:
-                    if eff_max_peaks_obs is not None:
-                         depth_metrics_obj.obs_peaks = peak_detector.detect_peaks(obs_depth, time_depth, smoothing_frac=0, n_peaks=eff_max_peaks_obs)
-                    if eff_max_peaks_pred is not None:
-                         depth_metrics_obj.pred_peaks = peak_detector.detect_peaks(pred_depth, time_depth, smoothing_frac=0, n_peaks=eff_max_peaks_pred)
+                    if eff_max_peaks is not None:
+                         depth_metrics_obj.obs_peaks = peak_detector.detect_peaks(obs_depth, time_depth, smoothing_frac=0, n_peaks=eff_max_peaks)
+                         depth_metrics_obj.pred_peaks = peak_detector.detect_peaks(pred_depth, time_depth, smoothing_frac=0, n_peaks=eff_max_peaks)
                 
                 peaks_data["obs_depth"] = [{"index": p.index, "time": p.timestamp.strftime('%Y-%m-%dT%H:%M:%S'), "value": p.value} for p in depth_metrics_obj.obs_peaks]
                 peaks_data["pred_depth"] = [{"index": p.index, "time": p.timestamp.strftime('%Y-%m-%dT%H:%M:%S'), "value": p.value} for p in depth_metrics_obj.pred_peaks]
@@ -1394,6 +1613,21 @@ def get_run_workspace(
                 is_critical=monitor.is_critical if monitor else False,
                 is_surcharged=monitor.is_surcharged if monitor else False
             )
+            
+            # DEBUG: Log scorer output for F01
+            if monitor and monitor.name == "F01":
+                print("\n=== DEBUG F01: ToleranceScorer Results ===")
+                if scores.get("flow_score"):
+                    print("  Flow Score:")
+                    for k, v in scores["flow_score"].metrics.items():
+                        print(f"    {v.metric_name}: value={v.value}, band={v.score_band}, points={v.score_points}")
+                    print(f"    Total: {scores['flow_score'].score_fraction}")
+                if scores.get("depth_score"):
+                    print("  Depth Score:")
+                    for k, v in scores["depth_score"].metrics.items():
+                        print(f"    {v.metric_name}: value={v.value}, band={v.score_band}, points={v.score_points}")
+                    print(f"    Total: {scores['depth_score'].score_fraction}")
+                print(f"  Overall Status: {scores['overall_status']}")
             
             if scores["flow_score"]:
                 flow_metrics_list = [{"name": v.metric_name, "value": v.value, "band": v.score_band, "points": v.score_points} for k, v in scores["flow_score"].metrics.items()]

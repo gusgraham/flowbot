@@ -7,6 +7,7 @@ including events, trace sets, monitor traces, verification runs, and metrics.
 from typing import Optional, List
 from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship, JSON
+from sqlalchemy import Column, Integer, ForeignKey
 from enum import Enum
 
 
@@ -321,8 +322,8 @@ class VerificationRun(VerificationRunBase, table=True):
     
     # Relationships
     monitor_trace: Optional[MonitorTraceVersion] = Relationship(back_populates="runs")
-    metrics: List["VerificationMetric"] = Relationship(back_populates="run")
-    adjustments: List["ManualAdjustment"] = Relationship(back_populates="run")
+    metrics: List["VerificationMetric"] = Relationship(back_populates="run", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    adjustments: List["ManualAdjustment"] = Relationship(back_populates="run", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 
 class VerificationRunCreate(SQLModel):
@@ -358,7 +359,7 @@ class VerificationMetric(VerificationMetricBase, table=True):
     __tablename__ = "verificationmetric"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    run_id: int = Field(foreign_key="verificationrun.id", index=True)
+    run_id: int = Field(sa_column=Column(Integer, ForeignKey("verificationrun.id", ondelete="CASCADE"), index=True))
     
     # Relationships
     run: Optional[VerificationRun] = Relationship(back_populates="metrics")
@@ -384,7 +385,7 @@ class ManualAdjustment(ManualAdjustmentBase, table=True):
     __tablename__ = "manualadjustment"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    run_id: int = Field(foreign_key="verificationrun.id", index=True)
+    run_id: int = Field(sa_column=Column(Integer, ForeignKey("verificationrun.id", ondelete="CASCADE"), index=True))
     created_at: datetime = Field(default_factory=datetime.now)
     
     # Relationships

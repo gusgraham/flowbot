@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle, AlertTriangle, XCircle, Activity, Droplets, Settings, BarChart2, RefreshCw, X, MousePointer2 } from 'lucide-react';
 import { useWorkspaceData, useUpdateVerificationRunSettings, type AnalysisSettings } from '../../../api/hooks';
@@ -21,15 +21,28 @@ const downsample = <T,>(data: T[], targetPoints: number = 2000): T[] => {
 
 const formatTime = (isoString: string) => new Date(isoString).toLocaleString();
 
+// Compact date formatter for chart axis (show "12 Dec 14:00" format)
+const formatAxisDate = (isoString: string) => {
+    const d = new Date(isoString);
+    const day = d.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const hours = d.getHours().toString().padStart(2, '0');
+    const mins = d.getMinutes().toString().padStart(2, '0');
+    return `${day} ${month} ${hours}:${mins}`;
+};
+
 // Analysis Controls Component
+type EditSeriesType = 'obs_flow' | 'pred_flow' | 'obs_depth' | 'pred_depth' | null;
+
 interface AnalysisControlsProps {
     currentSettings: AnalysisSettings;
     onSettingsChange: (settings: AnalysisSettings) => void;
     onApply: () => void;
     isFetching: boolean;
     onClose: () => void;
-    editSeries: 'obs_flow' | 'pred_flow' | null;
-    setEditSeries: (series: 'obs_flow' | 'pred_flow' | null) => void;
+    editSeries: EditSeriesType;
+    setEditSeries: (series: EditSeriesType) => void;
 }
 
 const AnalysisControls = ({
@@ -44,18 +57,16 @@ const AnalysisControls = ({
     // Local state for inputs (synced with currentSettings)
     const [smoothingObs, setSmoothingObs] = useState(currentSettings.smoothing_obs ?? 0);
     const [smoothingPred, setSmoothingPred] = useState(currentSettings.smoothing_pred ?? 0);
-    const [maxPeaksObs, setMaxPeaksObs] = useState<number | ''>(currentSettings.max_peaks_obs ?? '');
-    const [maxPeaksPred, setMaxPeaksPred] = useState<number | ''>(currentSettings.max_peaks_pred ?? '');
+    const [maxPeaks, setMaxPeaks] = useState<number | ''>(currentSettings.max_peaks ?? 1);
     const [peakMode, setPeakMode] = useState<'auto' | 'manual'>(currentSettings.peak_mode ?? 'auto');
 
     // Sync local state when props change (e.g. initial load)
     useEffect(() => {
         setSmoothingObs(currentSettings.smoothing_obs ?? 0);
         setSmoothingPred(currentSettings.smoothing_pred ?? 0);
-        setMaxPeaksObs(currentSettings.max_peaks_obs ?? '');
-        setMaxPeaksPred(currentSettings.max_peaks_pred ?? '');
+        setMaxPeaks(currentSettings.max_peaks ?? 1);
         setPeakMode(currentSettings.peak_mode ?? 'auto');
-    }, [currentSettings.smoothing_obs, currentSettings.smoothing_pred, currentSettings.max_peaks_obs, currentSettings.max_peaks_pred, currentSettings.peak_mode]);
+    }, [currentSettings.smoothing_obs, currentSettings.smoothing_pred, currentSettings.max_peaks, currentSettings.peak_mode]);
 
     // Update parent settings whenever inputs change
     useEffect(() => {
@@ -63,147 +74,150 @@ const AnalysisControls = ({
             ...currentSettings,
             smoothing_obs: smoothingObs,
             smoothing_pred: smoothingPred,
-            max_peaks_obs: maxPeaksObs === '' ? undefined : Number(maxPeaksObs),
-            max_peaks_pred: maxPeaksPred === '' ? undefined : Number(maxPeaksPred),
+            max_peaks: maxPeaks === '' ? undefined : Number(maxPeaks),
             peak_mode: peakMode
         });
-    }, [smoothingObs, smoothingPred, maxPeaksObs, maxPeaksPred, peakMode]);
+    }, [smoothingObs, smoothingPred, maxPeaks, peakMode]);
 
     const handleReset = () => {
         setSmoothingObs(0);
         setSmoothingPred(0);
-        setMaxPeaksObs('');
-        setMaxPeaksPred('');
+        setMaxPeaks(1);
         setPeakMode('auto');
         setEditSeries(null);
         onSettingsChange({
             smoothing_obs: 0,
             smoothing_pred: 0,
-            max_peaks_obs: undefined,
-            max_peaks_pred: undefined,
+            max_peaks: 1,
             peak_mode: 'auto',
             manual_peaks: {}
         });
     };
 
     return (
-        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm animate-in slide-in-from-top-2 relative mb-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm animate-in slide-in-from-top-2 relative mb-3">
             <button
                 onClick={onClose}
                 className="absolute top-2 right-2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
             >
                 <X size={16} />
             </button>
-            <div className="flex flex-col gap-6">
 
-                {/* Smoothing Section */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                        <h4 className="font-semibold text-gray-700 text-sm">Smoothing (0.0 - 1.0)</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-semibold mb-1" style={{ color: '#15803d' }}>Observed</label>
-                                <input
-                                    type="number" min="0" max="1" step="0.01"
-                                    value={smoothingObs}
-                                    onChange={(e) => setSmoothingObs(parseFloat(e.target.value))}
-                                    className="w-full px-3 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 font-mono"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-semibold mb-1" style={{ color: '#dc2626' }}>Predicted</label>
-                                <input
-                                    type="number" min="0" max="1" step="0.01"
-                                    value={smoothingPred}
-                                    onChange={(e) => setSmoothingPred(parseFloat(e.target.value))}
-                                    className="w-full px-3 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 font-mono"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Peak Detection Section */}
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                            <h4 className="font-semibold text-gray-700 text-sm">Peak Selection</h4>
-                            <div className="flex bg-gray-100 rounded p-1">
-                                <button
-                                    onClick={() => { setPeakMode('auto'); setEditSeries(null); }}
-                                    className={`px-3 py-1 text-xs font-medium rounded ${peakMode === 'auto' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
-                                >
-                                    Auto
-                                </button>
-                                <button
-                                    onClick={() => setPeakMode('manual')}
-                                    className={`px-3 py-1 text-xs font-medium rounded ${peakMode === 'manual' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
-                                >
-                                    Manual
-                                </button>
-                            </div>
-                        </div>
-
-                        {peakMode === 'auto' ? (
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-semibold mb-1" style={{ color: '#15803d' }}>Max Peaks (Obs)</label>
-                                    <input
-                                        type="number" min="1" step="1"
-                                        placeholder="All"
-                                        value={maxPeaksObs}
-                                        onChange={(e) => setMaxPeaksObs(e.target.value === '' ? '' : parseInt(e.target.value))}
-                                        className="w-full px-3 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 font-mono"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold mb-1" style={{ color: '#dc2626' }}>Max Peaks (Pred)</label>
-                                    <input
-                                        type="number" min="1" step="1"
-                                        placeholder="All"
-                                        value={maxPeaksPred}
-                                        onChange={(e) => setMaxPeaksPred(e.target.value === '' ? '' : parseInt(e.target.value))}
-                                        className="w-full px-3 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 font-mono"
-                                    />
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-2 gap-4">
-                                <button
-                                    onClick={() => setEditSeries(editSeries === 'obs_flow' ? null : 'obs_flow')}
-                                    className={`flex items-center justify-center gap-2 px-2 py-1.5 text-xs font-medium rounded border transition-colors ${editSeries === 'obs_flow' ? 'bg-green-100 border-green-500 text-green-800 ring-2 ring-green-200' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
-                                >
-                                    <MousePointer2 size={14} />
-                                    {editSeries === 'obs_flow' ? 'Selecting...' : 'Select Obs'}
-                                </button>
-                                <button
-                                    onClick={() => setEditSeries(editSeries === 'pred_flow' ? null : 'pred_flow')}
-                                    className={`flex items-center justify-center gap-2 px-2 py-1.5 text-xs font-medium rounded border transition-colors ${editSeries === 'pred_flow' ? 'bg-red-100 border-red-500 text-red-800 ring-2 ring-red-200' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
-                                >
-                                    <MousePointer2 size={14} />
-                                    {editSeries === 'pred_flow' ? 'Selecting...' : 'Select Pred'}
-                                </button>
-                                <div className="col-span-2 text-xs text-gray-500 italic text-center">
-                                    Click chart to toggle peaks for selected series.
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+            {/* Header with Reset, Apply, and Auto/Manual toggle */}
+            <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Analysis Settings</span>
                     <button
                         onClick={handleReset}
-                        className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium"
+                        className="px-2 py-0.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
                     >
-                        Reset Defaults
+                        Reset
                     </button>
                     <button
-                        onClick={onApply}
+                        onClick={() => { onApply(); onClose(); }}
                         disabled={isFetching}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        className="px-2 py-0.5 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                     >
-                        {isFetching ? 'Applying...' : 'Apply Analysis'}
+                        {isFetching ? 'Saving...' : 'Apply'}
                     </button>
                 </div>
+                <div className="flex bg-gray-100 rounded p-0.5">
+                    <button
+                        onClick={() => { setPeakMode('auto'); setEditSeries(null); }}
+                        className={`px-2 py-0.5 text-xs font-medium rounded ${peakMode === 'auto' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Auto
+                    </button>
+                    <button
+                        onClick={() => setPeakMode('manual')}
+                        className={`px-2 py-0.5 text-xs font-medium rounded ${peakMode === 'manual' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Manual
+                    </button>
+                </div>
+            </div>
+
+            {/* Compact controls in a single row */}
+            <div className="flex items-end gap-4 flex-wrap">
+                {/* Smoothing */}
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 whitespace-nowrap">Smoothing:</span>
+                    <div className="flex items-center gap-1">
+                        <label className="text-xs font-medium" style={{ color: '#15803d' }}>Obs</label>
+                        <input
+                            type="number" min="0" max="1" step="0.01"
+                            value={smoothingObs}
+                            onChange={(e) => setSmoothingObs(parseFloat(e.target.value))}
+                            className="w-14 px-1.5 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 font-mono"
+                        />
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <label className="text-xs font-medium" style={{ color: '#dc2626' }}>Pred</label>
+                        <input
+                            type="number" min="0" max="1" step="0.01"
+                            value={smoothingPred}
+                            onChange={(e) => setSmoothingPred(parseFloat(e.target.value))}
+                            className="w-14 px-1.5 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 font-mono"
+                        />
+                    </div>
+                </div>
+
+                <div className="h-4 w-px bg-gray-200" />
+
+                {/* Peak Controls */}
+                {peakMode === 'auto' ? (
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs text-gray-500 whitespace-nowrap">Max Peaks:</label>
+                        <input
+                            type="number" min="1" step="1"
+                            placeholder="All"
+                            value={maxPeaks}
+                            onChange={(e) => setMaxPeaks(e.target.value === '' ? '' : parseInt(e.target.value))}
+                            className="w-14 px-1.5 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 font-mono"
+                        />
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-500">Flow:</span>
+                            <button
+                                onClick={() => setEditSeries(editSeries === 'obs_flow' ? null : 'obs_flow')}
+                                className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border transition-colors ${editSeries === 'obs_flow' ? 'bg-green-100 border-green-500 text-green-800' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                            >
+                                <MousePointer2 size={12} />
+                                {editSeries === 'obs_flow' ? 'Selecting...' : 'Obs'}
+                            </button>
+                            <button
+                                onClick={() => setEditSeries(editSeries === 'pred_flow' ? null : 'pred_flow')}
+                                className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border transition-colors ${editSeries === 'pred_flow' ? 'bg-red-100 border-red-500 text-red-800' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                            >
+                                <MousePointer2 size={12} />
+                                {editSeries === 'pred_flow' ? 'Selecting...' : 'Pred'}
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-500">Depth:</span>
+                            <button
+                                onClick={() => setEditSeries(editSeries === 'obs_depth' ? null : 'obs_depth')}
+                                className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border transition-colors ${editSeries === 'obs_depth' ? 'bg-green-100 border-green-500 text-green-800' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                            >
+                                <MousePointer2 size={12} />
+                                {editSeries === 'obs_depth' ? 'Selecting...' : 'Obs'}
+                            </button>
+                            <button
+                                onClick={() => setEditSeries(editSeries === 'pred_depth' ? null : 'pred_depth')}
+                                className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border transition-colors ${editSeries === 'pred_depth' ? 'bg-red-100 border-red-500 text-red-800' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                            >
+                                <MousePointer2 size={12} />
+                                {editSeries === 'pred_depth' ? 'Selecting...' : 'Pred'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {isFetching && (
+                    <span className="text-xs text-gray-400 ml-auto">Updating...</span>
+                )}
             </div>
         </div>
     );
@@ -220,24 +234,49 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
     const [viewMode, setViewMode] = useState<'timeseries' | 'shapefit'>('timeseries');
 
     // Manual Peak Editing State
-    const [editSeries, setEditSeries] = useState<'obs_flow' | 'pred_flow' | null>(null);
+    const [editSeries, setEditSeries] = useState<EditSeriesType>(null);
 
-    // Analysis Settings State
-    const [analysisSettings, setAnalysisSettings] = useState<AnalysisSettings>({});
+    // Analysis Settings State - Default to 1 peak for cleaner visualization
+    const [analysisSettings, setAnalysisSettings] = useState<AnalysisSettings>({
+        max_peaks: 1
+    });
 
     // Fetch Data
     const { data, isLoading, error, isFetching, refetch } = useWorkspaceData(effectiveRunId, analysisSettings);
     const updateSettingsMutation = useUpdateVerificationRunSettings();
 
-    // Initialize local settings from server data on load (only if empty to avoid overwrite during edits)
-    // Actually we should sync on load essentially once or when runId changes
+    // Initialize local settings from server data on load
+    // IMPORTANT: Only reset when runId actually changes, not on every data fetch
+    const prevRunIdRef = useRef<number | null>(null);
+
     useEffect(() => {
-        if (data?.run?.analysis_settings && effectiveRunId) {
-            // Only update if we don't have local changes? 
-            // Or better: Use server settings as 'initial', but allow fully controlled local state
-            setAnalysisSettings(data.run.analysis_settings);
+        // Only reset if runId actually changed
+        if (effectiveRunId === prevRunIdRef.current) {
+            return; // Same runId, don't reset
         }
-    }, [data?.run?.analysis_settings, effectiveRunId]);
+
+        // RunId changed - update ref and reset settings
+        prevRunIdRef.current = effectiveRunId;
+
+        const defaults: AnalysisSettings = {
+            smoothing_obs: 0,
+            smoothing_pred: 0,
+            max_peaks: 1,
+            peak_mode: 'auto',
+            manual_peaks: {}
+        };
+
+        if (data?.run?.analysis_settings && Object.keys(data.run.analysis_settings).length > 0) {
+            // Server has saved settings - merge them over defaults
+            setAnalysisSettings({
+                ...defaults,
+                ...data.run.analysis_settings
+            });
+        } else {
+            // No server settings - use defaults
+            setAnalysisSettings(defaults);
+        }
+    }, [effectiveRunId, data?.run?.analysis_settings]);
 
     const handleApplyAnalysis = () => {
         if (!effectiveRunId) return;
@@ -252,10 +291,24 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         });
     };
 
-    const handleChartClick = (e: any) => {
-        console.log('Chart Click Event:', e);
+    // Determine if current editSeries is for flow or depth chart
+    const isFlowSeries = editSeries === 'obs_flow' || editSeries === 'pred_flow';
+    const isDepthSeries = editSeries === 'obs_depth' || editSeries === 'pred_depth';
+
+    const handleChartClick = (chartType: 'flow' | 'depth') => (e: any) => {
+        console.log('Chart Click Event:', chartType, e);
         if (analysisSettings.peak_mode !== 'manual' || !editSeries) {
             console.log('Click ignored: Not in manual mode or no series selected', { peakMode: analysisSettings.peak_mode, editSeries });
+            return;
+        }
+
+        // Ensure we're clicking on the right chart for the selected series
+        if (chartType === 'flow' && !isFlowSeries) {
+            console.log('Click ignored: Flow chart clicked but depth series selected');
+            return;
+        }
+        if (chartType === 'depth' && !isDepthSeries) {
+            console.log('Click ignored: Depth chart clicked but flow series selected');
             return;
         }
 
@@ -272,14 +325,11 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         // Find existing peaks for this series
         const currentPeaks = analysisSettings.manual_peaks?.[editSeries] || [];
 
-        // Check if we are adding or removing
-        // IMPORTANT: We must match based on valid time.
-        // If stored peaks are ISO, we need to convert clickedLabel (Formatted) to ISO to match?
-        // Or convert stored ISO to Formatted?
-        // Let's use Formatted for UI matching since clickedLabel is formatted.
+        // Use the appropriate chart data based on chart type
+        const chartData = chartType === 'flow' ? flowChartData : depthChartData;
 
         // Find data point to get ISO for clicked label
-        const clickedDataPoint = flowChartData.find(d => d.time === clickedLabel);
+        const clickedDataPoint = chartData.find(d => d.time === clickedLabel);
         const clickedIso = (clickedDataPoint as any)?.iso_time;
 
         const existingIndex = currentPeaks.findIndex(p => p.time === clickedIso);
@@ -296,8 +346,8 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
 
             if (e.activePayload && e.activePayload.length > 0) {
                 const payloadItem = e.activePayload.find((p: any) => {
-                    if (editSeries === 'obs_flow') return p.dataKey === 'observed' || p.dataKey === 'obs_smoothed';
-                    if (editSeries === 'pred_flow') return p.dataKey === 'predicted' || p.dataKey === 'pred_smoothed';
+                    if (editSeries === 'obs_flow' || editSeries === 'obs_depth') return p.dataKey === 'observed' || p.dataKey === 'obs_smoothed';
+                    if (editSeries === 'pred_flow' || editSeries === 'pred_depth') return p.dataKey === 'predicted' || p.dataKey === 'pred_smoothed';
                     return false;
                 });
                 if (payloadItem) {
@@ -305,12 +355,12 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                 }
             }
 
-            // Fallback: Look up in flowChartData directly using the label
+            // Fallback: Look up in chart data directly using the label
             if (valueToAdd === undefined) {
-                const dataPoint = flowChartData.find(d => d.time === clickedLabel);
+                const dataPoint = chartData.find(d => d.time === clickedLabel);
                 if (dataPoint) {
-                    if (editSeries === 'obs_flow') valueToAdd = (dataPoint.obs_smoothed as number) ?? (dataPoint.observed as number);
-                    if (editSeries === 'pred_flow') valueToAdd = (dataPoint.pred_smoothed as number) ?? (dataPoint.predicted as number);
+                    if (editSeries === 'obs_flow' || editSeries === 'obs_depth') valueToAdd = (dataPoint.obs_smoothed as number) ?? (dataPoint.observed as number);
+                    if (editSeries === 'pred_flow' || editSeries === 'pred_depth') valueToAdd = (dataPoint.pred_smoothed as number) ?? (dataPoint.predicted as number);
                 }
             }
 
@@ -375,6 +425,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
 
         const depthChartData = timeDepth.map((t, i) => ({
             time: formatTime(t),
+            iso_time: t, // Keep raw ISO for backend
             observed: obsDepth[i],
             predicted: predDepth[i],
             obs_smoothed: obsDepthSmooth ? obsDepthSmooth[i] : null,
@@ -402,6 +453,8 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
             return {
                 obs_flow: manual.obs_flow?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
                 pred_flow: manual.pred_flow?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
+                obs_depth: manual.obs_depth?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
+                pred_depth: manual.pred_depth?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
             };
         }
         // Auto mode or initial load: use server provided peaks (formatted with time string already?)
@@ -448,8 +501,21 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         }
     };
     const getMetricLabel = (name: string) => {
-        // Simplification for brewity
-        return name.replace(/_/g, ' ');
+        const labels: Record<string, string> = {
+            // Coefficients
+            'nse': 'NSE',
+            'kge': 'KGE',
+            'cv_obs': 'CV (Obs)',
+
+            // Flow metrics
+            'peak_time_diff_hrs': 'Peak Time Diff (hrs)',
+            'peak_flow_diff_pcnt': 'Peak Flow Diff (%)',
+            'volume_diff_pcnt': 'Volume Diff (%)',
+
+            // Depth metrics
+            'peak_depth_diff_m': 'Peak Depth Diff (m)',
+        };
+        return labels[name] || name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     };
 
     if (isLoading && !data) {
@@ -462,66 +528,68 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
 
     return (
         <div className="h-full flex flex-col bg-gray-50 overflow-y-auto">
-            <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
-                <div className="flex items-center gap-4">
-                    {!embedded && (
+            <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
+                <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-4">
+                        {!embedded && (
+                            <button
+                                onClick={() => navigate(-1)}
+                                className="p-2 rounded-full hover:bg-gray-200 transition"
+                            >
+                                <ArrowLeft size={24} />
+                            </button>
+                        )}
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-900">
+                                {data?.monitor?.name} - {data?.event?.name}
+                            </h1>
+                            <p className="text-gray-500">
+                                Event: {data?.event?.event_type} |
+                                {data?.monitor?.is_critical && <span className="ml-2 text-red-600 font-medium">Critical</span>}
+                                {data?.monitor?.is_surcharged && <span className="ml-2 text-purple-600 font-medium">Surcharged</span>}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="flex bg-white rounded-md border border-gray-300 overflow-hidden">
+                            <button
+                                className={`px-3 py-1.5 text-sm font-medium ${viewMode === 'timeseries' ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-50'}`}
+                                onClick={() => setViewMode('timeseries')}
+                            >
+                                Time Series
+                            </button>
+                            <button
+                                className={`px-3 py-1.5 text-sm font-medium ${viewMode === 'shapefit' ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-50'}`}
+                                onClick={() => setViewMode('shapefit')}
+                            >
+                                Shape Fit
+                            </button>
+                        </div>
                         <button
-                            onClick={() => navigate(-1)}
-                            className="p-2 rounded-full hover:bg-gray-200 transition"
+                            onClick={() => setShowControls(!showControls)}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-md border font-medium transition-colors ${showControls ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
                         >
-                            <ArrowLeft size={24} />
+                            <Settings size={16} />
+                            Analysis
                         </button>
-                    )}
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">
-                            {data?.monitor?.name} - {data?.event?.name}
-                        </h1>
-                        <p className="text-gray-500">
-                            Event: {data?.event?.event_type} |
-                            {data?.monitor?.is_critical && <span className="ml-2 text-red-600 font-medium">Critical</span>}
-                            {data?.monitor?.is_surcharged && <span className="ml-2 text-purple-600 font-medium">Surcharged</span>}
-                        </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="flex bg-white rounded-md border border-gray-300 overflow-hidden">
-                        <button
-                            className={`px-3 py-1.5 text-sm font-medium ${viewMode === 'timeseries' ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-50'}`}
-                            onClick={() => setViewMode('timeseries')}
-                        >
-                            Time Series
-                        </button>
-                        <button
-                            className={`px-3 py-1.5 text-sm font-medium ${viewMode === 'shapefit' ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-50'}`}
-                            onClick={() => setViewMode('shapefit')}
-                        >
-                            Shape Fit
-                        </button>
-                    </div>
-                    <button
-                        onClick={() => setShowControls(!showControls)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-md border font-medium transition-colors ${showControls ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
-                    >
-                        <Settings size={16} />
-                        Analysis
-                    </button>
-                </div>
-            </div>
 
-            {/* Analysis Controls Panel */}
-            {showControls && (
-                <div className="px-6 pt-4">
-                    <AnalysisControls
-                        currentSettings={analysisSettings}
-                        onSettingsChange={setAnalysisSettings}
-                        onApply={handleApplyAnalysis}
-                        isFetching={isFetching || updateSettingsMutation.isPending}
-                        onClose={() => setShowControls(false)}
-                        editSeries={editSeries}
-                        setEditSeries={setEditSeries}
-                    />
-                </div>
-            )}
+                {/* Analysis Controls Panel - Now in sticky header */}
+                {showControls && (
+                    <div className="mt-4">
+                        <AnalysisControls
+                            currentSettings={analysisSettings}
+                            onSettingsChange={setAnalysisSettings}
+                            onApply={handleApplyAnalysis}
+                            isFetching={isFetching || updateSettingsMutation.isPending}
+                            onClose={() => setShowControls(false)}
+                            editSeries={editSeries}
+                            setEditSeries={setEditSeries}
+                        />
+                    </div>
+                )}
+            </div>
 
             {/* Content */}
             <div className="p-6">
@@ -532,7 +600,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
                                 <h3 className="text-lg font-semibold mb-4 flex items-center justify-between">
                                     Flow Comparison
-                                    {editSeries && (
+                                    {isFlowSeries && (
                                         <span className="text-xs font-medium px-2 py-1 bg-yellow-100 text-yellow-800 rounded animate-pulse border border-yellow-200 flex items-center gap-1">
                                             <MousePointer2 size={12} />
                                             Mode Active: Click chart to toggle {editSeries === 'obs_flow' ? 'Observed' : 'Predicted'} Peaks
@@ -542,17 +610,15 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                 <ResponsiveContainer width="100%" height={400}>
                                     <LineChart
                                         data={flowChartData}
-                                        onClick={handleChartClick}
-                                        className={editSeries ? 'cursor-crosshair' : ''}
+                                        onClick={handleChartClick('flow')}
+                                        className={isFlowSeries ? 'cursor-crosshair' : ''}
                                     >
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis
                                             dataKey="time"
+                                            tickFormatter={formatAxisDate}
                                             tick={{ fontSize: 10 }}
                                             interval="preserveStartEnd"
-                                            angle={-45}
-                                            textAnchor="end"
-                                            height={80}
                                         />
                                         <YAxis label={{ value: 'Flow', angle: -90, position: 'insideLeft' }} />
                                         <Tooltip formatter={chartTooltipFormatter} />
@@ -630,23 +696,30 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                             </div>
                         )}
 
-                        {/* Depth Chart (Simplified replication of existing) - Manual edits skipped for now as per immediate req logic focus on flow */}
-                        {/* ... Depth Chart Omitted for brevity of update, assuming user focused on flow logic first or can be copied ... */}
-                        {/* Wait, I MUST provide the full file or I lose the Depth Chart. */}
-                        {/* Re-inserting Depth Chart Code */}
+                        {/* Depth Chart - Now with manual peak editing support */}
                         {depthChartData.length > 0 && (
                             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-                                <h3 className="text-lg font-semibold mb-4">Depth Comparison</h3>
+                                <h3 className="text-lg font-semibold mb-4 flex items-center justify-between">
+                                    Depth Comparison
+                                    {isDepthSeries && (
+                                        <span className="text-xs font-medium px-2 py-1 bg-yellow-100 text-yellow-800 rounded animate-pulse border border-yellow-200 flex items-center gap-1">
+                                            <MousePointer2 size={12} />
+                                            Mode Active: Click chart to toggle {editSeries === 'obs_depth' ? 'Observed' : 'Predicted'} Peaks
+                                        </span>
+                                    )}
+                                </h3>
                                 <ResponsiveContainer width="100%" height={400}>
-                                    <LineChart data={depthChartData}>
+                                    <LineChart
+                                        data={depthChartData}
+                                        onClick={handleChartClick('depth')}
+                                        className={isDepthSeries ? 'cursor-crosshair' : ''}
+                                    >
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis
                                             dataKey="time"
+                                            tickFormatter={formatAxisDate}
                                             tick={{ fontSize: 10 }}
                                             interval="preserveStartEnd"
-                                            angle={-45}
-                                            textAnchor="end"
-                                            height={80}
                                         />
                                         <YAxis label={{ value: 'Depth', angle: -90, position: 'insideLeft' }} />
                                         <Tooltip formatter={chartTooltipFormatter} />
@@ -659,6 +732,8 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             dot={false}
                                             name="Observed (Raw)"
                                             opacity={data.series.obs_depth_smoothed ? 0.3 : 1}
+                                            isAnimationActive={false}
+                                            activeDot={editSeries === 'obs_depth' ? { r: 6, stroke: '#22c55e', strokeWidth: 2 } : { r: 4 }}
                                         />
                                         <Line
                                             type="monotone"
@@ -668,6 +743,8 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             dot={false}
                                             name="Predicted (Raw)"
                                             opacity={data.series.pred_depth_smoothed ? 0.3 : 1}
+                                            isAnimationActive={false}
+                                            activeDot={editSeries === 'pred_depth' ? { r: 6, stroke: '#ef4444', strokeWidth: 2 } : { r: 4 }}
                                         />
                                         {data.series.obs_depth_smoothed && (
                                             <Line
@@ -720,9 +797,9 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                 <Activity className="text-blue-600" />
                                 <h3 className="text-lg font-semibold">Flow Metrics</h3>
                             </div>
-                            <div className="flex flex-wrap gap-4">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 {data?.metrics?.flow?.map((metric) => (
-                                    <div key={metric.name} className="p-4 bg-gray-50 rounded-lg min-w-[200px] flex-1">
+                                    <div key={metric.name} className="p-4 bg-gray-50 rounded-lg">
                                         <div className="text-sm text-gray-500 capitalize">
                                             {getMetricLabel(metric.name)}
                                         </div>
@@ -746,9 +823,9 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                     <Droplets className="text-cyan-600" />
                                     <h3 className="text-lg font-semibold">Depth Metrics</h3>
                                 </div>
-                                <div className="flex flex-wrap gap-4">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     {data.metrics.depth.map((metric) => (
-                                        <div key={metric.name} className="p-4 bg-gray-50 rounded-lg min-w-[200px] flex-1">
+                                        <div key={metric.name} className="p-4 bg-gray-50 rounded-lg">
                                             <div className="text-sm text-gray-500 capitalize">
                                                 {getMetricLabel(metric.name)}
                                             </div>

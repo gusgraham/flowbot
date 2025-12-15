@@ -272,30 +272,21 @@ class PeakDetector:
         """
         Calculate maximum time difference between matched peaks in hours.
         
-        Returns the worst (maximum absolute) time difference.
+        Uses greedy temporal matching to pair peaks, then returns the 
+        worst (maximum absolute) time difference across all pairs.
         """
-        if not obs_peaks or not pred_peaks:
+        matched_pairs = self.match_peaks_by_time(obs_peaks, pred_peaks)
+        
+        if not matched_pairs:
             return -99999.0
         
+        # Calculate time diff for each pair, return worst case
         max_diff_hrs = 0.0
-        
-        # For each observed peak, find closest predicted peak
-        for obs_peak in obs_peaks:
-            closest = self._find_closest_peak(obs_peak, pred_peaks)
-            if closest:
-                diff_seconds = abs((closest.timestamp - obs_peak.timestamp).total_seconds())
-                diff_hrs = diff_seconds / 3600
-                if abs(diff_hrs) > abs(max_diff_hrs):
-                    max_diff_hrs = diff_hrs
-        
-        # For each predicted peak, find closest observed peak
-        for pred_peak in pred_peaks:
-            closest = self._find_closest_peak(pred_peak, obs_peaks)
-            if closest:
-                diff_seconds = (pred_peak.timestamp - closest.timestamp).total_seconds()
-                diff_hrs = diff_seconds / 3600
-                if abs(diff_hrs) > abs(max_diff_hrs):
-                    max_diff_hrs = diff_hrs
+        for obs_peak, pred_peak in matched_pairs:
+            diff_seconds = (pred_peak.timestamp - obs_peak.timestamp).total_seconds()
+            diff_hrs = diff_seconds / 3600
+            if abs(diff_hrs) > abs(max_diff_hrs):
+                max_diff_hrs = diff_hrs
         
         return float(max_diff_hrs)
     
@@ -307,28 +298,32 @@ class PeakDetector:
         """
         Calculate maximum peak magnitude difference.
         
+        Uses greedy temporal matching to pair peaks, then returns the 
+        worst (maximum absolute) differences.
+        
         Returns:
             Tuple of (percentage difference, absolute difference)
         """
-        if not obs_peaks or not pred_peaks:
+        matched_pairs = self.match_peaks_by_time(obs_peaks, pred_peaks)
+        
+        if not matched_pairs:
             return (-99999.0, -99999.0)
         
+        # Calculate diffs for each pair, track worst case
         max_diff_pct = 0.0
         max_diff_abs = 0.0
         
-        for pred_peak in pred_peaks:
-            closest_obs = self._find_closest_peak(pred_peak, obs_peaks)
-            if closest_obs:
-                diff_abs = pred_peak.value - closest_obs.value
-                if closest_obs.value != 0:
-                    diff_pct = (diff_abs / closest_obs.value) * 100
-                else:
-                    diff_pct = 99999.0
-                
-                if abs(diff_pct) > abs(max_diff_pct):
-                    max_diff_pct = diff_pct
-                if abs(diff_abs) > abs(max_diff_abs):
-                    max_diff_abs = diff_abs
+        for obs_peak, pred_peak in matched_pairs:
+            diff_abs = pred_peak.value - obs_peak.value
+            if obs_peak.value != 0:
+                diff_pct = (diff_abs / obs_peak.value) * 100
+            else:
+                diff_pct = 99999.0
+            
+            if abs(diff_pct) > abs(max_diff_pct):
+                max_diff_pct = diff_pct
+            if abs(diff_abs) > abs(max_diff_abs):
+                max_diff_abs = diff_abs
         
         return (float(max_diff_pct), float(max_diff_abs))
     
@@ -354,6 +349,52 @@ class PeakDetector:
         
         diff_pct = ((pred_volume - obs_volume) / obs_volume) * 100
         return float(diff_pct)
+    
+    def match_peaks_by_time(
+        self,
+        obs_peaks: List[PeakInfo],
+        pred_peaks: List[PeakInfo],
+        max_time_gap_hours: float = 24.0
+    ) -> List[Tuple[PeakInfo, PeakInfo]]:
+        """
+        Match peaks between observed and predicted by minimizing temporal difference.
+        
+        Uses greedy matching: sort all possible pairs by time difference, 
+        then greedily select pairs ensuring no peak is matched twice.
+        Orphaned peaks (no match within max_time_gap_hours) are ignored.
+        
+        Returns:
+            List of (obs_peak, pred_peak) tuples, sorted by time
+        """
+        if not obs_peaks or not pred_peaks:
+            return []
+        
+        # Build all possible pairs with their time differences
+        pairs = []
+        for obs in obs_peaks:
+            for pred in pred_peaks:
+                diff_hrs = abs((pred.timestamp - obs.timestamp).total_seconds()) / 3600
+                if diff_hrs <= max_time_gap_hours:
+                    pairs.append((diff_hrs, obs, pred))
+        
+        # Sort by time difference (closest first)
+        pairs.sort(key=lambda x: x[0])
+        
+        # Greedy matching - select pairs without reuse
+        matched_pairs = []
+        used_obs = set()
+        used_pred = set()
+        
+        for diff_hrs, obs, pred in pairs:
+            if obs.index not in used_obs and pred.index not in used_pred:
+                matched_pairs.append((obs, pred))
+                used_obs.add(obs.index)
+                used_pred.add(pred.index)
+        
+        # Sort matched pairs by observed peak time
+        matched_pairs.sort(key=lambda x: x[0].timestamp)
+        
+        return matched_pairs
     
     def _find_closest_peak(
         self, 
@@ -382,7 +423,8 @@ class PeakDetector:
         timestamps: List[datetime],
         parameter: str,
         timestep_minutes: int,
-        smoothing_frac: float = 0.0
+        smoothing_frac: float = 0.0,
+        n_peaks: int = 1
     ) -> VerificationMetrics:
         """
         Calculate all verification metrics for a parameter.
@@ -394,13 +436,14 @@ class PeakDetector:
             parameter: 'FLOW' or 'DEPTH'
             timestep_minutes: Data timestep
             smoothing_frac: Smoothing for peak detection
+            n_peaks: Max peaks to detect (default 1 for single peak comparison)
             
         Returns:
             VerificationMetrics with all calculated values
         """
         # Detect peaks
-        obs_peaks = self.detect_peaks(obs_series, timestamps, smoothing_frac)
-        pred_peaks = self.detect_peaks(pred_series, timestamps, smoothing_frac)
+        obs_peaks = self.detect_peaks(obs_series, timestamps, smoothing_frac, n_peaks=n_peaks)
+        pred_peaks = self.detect_peaks(pred_series, timestamps, smoothing_frac, n_peaks=n_peaks)
         
         # Calculate metrics
         nse = self.calculate_nse(obs_series, pred_series)

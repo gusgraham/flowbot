@@ -2506,18 +2506,7 @@ export interface WorkspacePeak {
 }
 
 export interface WorkspaceData {
-    run: {
-        id: number;
-        status: string;
-        overall_status: string;
-        nse: number;
-        kge: number;
-        cv_obs: number;
-        flow_score: number;
-        depth_score?: number;
-        created_at: string;
-        is_final: boolean;
-    };
+    run: VerificationRun;
     monitor: {
         id: number;
         name: string;
@@ -2539,11 +2528,8 @@ export interface WorkspaceData {
 }
 
 // Workspace Params
-export interface WorkspaceParams {
-    smoothing_obs?: number;
-    smoothing_pred?: number;
-    max_peaks_obs?: number;
-    max_peaks_pred?: number;
+export interface WorkspaceParams extends AnalysisSettings {
+    // Additional params if any
 }
 
 export function useWorkspaceData(runId: number | null, params?: WorkspaceParams) {
@@ -2562,8 +2548,7 @@ export function useWorkspaceData(runId: number | null, params?: WorkspaceParams)
 export interface AnalysisSettings {
     smoothing_obs?: number;
     smoothing_pred?: number;
-    max_peaks_obs?: number;
-    max_peaks_pred?: number;
+    max_peaks?: number;  // Unified: applies to both obs and pred
     peak_mode?: 'auto' | 'manual';
     manual_peaks?: Record<string, Array<{ time: string, value: number }>>;
 }
