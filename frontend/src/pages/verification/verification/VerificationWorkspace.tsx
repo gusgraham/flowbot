@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle, AlertTriangle, XCircle, Activity, Droplets, Set
 import { useWorkspaceData, useUpdateVerificationRunSettings, type AnalysisSettings } from '../../../api/hooks';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceDot,
-    ScatterChart, Scatter, ReferenceLine
+    ScatterChart, Scatter, ReferenceLine, BarChart, Bar, Cell, ReferenceArea, Customized
 } from 'recharts';
 
 interface VerificationWorkspaceProps {
@@ -398,8 +398,8 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         return Math.max(obsMax, predMax);
     }, [data]);
 
-    const { flowChartData, depthChartData, flowScatterData } = useMemo(() => {
-        if (!data?.series) return { flowChartData: [], depthChartData: [], flowScatterData: [] };
+    const { flowChartData, depthChartData, velocityChartData, flowScatterData } = useMemo(() => {
+        if (!data?.series) return { flowChartData: [], depthChartData: [], velocityChartData: [], flowScatterData: [] };
 
         const obs = data.series.obs_flow ? downsample(data.series.obs_flow.values) : [];
         const pred = data.series.pred_flow ? downsample(data.series.pred_flow.values) : [];
@@ -432,12 +432,24 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
             pred_smoothed: predDepthSmooth ? predDepthSmooth[i] : null,
         }));
 
+        // Velocity data (no smoothing needed, just for reference)
+        const obsVelocity = data.series.obs_velocity ? downsample(data.series.obs_velocity.values) : [];
+        const predVelocity = data.series.pred_velocity ? downsample(data.series.pred_velocity.values) : [];
+        const timeVelocity = data.series.obs_velocity ? downsample(data.series.obs_velocity.time) :
+            (data.series.pred_velocity ? downsample(data.series.pred_velocity.time) : []);
+
+        const velocityChartData = timeVelocity.map((t, i) => ({
+            time: formatTime(t),
+            observed: obsVelocity[i] ?? null,
+            predicted: predVelocity[i] ?? null,
+        }));
+
         const flowScatterData = downsample(data.series.obs_flow?.values.map((val, i) => ({
             observed: val,
             predicted: data.series.pred_flow?.values[i]
         })).filter(d => d.observed != null && d.predicted != null) || [], 2000);
 
-        return { flowChartData, depthChartData, flowScatterData };
+        return { flowChartData, depthChartData, velocityChartData, flowScatterData };
     }, [data?.series]);
 
     // Peaks to display: Prioritize local manuals if mode is manual, otherwise use server peaks (which might be persisted manuals or auto)
@@ -518,6 +530,84 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         return labels[name] || name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     };
 
+    // Summary statistics for the summary table
+    const summaryStats = useMemo(() => {
+        if (!data?.series) return null;
+
+        const calcStats = (values: number[] | undefined) => {
+            if (!values || values.length === 0) return { min: null, max: null };
+            const filtered = values.filter(v => v != null && !isNaN(v));
+            if (filtered.length === 0) return { min: null, max: null };
+            return {
+                min: Math.min(...filtered),
+                max: Math.max(...filtered)
+            };
+        };
+
+        const calcVolume = (values: number[] | undefined, timestepMinutes: number) => {
+            if (!values || values.length === 0) return null;
+            const filtered = values.filter(v => v != null && !isNaN(v));
+            if (filtered.length === 0) return null;
+            // Volume = sum of flow * timestep (convert minutes to seconds)
+            const timestepSeconds = timestepMinutes * 60;
+            return filtered.reduce((sum, v) => sum + v * timestepSeconds, 0);
+        };
+
+        const timestep = data.timestep_minutes || 5;
+
+        const obsFlowStats = calcStats(data.series.obs_flow?.values);
+        const predFlowStats = calcStats(data.series.pred_flow?.values);
+        const obsDepthStats = calcStats(data.series.obs_depth?.values);
+        const predDepthStats = calcStats(data.series.pred_depth?.values);
+        const obsVelocityStats = calcStats(data.series.obs_velocity?.values);
+        const predVelocityStats = calcStats(data.series.pred_velocity?.values);
+
+        const obsVolume = calcVolume(data.series.obs_flow?.values, timestep);
+        const predVolume = calcVolume(data.series.pred_flow?.values, timestep);
+
+        return {
+            depth: {
+                obs: obsDepthStats,
+                pred: predDepthStats,
+                diff: {
+                    min: obsDepthStats.min != null && predDepthStats.min != null ? predDepthStats.min - obsDepthStats.min : null,
+                    max: obsDepthStats.max != null && predDepthStats.max != null ? predDepthStats.max - obsDepthStats.max : null,
+                    minPct: obsDepthStats.min != null && obsDepthStats.min !== 0 && predDepthStats.min != null
+                        ? ((predDepthStats.min - obsDepthStats.min) / Math.abs(obsDepthStats.min)) * 100 : null,
+                    maxPct: obsDepthStats.max != null && obsDepthStats.max !== 0 && predDepthStats.max != null
+                        ? ((predDepthStats.max - obsDepthStats.max) / Math.abs(obsDepthStats.max)) * 100 : null,
+                }
+            },
+            flow: {
+                obs: { ...obsFlowStats, volume: obsVolume },
+                pred: { ...predFlowStats, volume: predVolume },
+                diff: {
+                    min: obsFlowStats.min != null && predFlowStats.min != null ? predFlowStats.min - obsFlowStats.min : null,
+                    max: obsFlowStats.max != null && predFlowStats.max != null ? predFlowStats.max - obsFlowStats.max : null,
+                    volume: obsVolume != null && predVolume != null ? predVolume - obsVolume : null,
+                    minPct: obsFlowStats.min != null && obsFlowStats.min !== 0 && predFlowStats.min != null
+                        ? ((predFlowStats.min - obsFlowStats.min) / Math.abs(obsFlowStats.min)) * 100 : null,
+                    maxPct: obsFlowStats.max != null && obsFlowStats.max !== 0 && predFlowStats.max != null
+                        ? ((predFlowStats.max - obsFlowStats.max) / Math.abs(obsFlowStats.max)) * 100 : null,
+                    volumePct: obsVolume != null && obsVolume !== 0 && predVolume != null
+                        ? ((predVolume - obsVolume) / Math.abs(obsVolume)) * 100 : null,
+                }
+            },
+            velocity: {
+                obs: obsVelocityStats,
+                pred: predVelocityStats,
+                diff: {
+                    min: obsVelocityStats.min != null && predVelocityStats.min != null ? predVelocityStats.min - obsVelocityStats.min : null,
+                    max: obsVelocityStats.max != null && predVelocityStats.max != null ? predVelocityStats.max - obsVelocityStats.max : null,
+                    minPct: obsVelocityStats.min != null && obsVelocityStats.min !== 0 && predVelocityStats.min != null
+                        ? ((predVelocityStats.min - obsVelocityStats.min) / Math.abs(obsVelocityStats.min)) * 100 : null,
+                    maxPct: obsVelocityStats.max != null && obsVelocityStats.max !== 0 && predVelocityStats.max != null
+                        ? ((predVelocityStats.max - obsVelocityStats.max) / Math.abs(obsVelocityStats.max)) * 100 : null,
+                }
+            }
+        };
+    }, [data?.series, data?.timestep_minutes]);
+
     if (isLoading && !data) {
         return <div className="p-8 text-center text-gray-500">Loading analysis workspace...</div>;
     }
@@ -595,6 +685,92 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
             <div className="p-6">
                 {viewMode === 'timeseries' ? (
                     <>
+                        {/* Summary Statistics Table */}
+                        {summaryStats && (
+                            <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6 overflow-x-auto">
+                                <table className="w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr className="border-b border-gray-300">
+                                            <th className="py-2 px-3 text-left font-medium text-gray-600"></th>
+                                            <th colSpan={2} className="py-2 px-3 text-center font-semibold text-gray-700 border-l border-gray-200">Depth</th>
+                                            <th colSpan={3} className="py-2 px-3 text-center font-semibold text-gray-700 border-l border-gray-200">Flow</th>
+                                            <th colSpan={2} className="py-2 px-3 text-center font-semibold text-gray-700 border-l border-gray-200">Velocity</th>
+                                        </tr>
+                                        <tr className="border-b border-gray-200 text-xs text-gray-500">
+                                            <th className="py-1 px-3 text-left"></th>
+                                            <th className="py-1 px-2 text-center border-l border-gray-200">Min (m)</th>
+                                            <th className="py-1 px-2 text-center">Max (m)</th>
+                                            <th className="py-1 px-2 text-center border-l border-gray-200">Min (m³/s)</th>
+                                            <th className="py-1 px-2 text-center">Max (m³/s)</th>
+                                            <th className="py-1 px-2 text-center">Volume (m³)</th>
+                                            <th className="py-1 px-2 text-center border-l border-gray-200">Min (m/s)</th>
+                                            <th className="py-1 px-2 text-center">Max (m/s)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="font-mono text-xs">
+                                        <tr className="border-b border-gray-100 hover:bg-gray-50">
+                                            <td className="py-2 px-3 font-medium text-gray-700">Observed</td>
+                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.depth.obs.min?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center">{summaryStats.depth.obs.max?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.flow.obs.min?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center">{summaryStats.flow.obs.max?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center">{summaryStats.flow.obs.volume?.toFixed(1) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.velocity.obs.min?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center">{summaryStats.velocity.obs.max?.toFixed(3) ?? '-'}</td>
+                                        </tr>
+                                        <tr className="border-b border-gray-100 hover:bg-gray-50">
+                                            <td className="py-2 px-3 font-medium text-gray-700">Predicted</td>
+                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.depth.pred.min?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center">{summaryStats.depth.pred.max?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.flow.pred.min?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center">{summaryStats.flow.pred.max?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center">{summaryStats.flow.pred.volume?.toFixed(1) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.velocity.pred.min?.toFixed(3) ?? '-'}</td>
+                                            <td className="py-2 px-2 text-center">{summaryStats.velocity.pred.max?.toFixed(3) ?? '-'}</td>
+                                        </tr>
+                                        <tr className="bg-blue-50 text-blue-800 font-medium">
+                                            <td className="py-2 px-3">Difference</td>
+                                            <td className="py-2 px-2 text-center border-l border-gray-200">
+                                                {summaryStats.depth.diff.min != null ? (
+                                                    <>{summaryStats.depth.diff.min.toFixed(3)} {summaryStats.depth.diff.minPct != null && <span className="text-gray-500">({summaryStats.depth.diff.minPct.toFixed(0)}%)</span>}</>
+                                                ) : '-'}
+                                            </td>
+                                            <td className="py-2 px-2 text-center">
+                                                {summaryStats.depth.diff.max != null ? (
+                                                    <>{summaryStats.depth.diff.max.toFixed(3)} {summaryStats.depth.diff.maxPct != null && <span className="text-gray-500">({summaryStats.depth.diff.maxPct.toFixed(0)}%)</span>}</>
+                                                ) : '-'}
+                                            </td>
+                                            <td className="py-2 px-2 text-center border-l border-gray-200">
+                                                {summaryStats.flow.diff.min != null ? (
+                                                    <>{summaryStats.flow.diff.min.toFixed(3)} {summaryStats.flow.diff.minPct != null && <span className="text-gray-500">({summaryStats.flow.diff.minPct.toFixed(0)}%)</span>}</>
+                                                ) : '-'}
+                                            </td>
+                                            <td className="py-2 px-2 text-center">
+                                                {summaryStats.flow.diff.max != null ? (
+                                                    <>{summaryStats.flow.diff.max.toFixed(3)} {summaryStats.flow.diff.maxPct != null && <span className="text-gray-500">({summaryStats.flow.diff.maxPct.toFixed(0)}%)</span>}</>
+                                                ) : '-'}
+                                            </td>
+                                            <td className="py-2 px-2 text-center">
+                                                {summaryStats.flow.diff.volume != null ? (
+                                                    <>{summaryStats.flow.diff.volume.toFixed(1)} {summaryStats.flow.diff.volumePct != null && <span className="text-gray-500">({summaryStats.flow.diff.volumePct.toFixed(0)}%)</span>}</>
+                                                ) : '-'}
+                                            </td>
+                                            <td className="py-2 px-2 text-center border-l border-gray-200">
+                                                {summaryStats.velocity.diff.min != null ? (
+                                                    <>{summaryStats.velocity.diff.min.toFixed(3)} {summaryStats.velocity.diff.minPct != null && <span className="text-gray-500">({summaryStats.velocity.diff.minPct.toFixed(0)}%)</span>}</>
+                                                ) : '-'}
+                                            </td>
+                                            <td className="py-2 px-2 text-center">
+                                                {summaryStats.velocity.diff.max != null ? (
+                                                    <>{summaryStats.velocity.diff.max.toFixed(3)} {summaryStats.velocity.diff.maxPct != null && <span className="text-gray-500">({summaryStats.velocity.diff.maxPct.toFixed(0)}%)</span>}</>
+                                                ) : '-'}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
                         {/* Flow Chart */}
                         {flowChartData.length > 0 && (
                             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
@@ -791,6 +967,54 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                             </div>
                         )}
 
+                        {/* Velocity Chart */}
+                        {velocityChartData.length > 0 && (
+                            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+                                <h3 className="text-lg font-semibold mb-4">Velocity Comparison</h3>
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <LineChart data={velocityChartData}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis
+                                            dataKey="time"
+                                            fontSize={12}
+                                            tickFormatter={(value) => {
+                                                const date = new Date(value);
+                                                return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+                                            }}
+                                            interval="preserveStartEnd"
+                                            minTickGap={60}
+                                        />
+                                        <YAxis
+                                            fontSize={12}
+                                            tickFormatter={(value) => value.toFixed(2)}
+                                            label={{ value: 'Velocity (m/s)', angle: -90, position: 'insideLeft', fontSize: 12 }}
+                                        />
+                                        <Tooltip
+                                            labelFormatter={(value) => new Date(value).toLocaleString()}
+                                            formatter={(value: number, name: string) => [value?.toFixed(3), name === 'observed' ? 'Observed' : 'Predicted']}
+                                        />
+                                        <Legend />
+                                        <Line
+                                            type="monotone"
+                                            dataKey="observed"
+                                            stroke="#15803d"
+                                            strokeWidth={2}
+                                            dot={false}
+                                            name="Observed"
+                                        />
+                                        <Line
+                                            type="monotone"
+                                            dataKey="predicted"
+                                            stroke="#dc2626"
+                                            strokeWidth={2}
+                                            dot={false}
+                                            name="Predicted"
+                                        />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        )}
+
                         {/* Flow Metrics */}
                         <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
                             <div className="flex items-center gap-2 mb-4">
@@ -868,30 +1092,229 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                     </>
                 ) : (
                     /* Shape Fit View */
-                    <div className="bg-white rounded-lg border border-gray-200 p-6 h-[700px] flex flex-col">
-                        <div className="flex items-center justify-between mb-6 shrink-0">
-                            <div className="flex items-center gap-2">
-                                <BarChart2 className="text-purple-600" />
-                                <h3 className="text-lg font-semibold">Shape Fit (Observed vs Predicted)</h3>
+                    <div className="space-y-6">
+                        {/* Scatter Plot with Tolerance Bands */}
+                        <div className="bg-white rounded-lg border border-gray-200 p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-2">
+                                    <BarChart2 className="text-purple-600" />
+                                    <h3 className="text-lg font-semibold">Shape Fit (Observed vs Predicted)</h3>
+                                </div>
+                                <div className="text-sm bg-gray-50 px-3 py-2 rounded-lg border flex gap-4">
+                                    <span className="font-semibold" title="NSE">NSE: {data?.run?.nse?.toFixed(3)}</span>
+                                    <span className="font-semibold" title="KGE">KGE: {data?.run?.kge?.toFixed(3)}</span>
+                                    <span className="font-semibold" title="CV">CV: {data?.run?.cv_obs?.toFixed(3)}</span>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${data?.monitor?.is_critical ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
+                                        {data?.monitor?.is_critical ? 'Critical: ±10%' : 'General: +25%/-15%'}
+                                    </span>
+                                </div>
                             </div>
-                            <div className="text-sm bg-gray-50 px-3 py-2 rounded-lg border flex gap-4">
-                                <span className="font-semibold" title="NSE">NSE: {data?.run?.nse?.toFixed(3)}</span>
-                                <span className="font-semibold" title="KGE">KGE: {data?.run?.kge?.toFixed(3)}</span>
-                                <span className="font-semibold" title="CV">CV: {data?.run?.cv_obs?.toFixed(3)}</span>
-                            </div>
+                            {/* Square container for 1:1 aspect ratio */}
+                            {(() => {
+                                // Compute axis max to accommodate tolerance lines (add 30% margin for general, 15% for critical)
+                                const axisMax = maxScatterVal * (data?.monitor?.is_critical ? 1.15 : 1.30);
+                                // Generate nice tick values
+                                const tickStep = axisMax / 5;
+                                const ticks = [0, tickStep, tickStep * 2, tickStep * 3, tickStep * 4, axisMax];
+
+                                return (
+                                    <div className="flex flex-col items-center">
+                                        <div style={{ width: '500px', height: '500px' }}>
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <ScatterChart margin={{ top: 20, right: 30, bottom: 50, left: 60 }}>
+                                                    <CartesianGrid />
+                                                    <XAxis
+                                                        type="number"
+                                                        dataKey="observed"
+                                                        name="Observed"
+                                                        label={{ value: 'Observed Flow (m³/s)', position: 'bottom', offset: 25 }}
+                                                        domain={[0, axisMax]}
+                                                        ticks={ticks}
+                                                        tickFormatter={(v) => v.toFixed(4)}
+                                                    />
+                                                    <YAxis
+                                                        type="number"
+                                                        dataKey="predicted"
+                                                        name="Predicted"
+                                                        label={{ value: 'Predicted Flow (m³/s)', angle: -90, position: 'insideLeft', offset: -5 }}
+                                                        domain={[0, axisMax]}
+                                                        ticks={ticks}
+                                                        tickFormatter={(v) => v.toFixed(4)}
+                                                    />
+                                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={chartTooltipFormatter} />
+
+                                                    {/* Upper tolerance band line */}
+                                                    <ReferenceLine
+                                                        segment={[
+                                                            { x: 0, y: 0 },
+                                                            { x: maxScatterVal, y: maxScatterVal * (data?.monitor?.is_critical ? 1.10 : 1.25) }
+                                                        ]}
+                                                        stroke="#f59e0b"
+                                                        strokeDasharray="5 5"
+                                                        strokeWidth={1.5}
+                                                    />
+
+                                                    {/* Lower tolerance band line */}
+                                                    <ReferenceLine
+                                                        segment={[
+                                                            { x: 0, y: 0 },
+                                                            { x: maxScatterVal, y: maxScatterVal * (data?.monitor?.is_critical ? 0.90 : 0.85) }
+                                                        ]}
+                                                        stroke="#f59e0b"
+                                                        strokeDasharray="5 5"
+                                                        strokeWidth={1.5}
+                                                    />
+
+                                                    {/* Perfect fit line */}
+                                                    <ReferenceLine segment={[{ x: 0, y: 0 }, { x: maxScatterVal, y: maxScatterVal }]} stroke="#22c55e" strokeWidth={2} />
+
+                                                    <Scatter name="Flow Correlation" data={flowScatterData} fill="#8884d8" />
+                                                </ScatterChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                        {/* Custom Legend */}
+                                        <div className="flex justify-center gap-6 mt-4 text-sm">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-6 h-0.5 bg-green-500"></div>
+                                                <span>Perfect Fit (1:1)</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-6 h-0.5 border-t-2 border-dashed border-amber-500"></div>
+                                                <span>Tolerance ({data?.monitor?.is_critical ? '±10%' : '+25% / -15%'})</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full bg-purple-400"></div>
+                                                <span>Data Points</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
-                        <div className="flex-1 w-full min-h-0">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                                    <CartesianGrid />
-                                    <XAxis type="number" dataKey="observed" name="Observed" label={{ value: 'Observed Flow', position: 'bottom', offset: 0 }} domain={[0, maxScatterVal]} />
-                                    <YAxis type="number" dataKey="predicted" name="Predicted" label={{ value: 'Predicted Flow', angle: -90, position: 'insideLeft' }} domain={[0, maxScatterVal]} />
-                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={chartTooltipFormatter} />
-                                    <Legend />
-                                    <Scatter name="Flow Correlation" data={flowScatterData} fill="#8884d8" />
-                                    <ReferenceLine segment={[{ x: 0, y: 0 }, { x: maxScatterVal, y: maxScatterVal }]} stroke="green" strokeDasharray="3 3" label="Perfect Fit (1:1)" />
-                                </ScatterChart>
-                            </ResponsiveContainer>
+
+                        {/* KGE Components Bar Chart */}
+                        {(data as any)?.kge_components && (
+                            <div className="bg-white rounded-lg border border-gray-200 p-6">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <Activity className="text-blue-600" />
+                                    <h3 className="text-lg font-semibold">KGE Components</h3>
+                                    <span className="ml-auto text-sm bg-blue-50 px-3 py-1 rounded font-semibold text-blue-700">
+                                        KGE = {(data as any).kge_components.kge?.toFixed(3)}
+                                    </span>
+                                </div>
+                                <div className="h-[200px]">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart
+                                            data={[
+                                                { name: 'r (Correlation)', value: (data as any).kge_components.r, target: 1 },
+                                                { name: 'α (Variability)', value: (data as any).kge_components.alpha, target: 1 },
+                                                { name: 'β (Bias)', value: (data as any).kge_components.beta, target: 1 },
+                                            ]}
+                                            layout="vertical"
+                                            margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis type="number" domain={[0, 2]} tickFormatter={(v) => v.toFixed(1)} />
+                                            <YAxis type="category" dataKey="name" width={90} />
+                                            <Tooltip formatter={(value: number) => value?.toFixed(4)} />
+                                            <ReferenceLine x={1} stroke="#22c55e" strokeWidth={2} label={{ value: 'Target (1.0)', position: 'top', fill: '#22c55e', fontSize: 12 }} />
+                                            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                                {[
+                                                    { name: 'r', value: (data as any).kge_components.r },
+                                                    { name: 'α', value: (data as any).kge_components.alpha },
+                                                    { name: 'β', value: (data as any).kge_components.beta },
+                                                ].map((entry, index) => {
+                                                    const diff = Math.abs(entry.value - 1);
+                                                    let color = '#22c55e'; // green - good
+                                                    if (diff > 0.2) color = '#f59e0b'; // amber - fair
+                                                    if (diff > 0.5) color = '#ef4444'; // red - poor
+                                                    return <Cell key={`cell-${index}`} fill={color} />;
+                                                })}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* KGE Explanation Card */}
+                        <div className="bg-white rounded-lg border border-gray-200 p-6">
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                <Droplets className="text-purple-600" />
+                                KGE Component Reference
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
+                                {/* Correlation (r) */}
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h4 className="font-bold text-gray-900 mb-2">Correlation (r)</h4>
+                                    <p className="text-gray-600 mb-3">Pearson correlation between observed and predicted time series. Measures timing and shape, not magnitude.</p>
+                                    <div className="space-y-1 text-xs">
+                                        <div className="flex justify-between"><span className="text-gray-500">Range:</span><span className="font-mono">–1 to +1</span></div>
+                                        <div className="flex justify-between"><span className="text-gray-500">Perfect:</span><span className="font-mono text-green-600">+1</span></div>
+                                    </div>
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                        <p className="font-semibold text-gray-700 mb-1">Interpretation:</p>
+                                        <ul className="text-xs text-gray-600 space-y-0.5">
+                                            <li><span className="font-mono text-green-600">1.0:</span> Perfect timing and shape</li>
+                                            <li><span className="font-mono text-green-600">0.8–0.9:</span> Good timing, some mismatch</li>
+                                            <li><span className="font-mono text-amber-600">~0.5:</span> Weak pattern agreement</li>
+                                            <li><span className="font-mono text-red-600">0:</span> No relationship</li>
+                                            <li><span className="font-mono text-red-600">&lt; 0:</span> Actively wrong timing</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                {/* Variability ratio (α) */}
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h4 className="font-bold text-gray-900 mb-2">Variability ratio (α)</h4>
+                                    <p className="text-gray-600 mb-3">Ratio of standard deviations. Measures how "lively" the model response is.</p>
+                                    <div className="space-y-1 text-xs">
+                                        <div className="flex justify-between"><span className="text-gray-500">Range:</span><span className="font-mono">0 to ∞</span></div>
+                                        <div className="flex justify-between"><span className="text-gray-500">Perfect:</span><span className="font-mono text-green-600">1</span></div>
+                                    </div>
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                        <p className="font-semibold text-gray-700 mb-1">Interpretation:</p>
+                                        <ul className="text-xs text-gray-600 space-y-0.5">
+                                            <li><span className="font-mono text-amber-600">&lt;1:</span> Model too smooth / damped</li>
+                                            <li><span className="font-mono text-green-600">1:</span> Correct variability</li>
+                                            <li><span className="font-mono text-amber-600">&gt;1:</span> Model too jumpy / noisy</li>
+                                        </ul>
+                                        <p className="font-semibold text-gray-700 mt-2 mb-1">Indicative Values:</p>
+                                        <ul className="text-xs text-gray-600 space-y-0.5">
+                                            <li><span className="font-mono text-green-600">0.8–1.2:</span> Good / acceptable</li>
+                                            <li><span className="font-mono text-amber-600">0.6–0.8 or 1.25–1.5:</span> Noticeable mismatch</li>
+                                            <li><span className="font-mono text-red-600">&lt;0.6 or &gt;1.5:</span> Poor variability match</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                {/* Bias ratio (β) */}
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h4 className="font-bold text-gray-900 mb-2">Bias ratio (β)</h4>
+                                    <p className="text-gray-600 mb-3">Ratio of mean flows. Measures systematic offset.</p>
+                                    <div className="space-y-1 text-xs">
+                                        <div className="flex justify-between"><span className="text-gray-500">Range:</span><span className="font-mono">0 to ∞</span></div>
+                                        <div className="flex justify-between"><span className="text-gray-500">Perfect:</span><span className="font-mono text-green-600">1</span></div>
+                                    </div>
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                        <p className="font-semibold text-gray-700 mb-1">Interpretation:</p>
+                                        <ul className="text-xs text-gray-600 space-y-0.5">
+                                            <li><span className="font-mono text-amber-600">&lt;1:</span> Under-prediction</li>
+                                            <li><span className="font-mono text-green-600">1.0:</span> Perfect mean match</li>
+                                            <li><span className="font-mono text-red-600">≈0:</span> Model predicts almost nothing</li>
+                                            <li><span className="font-mono text-amber-600">&gt;1:</span> Over-prediction</li>
+                                            <li><span className="font-mono text-red-600">≫1:</span> Model massively overestimates</li>
+                                        </ul>
+                                        <p className="font-semibold text-gray-700 mt-2 mb-1">Indicative Values:</p>
+                                        <ul className="text-xs text-gray-600 space-y-0.5">
+                                            <li><span className="font-mono text-green-600">0.9–1.1:</span> Very good</li>
+                                            <li><span className="font-mono text-amber-600">0.8–0.9 or 1.1–1.25:</span> Acceptable / minor bias</li>
+                                            <li><span className="font-mono text-red-600">&lt;0.8 or &gt;1.25:</span> Significant bias</li>
+                                            <li><span className="font-mono text-red-600">&lt;0.5 or &gt;2:</span> Poor</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}

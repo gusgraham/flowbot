@@ -247,6 +247,59 @@ class PeakDetector:
         
         return round(float(kge), 4)
     
+    def calculate_kge_components(self, obs: List[float], pred: List[float]) -> Dict[str, float]:
+        """
+        Calculate Kling-Gupta Efficiency and return all components.
+        
+        Returns:
+            Dictionary with keys:
+            - 'kge': Overall KGE value
+            - 'r': Correlation coefficient (Pearson)
+            - 'alpha': Variability ratio (σ_pred / σ_obs)
+            - 'beta': Bias ratio (μ_pred / μ_obs)
+        """
+        if len(obs) != len(pred) or len(obs) < 2:
+            return {'kge': -99999.0, 'r': -99999.0, 'alpha': -99999.0, 'beta': -99999.0}
+        
+        df = pd.DataFrame({'obs': obs, 'pred': pred})
+        
+        # Correlation (r)
+        r = df['obs'].corr(df['pred'])
+        if np.isnan(r):
+            r = -1.0  # Worst case
+        
+        # Standard deviations
+        obs_std = df['obs'].std()
+        pred_std = df['pred'].std()
+        
+        # Means
+        obs_mean = df['obs'].mean()
+        pred_mean = df['pred'].mean()
+        
+        # Avoid division by zero
+        if obs_std == 0 or obs_mean == 0:
+            return {'kge': -99999.0, 'r': float(r), 'alpha': -99999.0, 'beta': -99999.0}
+        
+        # α (alpha) = variability ratio = σ_pred / σ_obs
+        alpha = pred_std / obs_std
+        
+        # β (beta) = bias ratio = μ_pred / μ_obs
+        beta = pred_mean / obs_mean
+        
+        # Calculate KGE
+        kge = 1 - np.sqrt(
+            (r - 1) ** 2 +
+            (alpha - 1) ** 2 +
+            (beta - 1) ** 2
+        )
+        
+        return {
+            'kge': round(float(kge), 4),
+            'r': round(float(r), 4),
+            'alpha': round(float(alpha), 4),
+            'beta': round(float(beta), 4)
+        }
+    
     def calculate_cv(self, series: List[float]) -> float:
         """
         Calculate Coefficient of Variation.

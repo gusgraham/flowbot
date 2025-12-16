@@ -1440,6 +1440,7 @@ def get_run_workspace(
         }
         
         peaks_data = {}
+        kge_components = None  # Will hold r, alpha, beta for KGE bar chart
         
         if has_custom_params:
             is_preview = True
@@ -1543,6 +1544,12 @@ def get_run_workspace(
                 # Peaks for visualization
                 peaks_data["obs_flow"] = [{"index": p.index, "time": p.timestamp.strftime('%Y-%m-%dT%H:%M:%S'), "value": p.value} for p in flow_metrics_obj.obs_peaks]
                 peaks_data["pred_flow"] = [{"index": p.index, "time": p.timestamp.strftime('%Y-%m-%dT%H:%M:%S'), "value": p.value} for p in flow_metrics_obj.pred_peaks]
+                
+                # Calculate KGE components for bar chart (use raw data, not smoothed)
+                raw_obs_flow = series_data.get("obs_flow", {}).get("values", [])
+                raw_pred_flow = series_data.get("pred_flow", {}).get("values", [])
+                if len(raw_obs_flow) > 0 and len(raw_pred_flow) > 0:
+                    kge_components = peak_detector.calculate_kge_components(raw_obs_flow, raw_pred_flow)
 
             # Depth
             obs_depth, time_depth = get_series("obs_depth")
@@ -1679,6 +1686,12 @@ def get_run_workspace(
                         ]
                     except Exception as e:
                         peaks_data[series_type] = []
+            
+            # Calculate KGE components for non-custom params case
+            raw_obs_flow = series_data.get("obs_flow", {}).get("values", [])
+            raw_pred_flow = series_data.get("pred_flow", {}).get("values", [])
+            if len(raw_obs_flow) > 0 and len(raw_pred_flow) > 0:
+                kge_components = peak_detector.calculate_kge_components(raw_obs_flow, raw_pred_flow)
 
         return {
             "run": run_data,
@@ -1700,7 +1713,8 @@ def get_run_workspace(
             "series": series_data,
             "peaks": peaks_data,
             "timestep_minutes": mtv.timestep_minutes,
-            "is_preview": is_preview
+            "is_preview": is_preview,
+            "kge_components": kge_components
         }
     except Exception as e:
         print(traceback.format_exc())
