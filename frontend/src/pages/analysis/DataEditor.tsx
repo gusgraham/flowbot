@@ -93,10 +93,15 @@ const DataEditor: React.FC<DataEditorProps> = ({ datasetId, currentMetadata }) =
                             onChange={(e) => handleChange('pipe_shape', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                         >
-                            <option value="CIRC">Circular</option>
-                            <option value="EGG">Egg</option>
-                            <option value="RECT">Rectangular</option>
-                            <option value="OTHER">Other</option>
+                            <option value="ARCH">ARCH</option>
+                            <option value="CIRC">CIRC</option>
+                            <option value="CNET">CNET</option>
+                            <option value="EGG">EGG</option>
+                            <option value="EGG2">EGG2</option>
+                            <option value="OVAL">OVAL</option>
+                            <option value="RECT">RECT</option>
+                            <option value="UTOP">UTOP</option>
+                            <option value="USER">USER</option>
                         </select>
                     </div>
 

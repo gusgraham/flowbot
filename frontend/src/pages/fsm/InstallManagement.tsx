@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Database, Settings, FileText, Camera, Calendar, Loader2, LineChart } from 'lucide-react';
-import { useInstall, useRawDataSettings, useUpdateRawDataSettings } from '../../api/hooks';
+import { useInstall, useRawDataSettings, useUpdateRawDataSettings, useProjectInstalls } from '../../api/hooks';
 import { useToast } from '../../contexts/ToastContext';
 import DataIngestionTab from './DataIngestionTab';
 import RainGaugeCalibration from './RainGaugeCalibration';
@@ -11,11 +11,13 @@ import DataViewerTab from './DataViewerTab';
 
 const InstallManagement: React.FC = () => {
     const { installId } = useParams<{ installId: string }>();
+    const navigate = useNavigate();
     const id = parseInt(installId || '0');
     const [activeTab, setActiveTab] = useState<'data-ingestion' | 'calibration' | 'data-viewer' | 'inspections' | 'photos' | 'schedule'>('data-ingestion');
 
     const { data: install, isLoading } = useInstall(id);
     const { data: rawSettings } = useRawDataSettings(id);
+    const { data: projectInstalls } = useProjectInstalls(install?.project_id || 0);
     const { mutate: updateSettings, isPending: isUpdating } = useUpdateRawDataSettings();
     const { showToast } = useToast();
 
@@ -66,12 +68,32 @@ const InstallManagement: React.FC = () => {
                     <ArrowLeft size={16} className="mr-1" /> Back to Project
                 </Link>
 
-                <h1 className="text-3xl font-bold text-gray-900">
-                    Install Management
-                </h1>
-                <p className="text-gray-500 mt-1">
-                    {install.install_id} - {install.install_type}
-                </p>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                            Install Management
+                        </h1>
+                        <div className="mt-2">
+                            {projectInstalls ? (
+                                <select
+                                    value={install.id}
+                                    onChange={(e) => navigate(`/fsm/install/${e.target.value}`)}
+                                    className="text-lg font-medium text-gray-700 border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-transparent py-1 pl-2 pr-8"
+                                >
+                                    {projectInstalls.map((inst) => (
+                                        <option key={inst.id} value={inst.id}>
+                                            {inst.install_id} - {inst.install_type}
+                                        </option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <p className="text-gray-500 text-lg">
+                                    {install.install_id} - {install.install_type}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Tab Navigation */}

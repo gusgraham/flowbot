@@ -232,8 +232,8 @@ def extract_fm_features(data: pd.DataFrame, current_date: datetime, install_data
         features.loc[0, f'pipe_{letter}'] = pipe_letter == letter
     
     # Pipe shape one-hot encoding
-    pipe_shape = install_data.get('fm_pipe_shape', 'Circular')
-    features.loc[0, 'shape_C'] = pipe_shape == 'Circular'
+    pipe_shape = install_data.get('fm_pipe_shape', 'CIRC')
+    features.loc[0, 'shape_C'] = pipe_shape == 'CIRC'
     
     features.replace([np.inf, -np.inf], 1000000, inplace=True)
     

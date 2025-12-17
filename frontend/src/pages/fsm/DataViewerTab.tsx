@@ -4,7 +4,10 @@ import { useToast } from '../../contexts/ToastContext';
 import { Loader2, Calendar, Play, X, ZoomOut } from 'lucide-react';
 import {
     LineChart,
+    ComposedChart,
     Line,
+    Area,
+    Scatter,
     XAxis,
     YAxis,
     CartesianGrid,
@@ -366,7 +369,7 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                 <div className="flex gap-4">
                     <div className="flex-1 select-none">
                         <ResponsiveContainer width="100%" height={400}>
-                            <LineChart
+                            <ComposedChart
                                 data={chartData}
                                 onMouseDown={(e: any) => e && setRefAreaLeft(e.activeLabel)}
                                 onMouseMove={(e: any) => refAreaLeft && e && setRefAreaRight(e.activeLabel)}
@@ -383,11 +386,29 @@ const DataViewerTab: React.FC<DataViewerTabProps> = ({ installId, installType })
                                 <YAxis label={{ value: varData.unit, angle: -90, position: 'insideLeft' }} />
                                 <Tooltip labelFormatter={(time) => new Date(time).toLocaleString()} />
                                 <Legend />
-                                <Line type="monotone" dataKey="Rain" stroke="#0ea5e9" dot={false} strokeWidth={1.5} />
+                                {dataType === 'Raw' ? (
+                                    <Scatter
+                                        name="Tips"
+                                        dataKey="Rain"
+                                        fill="#0ea5e9"
+                                        fillOpacity={0.4}
+                                        shape="circle"
+                                        isAnimationActive={false}
+                                    />
+                                ) : (
+                                    <Area
+                                        type="monotone"
+                                        dataKey="Rain"
+                                        fill="#0ea5e9"
+                                        stroke="#0ea5e9"
+                                        fillOpacity={0.3}
+                                        isAnimationActive={false}
+                                    />
+                                )}
                                 {refAreaLeft && refAreaRight ? (
                                     <ReferenceArea x1={refAreaLeft} x2={refAreaRight} strokeOpacity={0.3} />
                                 ) : null}
-                            </LineChart>
+                            </ComposedChart>
                         </ResponsiveContainer>
                     </div>
                     <div className="w-48 bg-gray-50 p-4 rounded-lg">

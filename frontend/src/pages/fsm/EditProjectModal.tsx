@@ -46,7 +46,16 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ isOpen, onClose, pr
     }, [project, reset, isOpen]);
 
     const onSubmit = (data: ProjectCreate) => {
-        updateProject({ id: project.id, updates: data }, {
+        // Sanitize data: convert empty strings to null so they are cleared in backend
+        const cleanedData = {
+            ...data,
+            survey_start_date: data.survey_start_date === '' ? null : data.survey_start_date,
+            survey_end_date: data.survey_end_date === '' ? null : data.survey_end_date,
+            client_job_ref: data.client_job_ref === '' ? null : data.client_job_ref,
+            default_download_path: data.default_download_path === '' ? null : data.default_download_path
+        };
+
+        updateProject({ id: project.id, updates: cleanedData }, {
             onSuccess: () => {
                 onClose();
             }
@@ -91,8 +100,8 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ isOpen, onClose, pr
                         <button
                             onClick={() => setActiveTab('general')}
                             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'general'
-                                    ? 'border-blue-600 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                                ? 'border-blue-600 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
                                 }`}
                         >
                             <Settings size={16} />
@@ -101,8 +110,8 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ isOpen, onClose, pr
                         <button
                             onClick={() => setActiveTab('collaborators')}
                             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'collaborators'
-                                    ? 'border-blue-600 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                                ? 'border-blue-600 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
                                 }`}
                         >
                             <Users size={16} />

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Folder, Info, Save, Check, X, AlertCircle, Play } from 'lucide-react';
-import { useRawDataSettings, useUpdateRawDataSettings, useInstall, useIngestInstall } from '../../api/hooks';
+import { useRawDataSettings, useUpdateRawDataSettings, useInstall, useIngestInstall, useProject } from '../../api/hooks';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api/client';
 
@@ -160,17 +160,61 @@ const DataIngestionTab: React.FC<DataIngestionTabProps> = ({ installId, installT
     const [batteryFormat, setBatteryFormat] = useState('');
     const [pumpLoggerFormat, setPumpLoggerFormat] = useState('');
 
-    // Load settings when data is fetched
+    const { data: install } = useInstall(installId);
+    // Only fetch project if we have the install and need the default path
+    const { data: project } = useProject(install?.project_id || 0);
+
+    const [isDirty, setIsDirty] = useState(false);
+
+    // Initial load with defaults
     useEffect(() => {
         if (settings) {
-            setFolderPath(settings.file_path || '');
-            setRainfallFormat(settings.rainfall_file_format || '');
-            setDepthFormat(settings.depth_file_format || '');
-            setVelocityFormat(settings.velocity_file_format || '');
-            setBatteryFormat(settings.battery_file_format || '');
-            setPumpLoggerFormat(settings.pumplogger_file_format || '');
+            // Path: specific setting -> project default -> empty
+            setFolderPath(settings.file_path || project?.default_download_path || '');
+
+            // Formats: specific setting -> requested default -> empty
+            setRainfallFormat(settings.rainfall_file_format ?? '{ast_id}_02.dat');
+            setDepthFormat(settings.depth_file_format ?? '{ast_id}_06.dat');
+            setVelocityFormat(settings.velocity_file_format ?? '{ast_id}_07.dat');
+            setBatteryFormat(settings.battery_file_format ?? '{ast_id}_08.dat');
+            setPumpLoggerFormat(settings.pumplogger_file_format ?? '{ast_id}.hobo');
+        } else if (project) {
+            // If settings don't exist yet but project does, set defaults
+            setFolderPath(project.default_download_path || '');
+            setRainfallFormat('{ast_id}_02.dat');
+            setDepthFormat('{ast_id}_06.dat');
+            setVelocityFormat('{ast_id}_07.dat');
+            setBatteryFormat('{ast_id}_08.dat');
+            setPumpLoggerFormat('{ast_id}.hobo');
         }
-    }, [settings]);
+    }, [settings, project]);
+
+    // Track dirty state
+    useEffect(() => {
+        if (!settings) return;
+        // Simple comparison
+        const hasChanges =
+            (folderPath !== (settings.file_path || project?.default_download_path || '')) ||
+            (rainfallFormat !== (settings.rainfall_file_format ?? '{ast_id}_02.dat')) ||
+            (depthFormat !== (settings.depth_file_format ?? '{ast_id}_06.dat')) ||
+            (velocityFormat !== (settings.velocity_file_format ?? '{ast_id}_07.dat')) ||
+            (batteryFormat !== (settings.battery_file_format ?? '{ast_id}_08.dat')) ||
+            (pumpLoggerFormat !== (settings.pumplogger_file_format ?? '{ast_id}.hobo'));
+
+        setIsDirty(hasChanges);
+    }, [folderPath, rainfallFormat, depthFormat, velocityFormat, batteryFormat, pumpLoggerFormat, settings, project]);
+
+    // Unsaved changes warning
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (isDirty) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [isDirty]);
 
     // Stable token insert handlers
     const handleRainfallTokenInsert = useCallback((token: string) => {
@@ -209,6 +253,7 @@ const DataIngestionTab: React.FC<DataIngestionTabProps> = ({ installId, installT
             {
                 onSuccess: () => {
                     showToast('Ingestion settings saved successfully', 'success');
+                    setIsDirty(false);
                 },
                 onError: (error) => {
                     console.error('Failed to save ingestion settings:', error);

@@ -251,7 +251,7 @@ class ProjectService:
                     site_id=site.id,
                     monitor_id=monitor.id,
                     install_date=install_date,
-                    fm_pipe_shape=str(row.get('PipeShape', 'Circular')),
+                    fm_pipe_shape=str(row.get('PipeShape', 'CIRC')),
                     fm_pipe_dim_b=float(row.get('PipeHeight', 0)) if not pd.isna(row.get('PipeHeight')) else 0
                 ))
     

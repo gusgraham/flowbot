@@ -474,11 +474,11 @@ export interface ProjectCreate {
     name: string;
     job_number: string;
     client: string;
-    client_job_ref?: string;
-    description?: string;
-    survey_start_date?: string;
-    survey_end_date?: string;
-    default_download_path?: string;
+    client_job_ref?: string | null;
+    description?: string | null;
+    survey_start_date?: string | null;
+    survey_end_date?: string | null;
+    default_download_path?: string | null;
 }
 
 export const useCreateProject = () => {

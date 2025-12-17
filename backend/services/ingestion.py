@@ -354,11 +354,10 @@ class IngestionService:
 
     def ingest_install(self, install: Install, default_path: Optional[str]):
         settings = install.raw_data_settings
-        if not settings:
-            return
-            
+        
         # Determine base path
-        base_path = settings.file_path
+        # If settings is None, or file_path is None/Empty/Invalid, try default_path
+        base_path = settings.file_path if settings else None
         if not base_path or not os.path.isdir(base_path):
             base_path = default_path
             
@@ -405,7 +404,10 @@ class IngestionService:
         # Rain Gauge
         if install.install_type == 'Rain Gauge':
             # Check extension to decide flo vs dat
-            template = settings.rainfall_file_format
+            template = settings.rainfall_file_format if settings else None
+            if not template:
+                template = '{ast_id}_02.dat'
+                
             if template:
                 fname = self.decode_file_format(template, install)
                 if fname.lower().endswith('.flo'):
@@ -415,16 +417,21 @@ class IngestionService:
 
         # Flow / Depth Monitor
         if install.install_type in ['Flow Monitor', 'Depth Monitor']:
-             process_file_type(settings.depth_file_format, BinaryParser.parse_dat_file, 'Depth')
-             process_file_type(settings.velocity_file_format, BinaryParser.parse_dat_file, 'Velocity')
+             depth_fmt = (settings.depth_file_format if settings else None) or '{ast_id}_06.dat'
+             vel_fmt = (settings.velocity_file_format if settings else None) or '{ast_id}_07.dat'
+             
+             process_file_type(depth_fmt, BinaryParser.parse_dat_file, 'Depth')
+             process_file_type(vel_fmt, BinaryParser.parse_dat_file, 'Velocity')
 
         # Battery
-        process_file_type(settings.battery_file_format, BinaryParser.parse_dat_file, 'Voltage')
+        batt_fmt = (settings.battery_file_format if settings else None) or '{ast_id}_08.dat'
+        process_file_type(batt_fmt, BinaryParser.parse_dat_file, 'Voltage')
         
         # Pump Logger
         if install.install_type == 'Pump Logger':
              # Wrapper for CSV to match signature
              def csv_wrapper(path, since=None):
                  return CSVParser.parse_hobo_csv(path, since=since), ""
-                 
-             process_file_type(settings.pumplogger_file_format, csv_wrapper, 'Pump_State')
+             
+             pl_fmt = (settings.pumplogger_file_format if settings else None) or '{ast_id}.hobo'
+             process_file_type(pl_fmt, csv_wrapper, 'Pump_State')

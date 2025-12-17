@@ -28,8 +28,8 @@ interface InstallFormData {
 }
 
 const PIPE_SHAPES = [
-    "Circular", "Rectangular", "Arched", "Cunette",
-    "Egg", "Egg 2", "Oval", "U-Shaped", "Other"
+    "CIRC", "RECT", "ARCH", "CNET",
+    "EGG", "EGG2", "OVAL", "UTOP", "USER"
 ];
 
 const RG_POSITIONS = [

@@ -138,7 +138,7 @@ class InstallBase(SQLModel):
     
     # FM Specific
     fm_pipe_letter: str = "A"
-    fm_pipe_shape: str = "Circular"
+    fm_pipe_shape: str = "CIRC"
     fm_pipe_height_mm: int = 225
     fm_pipe_width_mm: int = 225
     fm_pipe_depth_to_invert_mm: int = 0
