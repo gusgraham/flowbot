@@ -94,49 +94,64 @@ def delete_verification_project(
     conn = session.connection()
     
     # Get event IDs and monitor IDs for this project
-    event_ids = [row[0] for row in conn.execute(text("SELECT id FROM verificationevent WHERE project_id = :pid"), {"pid": project_id}).fetchall()]
-    monitor_ids = [row[0] for row in conn.execute(text("SELECT id FROM verificationflowmonitor WHERE project_id = :pid"), {"pid": project_id}).fetchall()]
+    event_ids = [row[0] for row in conn.execute(text("SELECT id FROM ver_event WHERE project_id = :pid"), {"pid": project_id}).fetchall()]
+    monitor_ids = [row[0] for row in conn.execute(text("SELECT id FROM ver_flowmonitor WHERE project_id = :pid"), {"pid": project_id}).fetchall()]
     
     if event_ids:
         # Get trace set IDs
-        trace_set_ids = [row[0] for row in conn.execute(text(f"SELECT id FROM traceset WHERE event_id IN ({','.join(map(str, event_ids))})")).fetchall()]
+        trace_set_ids = [row[0] for row in conn.execute(text(f"SELECT id FROM ver_traceset WHERE event_id IN ({','.join(map(str, event_ids))})")).fetchall()]
         
         if trace_set_ids:
             # Get monitor trace version IDs
-            mtv_ids = [row[0] for row in conn.execute(text(f"SELECT id FROM monitortraceversion WHERE trace_set_id IN ({','.join(map(str, trace_set_ids))})")).fetchall()]
+            mtv_ids = [row[0] for row in conn.execute(text(f"SELECT id FROM ver_monitortraceversion WHERE trace_set_id IN ({','.join(map(str, trace_set_ids))})")).fetchall()]
             
             if mtv_ids:
                 # Delete verification runs
-                conn.execute(text(f"DELETE FROM verificationrun WHERE monitor_trace_id IN ({','.join(map(str, mtv_ids))})"))
+                conn.execute(text(f"DELETE FROM ver_run WHERE monitor_trace_id IN ({','.join(map(str, mtv_ids))})"))
                 # Delete verification time series
-                conn.execute(text(f"DELETE FROM verificationtimeseries WHERE monitor_trace_id IN ({','.join(map(str, mtv_ids))})"))
+                conn.execute(text(f"DELETE FROM ver_timeseries WHERE monitor_trace_id IN ({','.join(map(str, mtv_ids))})"))
                 # Delete monitor trace versions
-                conn.execute(text(f"DELETE FROM monitortraceversion WHERE id IN ({','.join(map(str, mtv_ids))})"))
+                conn.execute(text(f"DELETE FROM ver_monitortraceversion WHERE id IN ({','.join(map(str, mtv_ids))})"))
             
             # Delete trace sets
-            conn.execute(text(f"DELETE FROM traceset WHERE id IN ({','.join(map(str, trace_set_ids))})"))
+            conn.execute(text(f"DELETE FROM ver_traceset WHERE id IN ({','.join(map(str, trace_set_ids))})"))
         
         # Delete events
-        conn.execute(text(f"DELETE FROM verificationevent WHERE id IN ({','.join(map(str, event_ids))})"))
+        conn.execute(text(f"DELETE FROM ver_event WHERE id IN ({','.join(map(str, event_ids))})"))
     
     if monitor_ids:
         # Delete any remaining monitor trace versions (shouldn't be any but safety)
-        conn.execute(text(f"DELETE FROM monitortraceversion WHERE monitor_id IN ({','.join(map(str, monitor_ids))})"))
+        conn.execute(text(f"DELETE FROM ver_monitortraceversion WHERE monitor_id IN ({','.join(map(str, monitor_ids))})"))
         # Delete monitors
-        conn.execute(text(f"DELETE FROM verificationflowmonitor WHERE id IN ({','.join(map(str, monitor_ids))})"))
+        conn.execute(text(f"DELETE FROM ver_flowmonitor WHERE id IN ({','.join(map(str, monitor_ids))})"))
     
     # Delete tolerance sets
-    conn.execute(text("DELETE FROM toleranceset WHERE project_id = :pid"), {"pid": project_id})
+    conn.execute(text("DELETE FROM ver_toleranceset WHERE project_id = :pid"), {"pid": project_id})
+    
+    # Delete dry days, full period monitors, and full period imports
+    import_ids = [row[0] for row in conn.execute(text("SELECT id FROM ver_fullperiodimport WHERE project_id = :pid"), {"pid": project_id}).fetchall()]
+    if import_ids:
+        # Get full period monitor IDs
+        fp_monitor_ids = [row[0] for row in conn.execute(text(f"SELECT id FROM ver_fullperiodmonitor WHERE import_id IN ({','.join(map(str, import_ids))})")).fetchall()]
+        
+        if fp_monitor_ids:
+            # Delete dry days for these monitors
+            conn.execute(text(f"DELETE FROM ver_dryday WHERE fp_monitor_id IN ({','.join(map(str, fp_monitor_ids))})"))
+            # Delete full period monitors
+            conn.execute(text(f"DELETE FROM ver_fullperiodmonitor WHERE id IN ({','.join(map(str, fp_monitor_ids))})"))
+        
+        # Delete full period imports
+        conn.execute(text(f"DELETE FROM ver_fullperiodimport WHERE id IN ({','.join(map(str, import_ids))})"))
     
     # Delete collaborators
-    conn.execute(text("DELETE FROM verificationprojectcollaborator WHERE project_id = :pid"), {"pid": project_id})
+    conn.execute(text("DELETE FROM ver_projectcollaborator WHERE project_id = :pid"), {"pid": project_id})
     
     # Delete project
-    conn.execute(text("DELETE FROM verificationproject WHERE id = :pid"), {"pid": project_id})
+    conn.execute(text("DELETE FROM ver_project WHERE id = :pid"), {"pid": project_id})
     
     session.commit()
     
-    # Clean up file system
+    # Clean up file system - now all parquet files are in project folder
     import shutil
     import os
     project_dir = f"data/verification/project_{project_id}"

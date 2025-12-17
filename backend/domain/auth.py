@@ -15,6 +15,7 @@ class UserBase(SQLModel):
     access_ssd: bool = True  # Spill Storage Design module
 
 class User(UserBase, table=True):
+    __tablename__ = "auth_user"
     id: Optional[int] = Field(default=None, primary_key=True)
     hashed_password: str
     

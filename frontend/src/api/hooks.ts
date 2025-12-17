@@ -2568,3 +2568,300 @@ export function useUpdateVerificationRunSettings() {
         },
     });
 }
+
+
+// ==========================================
+// DRY DAY ANALYSIS HOOKS
+// ==========================================
+
+export interface FullPeriodImport {
+    id: number;
+    project_id: number;
+    name: string;
+    source_file?: string;
+    start_time?: string;
+    end_time?: string;
+    has_flow: boolean;
+    has_depth: boolean;
+    has_velocity: boolean;
+    has_rainfall: boolean;
+    timestep_minutes: number;
+    day_rainfall_threshold_mm: number;
+    antecedent_threshold_mm: number;
+    imported_at: string;
+}
+
+export interface FullPeriodImportPreview {
+    filename: string;
+    row_count: number;
+    columns_found: {
+        timestamp: string | null;
+        flow: string | null;
+        depth: string | null;
+        velocity: string | null;
+        rainfall: string | null;
+    };
+    all_columns: string[];
+    start_time: string;
+    end_time: string;
+    timestep_minutes: number;
+    has_flow: boolean;
+    has_depth: boolean;
+    has_velocity: boolean;
+    has_rainfall: boolean;
+}
+
+export interface DryDay {
+    id: number;
+    import_id: number;
+    date: string;
+    antecedent_rainfall_mm: number;
+    day_rainfall_mm: number;
+    is_included: boolean;
+    notes?: string;
+}
+
+export interface DryDayUpdate {
+    is_included?: boolean;
+    notes?: string;
+}
+
+export interface DryDay24hrChartData {
+    import_id: number;
+    dry_day_count: number;
+    smoothing_frac: number;
+    day_traces: Array<{
+        date: string;
+        values: Array<{ minutes: number; flow: number }>;
+    }>;
+    envelope: {
+        minutes: number[];
+        min: number[];
+        max: number[];
+        mean: number[];
+    };
+}
+
+// List full-period imports for a project
+export function useFullPeriodImports(projectId: number) {
+    return useQuery({
+        queryKey: ['full-period-imports', projectId],
+        queryFn: async () => {
+            const response = await api.get<FullPeriodImport[]>(`/verification/projects/${projectId}/full-period-imports`);
+            return response.data;
+        },
+        enabled: !!projectId,
+    });
+}
+
+// Preview a full-period import file
+export function usePreviewFullPeriodImport() {
+    return useMutation({
+        mutationFn: async ({ projectId, file }: { projectId: number; file: File }) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await api.post<FullPeriodImportPreview>(
+                `/verification/projects/${projectId}/full-period-imports/preview`,
+                formData,
+                { headers: { 'Content-Type': 'multipart/form-data' } }
+            );
+            return response.data;
+        },
+    });
+}
+
+// Import full-period data
+export function useImportFullPeriod() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({
+            projectId,
+            file,
+            name,
+            dayRainfallThreshold = 0.0,
+            antecedentThreshold = 1.0
+        }: {
+            projectId: number;
+            file: File;
+            name: string;
+            dayRainfallThreshold?: number;
+            antecedentThreshold?: number;
+        }) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('name', name);
+            formData.append('day_rainfall_threshold_mm', String(dayRainfallThreshold));
+            formData.append('antecedent_threshold_mm', String(antecedentThreshold));
+            const response = await api.post<FullPeriodImport>(
+                `/verification/projects/${projectId}/full-period-imports`,
+                formData,
+                { headers: { 'Content-Type': 'multipart/form-data' } }
+            );
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['full-period-imports', variables.projectId] });
+        },
+    });
+}
+
+export interface FPMonitor {
+    id: number;
+    import_id: number;
+    monitor_id: number;
+    monitor_name: string | null;
+    has_flow: boolean;
+    has_depth: boolean;
+    has_velocity: boolean;
+    has_rainfall: boolean;
+}
+
+export interface MonitorDryDayResponse {
+    fp_monitor_id: number;
+    monitor_id: number;
+    monitor_name: string;
+    dry_days: DryDay[];
+}
+
+// ... in hook function ...
+
+// List full-period monitors for an import
+export function useFPMonitors(importId: number | null) {
+    return useQuery({
+        queryKey: ['fp-monitors', importId],
+        queryFn: async () => {
+            const response = await api.get<FPMonitor[]>(`/verification/full-period-imports/${importId}/monitors`);
+            return response.data;
+        },
+        enabled: !!importId,
+    });
+}
+
+// Delete full-period import
+export function useDeleteFullPeriodImport() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ importId, projectId }: { importId: number; projectId: number }) => {
+            const response = await api.delete(`/verification/full-period-imports/${importId}`);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['full-period-imports', variables.projectId] });
+            queryClient.invalidateQueries({ queryKey: ['dry-days', variables.importId] });
+            queryClient.invalidateQueries({ queryKey: ['fp-monitors', variables.importId] });
+        },
+    });
+}
+
+// Detect dry days (returns per-monitor summary now, but used to return list)
+// The backend now returns a Dict, but we might just need to invalidate queries
+export function useDetectDryDays() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({
+            importId,
+            dayThresholdMm,
+            antecedentThresholdMm
+        }: {
+            importId: number;
+            dayThresholdMm?: number;
+            antecedentThresholdMm?: number;
+        }) => {
+            const params = new URLSearchParams();
+            if (dayThresholdMm !== undefined) params.append('day_threshold_mm', String(dayThresholdMm));
+            if (antecedentThresholdMm !== undefined) params.append('antecedent_threshold_mm', String(antecedentThresholdMm));
+            // Just post, result type handles new structure
+            const response = await api.post(
+                `/verification/full-period-imports/${importId}/detect-dry-days?${params}`
+            );
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            // Invalidate everything related to this import
+            queryClient.invalidateQueries({ queryKey: ['dry-days-import', variables.importId] });
+            queryClient.invalidateQueries({ queryKey: ['fp-monitors', variables.importId] });
+            // We can't easily invalidate per-monitor queries without knowing IDs, 
+            // but the UI will likely refetch when monitor is selected
+        },
+    });
+}
+
+// List dry days for a specific monitor
+export function useMonitorDryDays(fpMonitorId: number | null) {
+    return useQuery({
+        queryKey: ['dry-days-monitor', fpMonitorId],
+        queryFn: async () => {
+            const response = await api.get<DryDay[]>(`/verification/fp-monitors/${fpMonitorId}/dry-days`);
+            return response.data;
+        },
+        enabled: !!fpMonitorId,
+    });
+}
+
+// List all dry days for an import (grouped by monitor)
+export function useImportDryDays(importId: number | null) {
+    return useQuery({
+        queryKey: ['dry-days-import', importId],
+        queryFn: async () => {
+            const response = await api.get<MonitorDryDayResponse[]>(`/verification/full-period-imports/${importId}/dry-days`);
+            return response.data;
+        },
+        enabled: !!importId,
+    });
+}
+
+// Update a dry day (toggle inclusion)
+export function useUpdateDryDay() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ dryDayId, update, fpMonitorId }: { dryDayId: number; update: DryDayUpdate; fpMonitorId: number }) => {
+            const response = await api.put<DryDay>(`/verification/dry-days/${dryDayId}`, update);
+            return response.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['dry-days-monitor', variables.fpMonitorId] });
+            queryClient.invalidateQueries({ queryKey: ['monitor-24hr-chart', variables.fpMonitorId] });
+        },
+    });
+}
+
+export interface Monitor24hrChartData {
+    fp_monitor_id: number;
+    series_type: string;
+    dry_day_count: number;
+    smoothing_frac: number;
+    day_traces: {
+        date: string;
+        values: { minutes: number; value: number }[];
+    }[];
+    envelope: {
+        minutes: number[];
+        min: number[];
+        max: number[];
+        mean: number[];
+    };
+}
+
+// Get 24hr chart data for a monitor
+export function useMonitor24hrChart(fpMonitorId: number | null, seriesType: string = 'flow', smoothing: number = 0, dayFilter: string = 'all') {
+    return useQuery({
+        queryKey: ['monitor-24hr-chart', fpMonitorId, seriesType, smoothing, dayFilter],
+        queryFn: async () => {
+            const response = await api.get<Monitor24hrChartData>(
+                `/verification/fp-monitors/${fpMonitorId}/24hr-chart`,
+                { params: { series_type: seriesType, smoothing_frac: smoothing, day_filter: dayFilter } }
+            );
+            return response.data;
+        },
+        enabled: !!fpMonitorId,
+    });
+}
+
+export function useSaveDWFProfiles() {
+    return useMutation({
+        mutationFn: async (fpMonitorId: number) => {
+            const response = await api.post<{ message: string }>(`/verification/fp-monitors/${fpMonitorId}/save-profiles`);
+            return response.data;
+        }
+    });
+}

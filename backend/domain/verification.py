@@ -13,6 +13,9 @@ from domain.verification_models import (
     VerificationRun, VerificationRunCreate, VerificationRunRead, VerificationRunUpdate,
     VerificationMetric, VerificationMetricRead,
     ManualAdjustment, ManualAdjustmentCreate, ManualAdjustmentRead,
+    VerificationFullPeriodImport, VerificationFullPeriodImportCreate, VerificationFullPeriodImportRead, VerificationFullPeriodImportUpdate,
+    VerificationFullPeriodMonitor, VerificationFullPeriodMonitorRead, VerificationDWFProfile,
+    VerificationDryDay, VerificationDryDayRead, VerificationDryDayUpdate,
     EventType, RunStatus, VerificationStatus, ScoreBand, SeriesType
 )
 
@@ -25,15 +28,16 @@ class VerificationProjectBase(SQLModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 class VerificationProjectCollaborator(SQLModel, table=True):
+    __tablename__ = "ver_projectcollaborator"
     """Link table for Verification project collaborators (many-to-many)"""
-    project_id: int = Field(foreign_key="verificationproject.id", primary_key=True)
-    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    project_id: int = Field(foreign_key="ver_project.id", primary_key=True)
+    user_id: int = Field(foreign_key="auth_user.id", primary_key=True)
 
 class VerificationProject(VerificationProjectBase, table=True):
-    __tablename__ = "verificationproject"
+    __tablename__ = "ver_project"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    owner_id: Optional[int] = Field(default=None, foreign_key="auth_user.id")
     
     # Collaborators (Many-to-Many)
     collaborators: List["User"] = Relationship(link_model=VerificationProjectCollaborator)

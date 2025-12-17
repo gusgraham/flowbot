@@ -16,15 +16,16 @@ class FsaProjectBase(SQLModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 class FsaProjectCollaborator(SQLModel, table=True):
+    __tablename__ = "fsa_projectcollaborator"
     """Link table for FSA project collaborators (many-to-many)"""
-    project_id: int = Field(foreign_key="fsaproject.id", primary_key=True)
-    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    project_id: int = Field(foreign_key="fsa_project.id", primary_key=True)
+    user_id: int = Field(foreign_key="auth_user.id", primary_key=True)
 
 class FsaProject(FsaProjectBase, table=True):
-    __tablename__ = "fsaproject"
+    __tablename__ = "fsa_project"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    owner_id: Optional[int] = Field(default=None, foreign_key="auth_user.id")
     
     datasets: List["FsaDataset"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
     events: List["SurveyEvent"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
@@ -46,7 +47,7 @@ class FsaProjectRead(FsaProjectCreate):
 # ==========================================
 
 class FsaDatasetBase(SQLModel):
-    project_id: int = Field(foreign_key="fsaproject.id")
+    project_id: int = Field(foreign_key="fsa_project.id")
     name: str
     variable: str  # 'Rainfall', 'Flow', 'Depth', 'Velocity', 'Flow/Depth'
     source: str = "Uploaded"  # e.g. "Uploaded", "Manual Entry"
@@ -57,6 +58,7 @@ class FsaDatasetBase(SQLModel):
     metadata_json: str = Field(default="{}")  # Store extra info like units, gauge name
 
 class FsaDataset(FsaDatasetBase, table=True):
+    __tablename__ = "fsa_dataset"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     project: Optional[FsaProject] = Relationship(back_populates="datasets")
@@ -79,7 +81,7 @@ class FsaDatasetRead(FsaDatasetBase):
 # ==========================================
 
 class FlowMonitorBase(SQLModel):
-    dataset_id: int = Field(foreign_key="fsadataset.id")
+    dataset_id: int = Field(foreign_key="fsa_dataset.id")
     name: str
     timestep_minutes: float
     flow_units: str = "l/s"
@@ -91,6 +93,7 @@ class FlowMonitorBase(SQLModel):
     y: Optional[float] = None
 
 class FlowMonitor(FlowMonitorBase, table=True):
+    __tablename__ = "fsa_flowmonitor"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     dataset: Optional[FsaDataset] = Relationship(back_populates="flow_monitors")
@@ -113,8 +116,9 @@ class FlowMonitorRead(FlowMonitorBase):
 # ==========================================
 
 class FlowMonitorStats(SQLModel, table=True):
+    __tablename__ = "fsa_flowmonitorstats"
     id: Optional[int] = Field(default=None, primary_key=True)
-    monitor_id: int = Field(foreign_key="flowmonitor.id", unique=True)
+    monitor_id: int = Field(foreign_key="fsa_flowmonitor.id", unique=True)
     
     min_flow: Optional[float] = None
     max_flow: Optional[float] = None
@@ -127,8 +131,9 @@ class FlowMonitorStats(SQLModel, table=True):
     monitor: Optional[FlowMonitor] = Relationship(back_populates="stats")
 
 class FlowMonitorModel(SQLModel, table=True):
+    __tablename__ = "fsa_flowmonitormodel"
     id: Optional[int] = Field(default=None, primary_key=True)
-    monitor_id: int = Field(foreign_key="flowmonitor.id", unique=True)
+    monitor_id: int = Field(foreign_key="fsa_flowmonitor.id", unique=True)
     
     has_model_data: bool = False
     pipe_ref: Optional[str] = None
@@ -149,7 +154,7 @@ class FlowMonitorModel(SQLModel, table=True):
 # ==========================================
 
 class RainGaugeBase(SQLModel):
-    dataset_id: int = Field(foreign_key="fsadataset.id")
+    dataset_id: int = Field(foreign_key="fsa_dataset.id")
     name: str
     timestep_minutes: float
     
@@ -158,14 +163,16 @@ class RainGaugeBase(SQLModel):
     y: Optional[float] = None
 
 class RainGauge(RainGaugeBase, table=True):
+    __tablename__ = "fsa_raingauge"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     dataset: Optional[FsaDataset] = Relationship(back_populates="rain_gauges")
     stats: Optional["RainGaugeStats"] = Relationship(back_populates="rain_gauge", sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"})
 
 class RainGaugeStats(SQLModel, table=True):
+    __tablename__ = "fsa_raingaugestats"
     id: Optional[int] = Field(default=None, primary_key=True)
-    rain_gauge_id: int = Field(foreign_key="raingauge.id", unique=True)
+    rain_gauge_id: int = Field(foreign_key="fsa_raingauge.id", unique=True)
     
     min_intensity: Optional[float] = None
     max_intensity: Optional[float] = None
@@ -179,13 +186,14 @@ class RainGaugeStats(SQLModel, table=True):
 # ==========================================
 
 class SurveyEventBase(SQLModel):
-    project_id: int = Field(foreign_key="fsaproject.id")
+    project_id: int = Field(foreign_key="fsa_project.id")
     event_type: str # Storm, DryDay
     start_time: datetime
     end_time: datetime
     name: Optional[str] = None
 
 class SurveyEvent(SurveyEventBase, table=True):
+    __tablename__ = "fsa_surveyevent"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     project: Optional[FsaProject] = Relationship(back_populates="events")
@@ -201,7 +209,7 @@ class SurveyEventRead(SurveyEventBase):
 # ==========================================
 
 class FsaTimeSeriesBase(SQLModel):
-    dataset_id: int = Field(foreign_key="fsadataset.id", index=True)
+    dataset_id: int = Field(foreign_key="fsa_dataset.id", index=True)
     timestamp: datetime = Field(index=True)
     value: Optional[float] = None  # rainfall (mm/hr) or generic value
     flow: Optional[float] = None  # L/s
@@ -209,6 +217,7 @@ class FsaTimeSeriesBase(SQLModel):
     velocity: Optional[float] = None  # m/s
 
 class FsaTimeSeries(FsaTimeSeriesBase, table=True):
+    __tablename__ = "fsa_timeseries"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     dataset: Optional[FsaDataset] = Relationship(back_populates="timeseries")

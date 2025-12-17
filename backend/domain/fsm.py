@@ -23,15 +23,16 @@ class FsmProjectBase(SQLModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 class ProjectCollaborator(SQLModel, table=True):
-    project_id: int = Field(foreign_key="fsmproject.id", primary_key=True)
-    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    __tablename__ = "fsm_projectcollaborator"
+    project_id: int = Field(foreign_key="fsm_project.id", primary_key=True)
+    user_id: int = Field(foreign_key="auth_user.id", primary_key=True)
     # can_edit: bool = True # Future extension
 
 class FsmProject(FsmProjectBase, table=True):
-    __tablename__ = "fsmproject"
+    __tablename__ = "fsm_project"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    owner_id: Optional[int] = Field(default=None, foreign_key="auth_user.id")
     last_ingestion_date: Optional[datetime] = None
     
     # Relationships with cascade delete
@@ -83,8 +84,9 @@ class MonitorBase(SQLModel):
     pmac_id: Optional[str] = None
 
 class Monitor(MonitorBase, table=True):
+    __tablename__ = "fsm_monitor"
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: Optional[int] = Field(default=None, foreign_key="fsmproject.id")
+    project_id: Optional[int] = Field(default=None, foreign_key="fsm_project.id")
     
     project: Optional[FsmProject] = Relationship(back_populates="monitors")
     installs: List["Install"] = Relationship(back_populates="monitor", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
@@ -110,8 +112,9 @@ class SiteBase(SQLModel):
     northing: float = 0.0
 
 class Site(SiteBase, table=True):
+    __tablename__ = "fsm_site"
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: Optional[int] = Field(default=None, foreign_key="fsmproject.id")
+    project_id: Optional[int] = Field(default=None, foreign_key="fsm_project.id")
     
     project: Optional[FsmProject] = Relationship(back_populates="sites")
     installs: List["Install"] = Relationship(back_populates="site", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
@@ -145,11 +148,12 @@ class InstallBase(SQLModel):
     rg_position: str = "Ground"
 
 class Install(InstallBase, table=True):
+    __tablename__ = "fsm_install"
     id: Optional[int] = Field(default=None, primary_key=True)
     
-    project_id: Optional[int] = Field(default=None, foreign_key="fsmproject.id")
-    site_id: Optional[int] = Field(default=None, foreign_key="site.id")
-    monitor_id: Optional[int] = Field(default=None, foreign_key="monitor.id")
+    project_id: Optional[int] = Field(default=None, foreign_key="fsm_project.id")
+    site_id: Optional[int] = Field(default=None, foreign_key="fsm_site.id")
+    monitor_id: Optional[int] = Field(default=None, foreign_key="fsm_monitor.id")
     
     project: Optional[FsmProject] = Relationship(back_populates="installs")
     site: Optional[Site] = Relationship(back_populates="installs")
@@ -176,7 +180,7 @@ class InstallRead(InstallBase):
 # ==========================================
 
 class VisitBase(SQLModel):
-    install_id: int = Field(foreign_key="install.id")
+    install_id: int = Field(foreign_key="fsm_install.id")
     visit_date: datetime
     crew_lead: str
     silt_level_mm: Optional[int] = 0
@@ -185,6 +189,7 @@ class VisitBase(SQLModel):
     photos_json: Optional[str] = None
 
 class Visit(VisitBase, table=True):
+    __tablename__ = "fsm_visit"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     install: Optional[Install] = Relationship(back_populates="visits")
@@ -200,7 +205,7 @@ class VisitRead(VisitBase):
 # ==========================================
 
 class RawDataSettingsBase(SQLModel):
-    install_id: int = Field(foreign_key="install.id", unique=True)
+    install_id: int = Field(foreign_key="fsm_install.id", unique=True)
     
     # File ingestion paths
     file_path: Optional[str] = None
@@ -232,7 +237,7 @@ class RawDataSettingsBase(SQLModel):
     pl_added_onoffs: Optional[str] = None  # JSON: [{datetime, state, comment}]
 
 class RawDataSettings(RawDataSettingsBase, table=True):
-    __tablename__ = "rawdatasettings"
+    __tablename__ = "fsm_rawdatasettings"
     
     id: Optional[int] = Field(default=None, primary_key=True)
     
@@ -270,8 +275,8 @@ class RawDataSettingsRead(RawDataSettingsBase):
 # ==========================================
 
 class TimeSeriesBase(SQLModel):
-    install_id: Optional[int] = Field(default=None, foreign_key="install.id")
-    monitor_id: Optional[int] = Field(default=None, foreign_key="monitor.id")
+    install_id: Optional[int] = Field(default=None, foreign_key="fsm_install.id")
+    monitor_id: Optional[int] = Field(default=None, foreign_key="fsm_monitor.id")
     variable: str  # Flow, Depth, Velocity, Rain
     data_type: str  # Raw, Processed, Model
     start_time: datetime
@@ -281,20 +286,23 @@ class TimeSeriesBase(SQLModel):
     unit: Optional[str] = Field(default=None)
 
 class TimeSeries(TimeSeriesBase, table=True):
+    __tablename__ = "fsm_timeseries"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     monitor: Optional[Monitor] = Relationship(back_populates="timeseries")
     install: Optional[Install] = Relationship(back_populates="timeseries")
 
-class EventBase(SQLModel):
-    install_id: int = Field(foreign_key="install.id")
-    event_type: str  # Storm, DryDay, DW
-    start_time: datetime
-    end_time: datetime
-    label: Optional[str] = None
-
-class Event(EventBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+# NOTE: Event table removed - FsmEvent is the canonical event table
+# class EventBase(SQLModel):
+#     install_id: int = Field(foreign_key="fsm_install.id")
+#     event_type: str  # Storm, DryDay, DW
+#     start_time: datetime
+#     end_time: datetime
+#     label: Optional[str] = None
+#
+# class Event(EventBase, table=True):
+#     __tablename__ = "fsm_event"
+#     id: Optional[int] = Field(default=None, primary_key=True)
 
 # ==========================================
 # QA - NOTES & ATTACHMENTS
@@ -310,6 +318,7 @@ class NoteBase(SQLModel):
     install_id: Optional[int] = None
 
 class Note(NoteBase, table=True):
+    __tablename__ = "fsm_note"
     id: Optional[int] = Field(default=None, primary_key=True)
 
 class NoteCreate(NoteBase):
@@ -330,6 +339,7 @@ class AttachmentBase(SQLModel):
     install_id: Optional[int] = None
 
 class Attachment(AttachmentBase, table=True):
+    __tablename__ = "fsm_attachment"
     id: Optional[int] = Field(default=None, primary_key=True)
 
 class AttachmentCreate(AttachmentBase):
@@ -358,10 +368,10 @@ class FsmEventBase(SQLModel):
 
 
 class FsmEvent(FsmEventBase, table=True):
-    __tablename__ = "fsmevent"
+    __tablename__ = "fsm_event"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="fsmproject.id", index=True)
+    project_id: int = Field(foreign_key="fsm_project.id", index=True)
     created_at: datetime = Field(default_factory=datetime.now)
 
 

@@ -34,9 +34,10 @@ class InterimBase(SQLModel):
 
 
 class Interim(InterimBase, table=True):
+    __tablename__ = "fsm_interim"
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="fsmproject.id", index=True)
-    revision_of: Optional[int] = Field(default=None, foreign_key="interim.id")
+    project_id: int = Field(foreign_key="fsm_project.id", index=True)
+    revision_of: Optional[int] = Field(default=None, foreign_key="fsm_interim.id")
     created_at: datetime = Field(default_factory=datetime.now)
     locked_at: Optional[datetime] = None
     
@@ -74,8 +75,7 @@ class InterimRead(InterimBase):
 # ==========================================
 
 class InterimReviewBase(SQLModel):
-    install_id: int = Field(foreign_key="install.id", index=True)
-    monitor_id: Optional[int] = Field(default=None, foreign_key="monitor.id")
+    install_id: int = Field(foreign_key="fsm_install.id", index=True)
     install_type: str = "Flow Monitor"
     
     # Stage 1: Data Import
@@ -106,10 +106,10 @@ class InterimReviewBase(SQLModel):
 
 
 class InterimReview(InterimReviewBase, table=True):
-    __tablename__ = "interimreview"
+    __tablename__ = "fsm_interimreview"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    interim_id: int = Field(foreign_key="interim.id", index=True)
+    interim_id: int = Field(foreign_key="fsm_interim.id", index=True)
     
     # Relationships
     interim: Optional[Interim] = Relationship(back_populates="reviews")
@@ -155,10 +155,10 @@ class ReviewAnnotationBase(SQLModel):
 
 
 class ReviewAnnotation(ReviewAnnotationBase, table=True):
-    __tablename__ = "reviewannotation"
+    __tablename__ = "fsm_reviewannotation"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    interim_review_id: int = Field(foreign_key="interimreview.id", index=True)
+    interim_review_id: int = Field(foreign_key="fsm_interimreview.id", index=True)
     created_by: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     
@@ -193,10 +193,10 @@ class DailyClassificationBase(SQLModel):
 
 
 class DailyClassification(DailyClassificationBase, table=True):
-    __tablename__ = "dailyclassification"
+    __tablename__ = "fsm_dailyclassification"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    interim_review_id: int = Field(foreign_key="interimreview.id", index=True)
+    interim_review_id: int = Field(foreign_key="fsm_interimreview.id", index=True)
     
     # Relationship
     interim_review: Optional[InterimReview] = Relationship(back_populates="classifications")

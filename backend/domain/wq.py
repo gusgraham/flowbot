@@ -12,15 +12,16 @@ class WaterQualityProjectBase(SQLModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 class WQProjectCollaborator(SQLModel, table=True):
+    __tablename__ = "wq_projectcollaborator"
     """Link table for Water Quality project collaborators (many-to-many)"""
-    project_id: int = Field(foreign_key="waterqualityproject.id", primary_key=True)
-    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    project_id: int = Field(foreign_key="wq_project.id", primary_key=True)
+    user_id: int = Field(foreign_key="auth_user.id", primary_key=True)
 
 class WaterQualityProject(WaterQualityProjectBase, table=True):
-    __tablename__ = "waterqualityproject"
+    __tablename__ = "wq_project"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    owner_id: Optional[int] = Field(default=None, foreign_key="auth_user.id")
     
     # Relationships
     collaborators: List["User"] = Relationship(link_model=WQProjectCollaborator)
@@ -45,7 +46,7 @@ class WaterQualityProjectRead(WaterQualityProjectCreate):
 
 class WaterQualityDatasetBase(SQLModel):
     name: str
-    project_id: int = Field(foreign_key="waterqualityproject.id")
+    project_id: int = Field(foreign_key="wq_project.id")
     file_path: str
     original_filename: str
     upload_date: datetime = Field(default_factory=datetime.now)
@@ -53,7 +54,7 @@ class WaterQualityDatasetBase(SQLModel):
     metadata_json: Optional[Dict[str, Any]] = Field(default_factory=dict, sa_column=Column(JSON))
 
 class WaterQualityDataset(WaterQualityDatasetBase, table=True):
-    __tablename__ = "waterqualitydataset"
+    __tablename__ = "wq_dataset"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     project: Optional[WaterQualityProject] = Relationship(back_populates="datasets")
@@ -71,14 +72,14 @@ class WaterQualityDatasetRead(WaterQualityDatasetBase):
 # ==========================================
 
 class WQMonitorBase(SQLModel):
-    project_id: int = Field(foreign_key="waterqualityproject.id")
+    project_id: int = Field(foreign_key="wq_project.id")
     name: str
     description: Optional[str] = None
     location_x: Optional[float] = None
     location_y: Optional[float] = None
 
 class WQMonitor(WQMonitorBase, table=True):
-    __tablename__ = "wqmonitor"
+    __tablename__ = "wq_monitor"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     project: Optional[WaterQualityProject] = Relationship(back_populates="monitors")
@@ -95,8 +96,8 @@ class WQMonitorRead(WQMonitorBase):
 # ==========================================
 
 class WQTimeSeriesBase(SQLModel):
-    monitor_id: int = Field(foreign_key="wqmonitor.id")
-    dataset_id: int = Field(foreign_key="waterqualitydataset.id")
+    monitor_id: int = Field(foreign_key="wq_monitor.id")
+    dataset_id: int = Field(foreign_key="wq_dataset.id")
     variable: str # pH, DO, Temp, etc.
     unit: Optional[str] = None
     start_time: datetime
@@ -104,7 +105,7 @@ class WQTimeSeriesBase(SQLModel):
     filename: str # Parquet file path
 
 class WQTimeSeries(WQTimeSeriesBase, table=True):
-    __tablename__ = "wqtimeseries"
+    __tablename__ = "wq_timeseries"
     id: Optional[int] = Field(default=None, primary_key=True)
     
     monitor: Optional[WQMonitor] = Relationship(back_populates="timeseries")

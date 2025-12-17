@@ -4,7 +4,7 @@ Verification Module Domain Models
 This module contains all SQLModel definitions for the verification workflow,
 including events, trace sets, monitor traces, verification runs, and metrics.
 """
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship, JSON
 from sqlalchemy import Column, Integer, ForeignKey
@@ -47,6 +47,12 @@ class SeriesType(str, Enum):
     PRED_DEPTH = "pred_depth"
     OBS_VELOCITY = "obs_velocity"
     PRED_VELOCITY = "pred_velocity"
+    # Dry day reference lines
+    DRYDAY_FLOW = "dryday_flow"  # Raw flow data for full period
+    DRYDAY_RAINFALL = "dryday_rainfall"  # Rainfall data for full period
+    DRYDAY_MIN_FLOW = "dryday_min_flow"
+    DRYDAY_MAX_FLOW = "dryday_max_flow"
+    DRYDAY_MEAN_FLOW = "dryday_mean_flow"
 
 
 # ============================================
@@ -62,10 +68,10 @@ class VerificationEventBase(SQLModel):
 
 
 class VerificationEvent(VerificationEventBase, table=True):
-    __tablename__ = "verificationevent"
+    __tablename__ = "ver_event"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="verificationproject.id", index=True)
+    project_id: int = Field(foreign_key="ver_project.id", index=True)
     created_at: datetime = Field(default_factory=datetime.now)
     
     # Relationships
@@ -98,10 +104,10 @@ class VerificationFlowMonitorBase(SQLModel):
 
 
 class VerificationFlowMonitor(VerificationFlowMonitorBase, table=True):
-    __tablename__ = "verificationflowmonitor"
+    __tablename__ = "ver_flowmonitor"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="verificationproject.id", index=True)
+    project_id: int = Field(foreign_key="ver_project.id", index=True)
     created_at: datetime = Field(default_factory=datetime.now)
     
     # Relationships
@@ -138,10 +144,10 @@ class TraceSetBase(SQLModel):
 
 
 class TraceSet(TraceSetBase, table=True):
-    __tablename__ = "traceset"
+    __tablename__ = "ver_traceset"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    event_id: int = Field(foreign_key="verificationevent.id", index=True)
+    event_id: int = Field(foreign_key="ver_event.id", index=True)
     imported_at: datetime = Field(default_factory=datetime.now)
     
     # Relationships
@@ -172,11 +178,11 @@ class MonitorTraceVersionBase(SQLModel):
 
 
 class MonitorTraceVersion(MonitorTraceVersionBase, table=True):
-    __tablename__ = "monitortraceversion"
+    __tablename__ = "ver_monitortraceversion"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    trace_set_id: int = Field(foreign_key="traceset.id", index=True)
-    monitor_id: int = Field(foreign_key="verificationflowmonitor.id", index=True)
+    trace_set_id: int = Field(foreign_key="ver_traceset.id", index=True)
+    monitor_id: int = Field(foreign_key="ver_flowmonitor.id", index=True)
     
     # Relationships
     trace_set: Optional[TraceSet] = Relationship(back_populates="monitor_traces")
@@ -204,10 +210,10 @@ class VerificationTimeSeriesBase(SQLModel):
 
 
 class VerificationTimeSeries(VerificationTimeSeriesBase, table=True):
-    __tablename__ = "verificationtimeseries"
+    __tablename__ = "ver_timeseries"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    monitor_trace_id: int = Field(foreign_key="monitortraceversion.id", index=True)
+    monitor_trace_id: int = Field(foreign_key="ver_monitortraceversion.id", index=True)
     
     # Relationships
     monitor_trace: Optional[MonitorTraceVersion] = Relationship(back_populates="time_series")
@@ -245,10 +251,10 @@ class ToleranceSetBase(SQLModel):
 
 
 class ToleranceSet(ToleranceSetBase, table=True):
-    __tablename__ = "toleranceset"
+    __tablename__ = "ver_toleranceset"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="verificationproject.id", index=True)
+    project_id: int = Field(foreign_key="ver_project.id", index=True)
     created_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -312,11 +318,11 @@ class VerificationRunBase(SQLModel):
 
 
 class VerificationRun(VerificationRunBase, table=True):
-    __tablename__ = "verificationrun"
+    __tablename__ = "ver_run"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    monitor_trace_id: int = Field(foreign_key="monitortraceversion.id", index=True)
-    tolerance_set_id: Optional[int] = Field(default=None, foreign_key="toleranceset.id")
+    monitor_trace_id: int = Field(foreign_key="ver_monitortraceversion.id", index=True)
+    tolerance_set_id: Optional[int] = Field(default=None, foreign_key="ver_toleranceset.id")
     created_at: datetime = Field(default_factory=datetime.now)
     finalized_at: Optional[datetime] = None
     
@@ -356,10 +362,10 @@ class VerificationMetricBase(SQLModel):
 
 
 class VerificationMetric(VerificationMetricBase, table=True):
-    __tablename__ = "verificationmetric"
+    __tablename__ = "ver_metric"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    run_id: int = Field(sa_column=Column(Integer, ForeignKey("verificationrun.id", ondelete="CASCADE"), index=True))
+    run_id: int = Field(sa_column=Column(Integer, ForeignKey("ver_run.id", ondelete="CASCADE"), index=True))
     
     # Relationships
     run: Optional[VerificationRun] = Relationship(back_populates="metrics")
@@ -382,10 +388,10 @@ class ManualAdjustmentBase(SQLModel):
 
 
 class ManualAdjustment(ManualAdjustmentBase, table=True):
-    __tablename__ = "manualadjustment"
+    __tablename__ = "ver_manualadjustment"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    run_id: int = Field(sa_column=Column(Integer, ForeignKey("verificationrun.id", ondelete="CASCADE"), index=True))
+    run_id: int = Field(sa_column=Column(Integer, ForeignKey("ver_run.id", ondelete="CASCADE"), index=True))
     created_at: datetime = Field(default_factory=datetime.now)
     
     # Relationships
@@ -403,3 +409,149 @@ class ManualAdjustmentRead(ManualAdjustmentBase):
     id: int
     run_id: int
     created_at: datetime
+
+
+# ============================================
+# FULL PERIOD IMPORT (for Dry Day Analysis)
+# ============================================
+
+class VerificationFullPeriodImportBase(SQLModel):
+    name: str = Field(index=True)
+    source_file: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    has_flow: bool = Field(default=False)
+    has_depth: bool = Field(default=False)
+    has_velocity: bool = Field(default=False)
+    has_rainfall: bool = Field(default=False)
+    timestep_minutes: int = Field(default=5)
+    # Detection thresholds (adjustable)
+    day_rainfall_threshold_mm: float = Field(default=0.0)  # Strictly 0mm default
+    antecedent_threshold_mm: float = Field(default=1.0)    # Previous day < 1mm
+
+
+class VerificationFullPeriodImport(VerificationFullPeriodImportBase, table=True):
+    __tablename__ = "ver_fullperiodimport"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="ver_project.id", index=True)
+    imported_at: datetime = Field(default_factory=datetime.now)
+    
+    # Relationships
+    fp_monitors: List["VerificationFullPeriodMonitor"] = Relationship(back_populates="full_period_import")
+
+
+class VerificationFullPeriodImportCreate(SQLModel):
+    name: str
+    source_file: Optional[str] = None
+    day_rainfall_threshold_mm: float = 0.0
+    antecedent_threshold_mm: float = 1.0
+
+
+class VerificationFullPeriodImportRead(VerificationFullPeriodImportBase):
+    id: int
+    project_id: int
+    imported_at: datetime
+
+
+class VerificationFullPeriodImportUpdate(SQLModel):
+    name: Optional[str] = None
+    day_rainfall_threshold_mm: Optional[float] = None
+    antecedent_threshold_mm: Optional[float] = None
+
+
+# ============================================
+# FULL PERIOD MONITOR (per-monitor data in FP import)
+# ============================================
+
+class VerificationFullPeriodMonitorBase(SQLModel):
+    """Links a monitor to a full-period import with parquet file paths."""
+    # Parquet file paths (stored in project subfolder)
+    # Path format: data/verification/project_{pid}/fullperiod_{import_id}/monitor_{mid}_{type}.parquet
+    flow_parquet_path: Optional[str] = None
+    depth_parquet_path: Optional[str] = None
+    velocity_parquet_path: Optional[str] = None
+    rainfall_parquet_path: Optional[str] = None  # Rainfall is per-monitor
+
+
+class VerificationFullPeriodMonitor(VerificationFullPeriodMonitorBase, table=True):
+    __tablename__ = "ver_fullperiodmonitor"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    import_id: int = Field(foreign_key="ver_fullperiodimport.id", index=True)
+    monitor_id: int = Field(foreign_key="ver_flowmonitor.id", index=True)
+    
+    # Relationships
+    full_period_import: Optional[VerificationFullPeriodImport] = Relationship(back_populates="fp_monitors")
+    monitor: Optional["VerificationFlowMonitor"] = Relationship()
+    dry_days: List["VerificationDryDay"] = Relationship(back_populates="fp_monitor")
+    dwf_profiles: List["VerificationDWFProfile"] = Relationship(back_populates="fp_monitor")
+
+
+class VerificationFullPeriodMonitorRead(VerificationFullPeriodMonitorBase):
+    id: int
+    import_id: int
+    monitor_id: int
+    monitor_name: Optional[str] = None  # Populated from join
+
+
+# ============================================
+# DRY DAY (detected from full period data, per-monitor)
+# ============================================
+
+class VerificationDryDayBase(SQLModel):
+    date: datetime  # The calendar day (stored as datetime at 00:00:00)
+    antecedent_rainfall_mm: float  # Total rainfall on previous calendar day
+    day_rainfall_mm: float  # Total rainfall on this day
+    is_included: bool = Field(default=True)  # User can exclude
+    notes: Optional[str] = None
+
+
+class VerificationDryDay(VerificationDryDayBase, table=True):
+    __tablename__ = "ver_dryday"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    fp_monitor_id: int = Field(foreign_key="ver_fullperiodmonitor.id", index=True)
+    
+    # Relationships
+    fp_monitor: Optional[VerificationFullPeriodMonitor] = Relationship(back_populates="dry_days")
+
+
+class VerificationDryDayRead(VerificationDryDayBase):
+    id: int
+    fp_monitor_id: int
+
+
+class VerificationDryDayUpdate(SQLModel):
+    is_included: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+class VerificationDryDayUpdate(SQLModel):
+    is_included: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+# ============================================
+# DWF PROFILE (Persistence for Min/Max/Mean)
+# ============================================
+
+class VerificationDWFProfile(SQLModel, table=True):
+    __tablename__ = "ver_dwfprofile"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    fp_monitor_id: int = Field(foreign_key="ver_fullperiodmonitor.id", index=True)
+    
+    # 'all', 'weekday', 'weekend'
+    profile_type: str = Field(index=True)
+    
+    # 'flow', 'depth', 'velocity'
+    series_type: str = Field(index=True)
+    
+    # JSON content: { "minutes": [...], "min": [...], "max": [...], "mean": [...] }
+    data: Dict = Field(default={}, sa_column=Column(JSON))
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    fp_monitor: Optional[VerificationFullPeriodMonitor] = Relationship(back_populates="dwf_profiles")

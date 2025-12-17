@@ -156,7 +156,6 @@ flowbot_qgis_bundle_env
 flowbot_qgis_bundle_env.tar.gz
 
 # User requested ignores
-_TestData/
 backend/data/
 data/
 

@@ -305,41 +305,159 @@ class ICMTraceParser:
         return headers
     
     def _identify_observed_columns(self, headers: List[str]) -> Dict[str, int]:
-        """Identify column indices for observed data."""
+        """
+        Identify column indices for observed data.
+        
+        Key insight: Different data columns may have their own Date/Time pairs.
+        Each Date/Time pair applies to subsequent data columns until the next Date/Time pair.
+        For example:
+        - Date, Time, Rainfall (timebase 1)
+        - Date, Time, Obs Velocity, Obs Flow, Obs Depth (timebase 2)
+        """
         cols = {}
-        for i, h in enumerate(headers):
-            h_lower = h.lower()
-            if 'observed' in h_lower:
-                if 'rainfall' in h_lower:
-                    cols['rainfall'] = i
-                elif 'velocity' in h_lower:
-                    cols['velocity'] = i
-                elif 'flow' in h_lower:
-                    cols['flow'] = i
-                elif 'depth' in h_lower:
-                    cols['depth'] = i
-            elif h_lower == 'date':
-                cols['date'] = i
-            elif h_lower == 'time':
-                cols['time'] = i
+        column_groups = self._identify_column_groups(headers)
+        
+        # Find which group contains each data type and store both the data column
+        # and its associated date/time columns
+        for group in column_groups:
+            for data_col in group.get('data_cols', []):
+                col_type = data_col['type']
+                col_idx = data_col['index']
+                
+                if col_type == 'rainfall' and 'rainfall' not in cols:
+                    cols['rainfall'] = col_idx
+                    cols['rainfall_date'] = group['date_col']
+                    cols['rainfall_time'] = group['time_col']
+                elif col_type == 'obs_velocity' and 'velocity' not in cols:
+                    cols['velocity'] = col_idx
+                    cols['date'] = group['date_col']  # Primary date/time for FDV
+                    cols['time'] = group['time_col']
+                elif col_type == 'obs_flow' and 'flow' not in cols:
+                    cols['flow'] = col_idx
+                    if 'date' not in cols:
+                        cols['date'] = group['date_col']
+                        cols['time'] = group['time_col']
+                elif col_type == 'obs_depth' and 'depth' not in cols:
+                    cols['depth'] = col_idx
+                    if 'date' not in cols:
+                        cols['date'] = group['date_col']
+                        cols['time'] = group['time_col']
+        
+        # Fallback: if no date/time found via groups, try simple detection
+        if 'date' not in cols:
+            for i, h in enumerate(headers):
+                h_lower = h.lower().strip()
+                if h_lower == 'date':
+                    cols['date'] = i
+                    if i + 1 < len(headers) and headers[i + 1].lower().strip() == 'time':
+                        cols['time'] = i + 1
+                    break
+        
         return cols
     
+    def _identify_column_groups(self, headers: List[str]) -> List[Dict]:
+        """
+        Identify Date/Time column pairs and which data columns they apply to.
+        
+        Each Date/Time pair applies to subsequent columns until the next Date/Time pair.
+        """
+        groups = []
+        current_group = None
+        
+        for i, header in enumerate(headers):
+            header_lower = header.lower().strip()
+            
+            if header_lower == 'date':
+                # Start new group - look for Time in next column
+                if i + 1 < len(headers) and headers[i + 1].lower().strip() == 'time':
+                    if current_group and current_group.get('data_cols'):
+                        groups.append(current_group)
+                    current_group = {
+                        'date_col': i,
+                        'time_col': i + 1,
+                        'data_cols': []
+                    }
+            elif header_lower == 'time':
+                # Skip - already handled with Date
+                continue
+            elif current_group is not None:
+                # This is a data column for the current group
+                current_group['data_cols'].append({
+                    'index': i,
+                    'name': header,
+                    'type': self._classify_column(header)
+                })
+        
+        # Add final group if it has data columns
+        if current_group and current_group.get('data_cols'):
+            groups.append(current_group)
+        
+        return groups
+    
+    def _classify_column(self, header: str) -> str:
+        """Classify a column as flow, depth, velocity, rainfall, or unknown."""
+        header_lower = header.lower()
+        
+        if 'rain' in header_lower:
+            return 'rainfall'
+        elif 'flow' in header_lower:
+            if 'observed' in header_lower:
+                return 'obs_flow'
+            elif 'predicted' in header_lower:
+                return 'pred_flow'
+            else:
+                return 'obs_flow'  # Default to observed
+        elif 'depth' in header_lower:
+            if 'observed' in header_lower:
+                return 'obs_depth'
+            elif 'predicted' in header_lower:
+                return 'pred_depth'
+            else:
+                return 'obs_depth'
+        elif 'velocity' in header_lower:
+            if 'observed' in header_lower:
+                return 'obs_velocity'
+            elif 'predicted' in header_lower:
+                return 'pred_velocity'
+            else:
+                return 'obs_velocity'
+        return 'unknown'
+    
     def _identify_predicted_columns(self, headers: List[str], profile_index: int, num_profiles: int) -> Dict[str, int]:
-        """Identify column indices for predicted data, handling multiple profiles."""
+        """
+        Identify column indices for predicted data, handling multiple profiles.
+        Uses column groups to find the correct Date/Time columns for predicted data.
+        """
         cols = {}
+        column_groups = self._identify_column_groups(headers)
+        
+        # Find predicted columns and their groups
         pred_velocity_indices = []
         pred_flow_indices = []
         pred_depth_indices = []
+        pred_date_col = None
+        pred_time_col = None
         
-        for i, h in enumerate(headers):
-            h_lower = h.lower()
-            if 'predicted' in h_lower:
-                if 'velocity' in h_lower:
-                    pred_velocity_indices.append(i)
-                elif 'flow' in h_lower:
-                    pred_flow_indices.append(i)
-                elif 'depth' in h_lower:
-                    pred_depth_indices.append(i)
+        for group in column_groups:
+            for data_col in group.get('data_cols', []):
+                col_type = data_col['type']
+                col_idx = data_col['index']
+                
+                if col_type == 'pred_velocity':
+                    pred_velocity_indices.append(col_idx)
+                    if pred_date_col is None:
+                        pred_date_col = group['date_col']
+                        pred_time_col = group['time_col']
+                elif col_type == 'pred_flow':
+                    pred_flow_indices.append(col_idx)
+                    if pred_date_col is None:
+                        pred_date_col = group['date_col']
+                        pred_time_col = group['time_col']
+                elif col_type == 'pred_depth':
+                    pred_depth_indices.append(col_idx)
+                    if pred_date_col is None:
+                        pred_date_col = group['date_col']
+                        pred_time_col = group['time_col']
         
         # Select the appropriate profile index
         if pred_velocity_indices and profile_index < len(pred_velocity_indices):
@@ -356,6 +474,11 @@ class ICMTraceParser:
             cols['depth'] = pred_depth_indices[profile_index]
         elif pred_depth_indices:
             cols['depth'] = pred_depth_indices[0]
+        
+        # Store predicted date/time columns
+        if pred_date_col is not None:
+            cols['date'] = pred_date_col
+            cols['time'] = pred_time_col
         
         return cols
     

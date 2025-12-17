@@ -4,19 +4,20 @@ from sqlmodel import SQLModel, Field, Relationship, JSON
 
 # Base Project Model
 class SSDProjectCollaborator(SQLModel, table=True):
+    __tablename__ = "ssd_projectcollaborator"
     """Link table for SSD project collaborators (many-to-many)"""
-    project_id: int = Field(foreign_key="ssdproject.id", primary_key=True)
-    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    project_id: int = Field(foreign_key="ssd_project.id", primary_key=True)
+    user_id: int = Field(foreign_key="auth_user.id", primary_key=True)
 
 class SSDProject(SQLModel, table=True):
-    __tablename__ = "ssdproject"
+    __tablename__ = "ssd_project"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     client: str
     job_number: str
     description: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
-    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    owner_id: Optional[int] = Field(default=None, foreign_key="auth_user.id")
     # Date format for CSV parsing (e.g., '%d/%m/%Y %H:%M:%S')
     # None means auto-detect
     date_format: Optional[str] = None
@@ -49,9 +50,9 @@ class SSDProjectUpdate(SQLModel):
 
 # Dataset Model (stores file paths)
 class SSDDataset(SQLModel, table=True):
-    __tablename__ = "ssddataset"
+    __tablename__ = "ssd_dataset"
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="ssdproject.id")
+    project_id: int = Field(foreign_key="ssd_project.id")
     file_type: str = "csv" # csv, etc
     flow_file_path: Optional[str] = None
     depth_file_path: Optional[str] = None
@@ -62,10 +63,10 @@ class SSDDataset(SQLModel, table=True):
 
 # Result Model - stores analysis results per scenario
 class SSDResult(SQLModel, table=True):
-    __tablename__ = "ssdresult"
+    __tablename__ = "ssd_result"
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="ssdproject.id", index=True)
-    scenario_id: int = Field(foreign_key="analysisscenario.id", index=True)
+    project_id: int = Field(foreign_key="ssd_project.id", index=True)
+    scenario_id: int = Field(foreign_key="ssd_analysisscenario.id", index=True)
     analysis_date: datetime = Field(default_factory=datetime.now)
     
     # Scenario identifiers (snapshot at time of analysis)
@@ -153,9 +154,9 @@ class SSDResultRead(SQLModel):
 
 # CSO Asset Model - defines which links represent a CSO
 class CSOAsset(SQLModel, table=True):
-    __tablename__ = "csoasset"
+    __tablename__ = "ssd_csoasset"
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="ssdproject.id", index=True)
+    project_id: int = Field(foreign_key="ssd_project.id", index=True)
     name: str = Field(index=True)  # Unique CSO identifier
     overflow_links: List[str] = Field(default=[], sa_type=JSON)  # Link names for overflow
     continuation_link: str  # Downstream continuation link
@@ -193,9 +194,9 @@ class CSOAssetUpdate(SQLModel):
 
 # Analysis Configuration Model - reusable analysis settings
 class AnalysisConfig(SQLModel, table=True):
-    __tablename__ = "analysisconfig"
+    __tablename__ = "ssd_analysisconfig"
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="ssdproject.id", index=True)
+    project_id: int = Field(foreign_key="ssd_project.id", index=True)
     name: str = Field(index=True)  # Configuration name
     mode: str  # "Default Mode", "Catchment Based Mode", "WWTW Mode"
     model: int  # 1=Spill Target, 2=Storage Volume, 3=Yorkshire Water, 4=Bathing Season
@@ -257,12 +258,12 @@ class AnalysisConfigUpdate(SQLModel):
 
 # Analysis Scenario Model - specific what-if cases to run
 class AnalysisScenario(SQLModel, table=True):
-    __tablename__ = "analysisscenario"
+    __tablename__ = "ssd_analysisscenario"
     id: Optional[int] = Field(default=None, primary_key=True)
-    project_id: int = Field(foreign_key="ssdproject.id", index=True)
+    project_id: int = Field(foreign_key="ssd_project.id", index=True)
     scenario_name: str = Field(index=True)  # Unique identifier
-    cso_asset_id: int = Field(foreign_key="csoasset.id", index=True)  # Links to CSOAsset
-    config_id: int = Field(foreign_key="analysisconfig.id", index=True)  # Links to AnalysisConfig
+    cso_asset_id: int = Field(foreign_key="ssd_csoasset.id", index=True)  # Links to CSOAsset
+    config_id: int = Field(foreign_key="ssd_analysisconfig.id", index=True)  # Links to AnalysisConfig
     
     # Intervention parameters
     pff_increase: float = 0.0  # Pass forward flow increase (m³/s)

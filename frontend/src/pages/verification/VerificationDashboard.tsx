@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Pencil, Calendar, MapPin, Grid3X3 } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil, Calendar, MapPin, Grid3X3, Sun } from 'lucide-react';
 import { useVerificationProject } from '../../api/hooks';
 import EventsTab from './verification/EventsTab';
 import MonitorsTab from './verification/MonitorsTab';
 import ReviewTab from './verification/ReviewTab';
+import DryDayTab from './verification/DryDayTab';
 
 // Type definitions
-type TabId = 'events' | 'monitors' | 'review';
+type TabId = 'events' | 'monitors' | 'drydays' | 'review';
 
 const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
     { id: 'events', label: 'Events & Import', icon: Calendar },
     { id: 'monitors', label: 'Monitors', icon: MapPin },
+    { id: 'drydays', label: 'Dry Day Analysis', icon: Sun },
     { id: 'review', label: 'Verification Review', icon: Grid3X3 },
 ];
 
@@ -111,6 +113,16 @@ const VerificationDashboard: React.FC = () => {
                             Configure flow monitors for verification. Set critical/surcharged flags for tolerance adjustments.
                         </p>
                         <MonitorsTab projectId={numericProjectId} />
+                    </div>
+                )}
+
+                {activeTab === 'drydays' && (
+                    <div className="p-6">
+                        <h2 className="text-xl font-bold text-gray-900 mb-2">Dry Day Analysis</h2>
+                        <p className="text-gray-500 mb-6">
+                            Import full-period observed data, detect dry days, and analyze 24-hour flow patterns.
+                        </p>
+                        <DryDayTab projectId={numericProjectId} />
                     </div>
                 )}
 
