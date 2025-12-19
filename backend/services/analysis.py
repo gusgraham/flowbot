@@ -1020,23 +1020,15 @@ def detect_rainfall_events(
     data: pd.DataFrame,
     timestamp_col: str = 'timestamp',
     intensity_col: str = 'value',
-    min_intensity: float = 0.5,
-    min_duration_hours: float = 0.5,
-    preceding_dry_hours: float = 6.0
+    inter_event_minutes: int = 10,
+    min_total_mm: float = 2.0,
+    min_intensity: float = 0.0,
+    min_intensity_duration: int = 0,
+    partial_percent: float = 20.0,
+    use_consecutive_intensities: bool = True
 ) -> List[Dict[str, Any]]:
     """
-    Detect rainfall events from a DataFrame.
-    
-    Args:
-        data: DataFrame with timestamp and intensity columns
-        timestamp_col: Name of timestamp column
-        intensity_col: Name of intensity column
-        min_intensity: Minimum intensity threshold (mm/hr)
-        min_duration_hours: Minimum event duration (hours)
-        preceding_dry_hours: Required dry period before event (hours)
-    
-    Returns:
-        List of detected events with start_time, end_time, event_type, etc.
+    Detect rainfall events from a DataFrame using FSA logic (IET).
     """
     if data.empty:
         return []
@@ -1050,7 +1042,7 @@ def detect_rainfall_events(
     
     if rain.size == 0:
         return []
-    
+        
     # Calculate time step in minutes
     if len(times) > 1:
         diffs = np.diff(times).astype('timedelta64[m]').astype(int)
@@ -1058,29 +1050,30 @@ def detect_rainfall_events(
         if valid_diffs.size > 0:
             time_step_min = int(np.bincount(valid_diffs).argmax())
         else:
-            time_step_min = 15  # Default
+            time_step_min = 1
     else:
-        time_step_min = 15
-    
-    # Calculate consecutive zeros needed for event separation
-    inter_event_minutes = int(preceding_dry_hours * 60)
+        time_step_min = 1
+        
+    # Calculate consecZero based on inter_event_minutes
     consec_zero = max(1, int(inter_event_minutes / time_step_min))
     
-    # Find separators (runs of zeros)
-    is_below = rain < min_intensity
+    # Identify separators (runs of zeros)
+    # Standard logic: a separator is a run of zeros >= consec_zero
     
     if consec_zero <= 0:
         seps = np.empty(0, dtype=np.int64)
     elif consec_zero == 1:
-        seps = np.where(is_below)[0]
+        # Any zero is a separator
+        seps = np.where(rain == 0)[0]
     else:
+        is_zero = (rain == 0)
         if len(rain) < consec_zero:
             seps = np.empty(0, dtype=np.int64)
         else:
             from numpy.lib.stride_tricks import sliding_window_view
-            w = sliding_window_view(is_below, consec_zero).all(axis=1)
+            w = sliding_window_view(is_zero, consec_zero).all(axis=1)
             seps = np.where(w)[0] + (consec_zero - 1)
-    
+            
     # Create event boundaries
     if len(seps) > 0:
         starts = np.r_[0, seps + 1]
@@ -1090,48 +1083,90 @@ def detect_rainfall_events(
     else:
         starts = np.array([0])
         ends = np.array([len(rain) - 1])
+        
+    # Analysis Parameters
+    d_min = ((100 - partial_percent) / 100.0) * min_total_mm
+    i_min = int(round(((100 - partial_percent) / 100.0) * min_intensity_duration))
+    k = max(1, int(round(min_intensity_duration / max(1, time_step_min))))
     
     events = []
-    min_duration_readings = int(min_duration_hours * 60 / time_step_min)
     
     for s, e in zip(starts, ends):
-        s = max(0, min(s, len(rain) - 1))
-        e = max(0, min(e, len(rain) - 1))
+        s = max(0, min(s, len(rain)-1))
+        e = max(0, min(e, len(rain)-1))
         
         r = rain[s:e + 1]
-        if r.size == 0:
+        # Skip empty or all-zero blocks
+        if r.size == 0 or float(r.max(initial=0.0)) == 0.0:
             continue
+            
+        # Depth over the whole block
+        depth = float((r * (time_step_min / 60.0)).sum())
         
-        # Check if this is a real event (above threshold)
-        above = r >= min_intensity
+        # Intensity Tests
+        above = (r > min_intensity)
         
-        # Duration of above-threshold readings
-        duration_readings = above.sum()
+        if use_consecutive_intensities:
+            if k <= r.size:
+                from numpy.lib.stride_tricks import sliding_window_view
+                w = sliding_window_view(above, k)
+                has_consec = bool(w.all(axis=1).any())
+            else:
+                has_consec = False
+            
+            intensity_count = min_intensity_duration if has_consec else 0
+            total_minutes_above = int(above.sum() * time_step_min)
+        else:
+            total_minutes_above = int(above.sum() * time_step_min)
+            intensity_count = min_intensity_duration if total_minutes_above >= min_intensity_duration else 0
+            
+        # Classification
+        event_type = "No Event"
         
-        # Total rainfall depth
-        total_mm = float((r * (time_step_min / 60.0)).sum())
-        max_intensity = float(r.max())
+        # Full event condition
+        if depth > min_total_mm and intensity_count >= min_intensity_duration:
+            event_type = "Storm"
         
+        # We can implement Partial logic if needed, but FSM mainly cares about Storms
+        # For alignment, let's allow partials to be returned as "Storm" if FSM doesn't distinguish?
+        # Actually EventService returns 'status' and 'passed'. FSM expects 'event_type'.
+        
+        # If it doesn't meet full criteria, check partial (optional, based on requirement)
+        # For now, let's keep it simple: if it meets min_total_mm, we consider it a candidate
+        
+        # FSA Logic for Partial:
+        cond1 = (d_min <= depth < min_total_mm) and (intensity_count >= min_intensity_duration)
+        cond2 = (depth >= min_total_mm) and (i_min <= intensity_count < min_intensity_duration)
+        cond3 = False
+        if use_consecutive_intensities:
+            cond3 = (depth > min_total_mm) and (total_minutes_above >= min_intensity_duration)
+            
+        if event_type == "No Event" and (cond1 or cond2 or cond3):
+            # Should we return partials? Let's assume yes but mark as 'Partial Storm'
+            event_type = "Partial Storm"
+            
+        # If it has significant rainfall but not a storm, it's a "No Event" / "Dry Day" candidate or just rain
+        # FSM just wants events.
+        
+        # Only return events that have some significance
+        if event_type == "No Event" and depth < 0.1:
+            continue
+
         start_time = pd.Timestamp(times[s])
         end_time = pd.Timestamp(times[e])
         duration_hours = (end_time - start_time).total_seconds() / 3600
-        
-        # Classify event
-        if duration_readings >= min_duration_readings and max_intensity >= min_intensity:
-            event_type = "Storm"
-        elif total_mm > 0:
-            event_type = "No Event"  # Some rainfall but didn't meet criteria
-        else:
-            continue  # Skip completely dry periods
         
         events.append({
             'start_time': start_time,
             'end_time': end_time,
             'event_type': event_type,
-            'total_rainfall_mm': round(total_mm, 2),
-            'max_intensity_mm_hr': round(max_intensity, 2),
-            'preceding_dry_hours': preceding_dry_hours,
-            'duration_hours': round(duration_hours, 2)
+            'total_rainfall_mm': round(depth, 3),
+            'max_intensity_mm_hr': float(r.max()),
+            'intensity_duration_minutes': total_minutes_above,
+            'preceding_dry_hours': float(inter_event_minutes / 60.0),
+            'duration_hours': round(duration_hours, 2),
+            # FSA specific diagnostics (optional)
+            'intensity_duration_check': intensity_count
         })
     
     return events

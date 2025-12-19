@@ -358,6 +358,7 @@ class FsmEventBase(SQLModel):
     event_type: str = "Storm"  # Storm, No Event, Dry Day
     total_rainfall_mm: Optional[float] = None
     max_intensity_mm_hr: Optional[float] = None
+    intensity_duration_minutes: Optional[int] = None
     preceding_dry_hours: Optional[float] = None
     
     # Review fields
@@ -372,6 +373,7 @@ class FsmEvent(FsmEventBase, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="fsm_project.id", index=True)
+    name: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -379,6 +381,7 @@ class FsmEventCreate(SQLModel):
     project_id: int
     start_time: datetime
     end_time: datetime
+    name: Optional[str] = None
     event_type: str = "Storm"
     total_rainfall_mm: Optional[float] = None
     max_intensity_mm_hr: Optional[float] = None
@@ -386,6 +389,7 @@ class FsmEventCreate(SQLModel):
 
 
 class FsmEventUpdate(SQLModel):
+    name: Optional[str] = None
     event_type: Optional[str] = None
     reviewed: Optional[bool] = None
     review_comment: Optional[str] = None
@@ -396,4 +400,5 @@ class FsmEventUpdate(SQLModel):
 class FsmEventRead(FsmEventBase):
     id: int
     project_id: int
+    name: Optional[str] = None
     created_at: datetime

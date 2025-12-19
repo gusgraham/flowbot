@@ -98,11 +98,19 @@ const InterimReviewPage: React.FC = () => {
 
         switch (activeTab) {
             case 'data_import':
-                return <DataImportTab review={selectedReview} username={username} onRefresh={handleRefresh} />;
+                return <DataImportTab key={selectedReview.id} review={selectedReview} username={username} onRefresh={handleRefresh} />;
             case 'classification':
-                return <ClassificationTab review={selectedReview} username={username} onRefresh={handleRefresh} />;
+                return <ClassificationTab
+                    key={selectedReview.id}
+                    review={selectedReview}
+                    username={username}
+                    onRefresh={handleRefresh}
+                    startDate={interim?.start_date}
+                    endDate={interim?.end_date}
+                />;
             case 'review':
                 return <ProcessedReviewTab
+                    key={selectedReview.id}
                     review={selectedReview}
                     username={username}
                     onRefresh={handleRefresh}
@@ -172,7 +180,7 @@ const InterimReviewPage: React.FC = () => {
                                         <div className="flex items-center justify-between">
                                             <div>
                                                 <p className="font-medium text-gray-900 text-sm">
-                                                    Install {review.install_id}
+                                                    {review.install_name || `Install ${review.install_id}`}
                                                 </p>
                                                 <p className="text-xs text-gray-500">
                                                     {review.install_type}

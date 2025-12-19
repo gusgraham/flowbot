@@ -1159,8 +1159,11 @@ export interface InterimReview {
     id: number;
     interim_id: number;
     install_id: number;
+    install_name?: string;
     monitor_id?: number;
     install_type: string;
+    start_date?: string;
+    end_date?: string;
     // Stage 1
     data_coverage_pct?: number;
     gaps_json?: string;
@@ -1443,11 +1446,13 @@ export const useModelsStatus = () => {
 export interface FsmEvent {
     id: number;
     project_id: number;
+    name?: string;
     start_time: string;
     end_time: string;
     event_type: string;  // "Storm", "No Event", "Dry Day"
     total_rainfall_mm?: number;
     max_intensity_mm_hr?: number;
+    intensity_duration_minutes?: number;
     preceding_dry_hours?: number;
     reviewed: boolean;
     review_comment?: string;
@@ -1474,7 +1479,13 @@ export interface DetectEventsParams {
     projectId: number;
     startDate: string;
     endDate: string;
+    interEventMinutes?: number;
+    minTotalMm?: number;
     minIntensity?: number;
+    minIntensityDuration?: number;
+    partialPercent?: number;
+    useConsecutiveIntensities?: boolean;
+    // Legacy mapping (optional support or remove)
     minDurationHours?: number;
     precedingDryHours?: number;
 }
@@ -1482,12 +1493,31 @@ export interface DetectEventsParams {
 export const useDetectEvents = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ projectId, startDate, endDate, minIntensity, minDurationHours, precedingDryHours }: DetectEventsParams) => {
+        mutationFn: async ({
+            projectId,
+            startDate,
+            endDate,
+            interEventMinutes,
+            minTotalMm,
+            minIntensity,
+            minIntensityDuration,
+            partialPercent,
+            useConsecutiveIntensities,
+            minDurationHours,
+            precedingDryHours
+        }: DetectEventsParams) => {
             const params = new URLSearchParams({
                 start_date: startDate,
                 end_date: endDate,
             });
+            if (interEventMinutes !== undefined) params.append('inter_event_minutes', interEventMinutes.toString());
+            if (minTotalMm !== undefined) params.append('min_total_mm', minTotalMm.toString());
             if (minIntensity !== undefined) params.append('min_intensity', minIntensity.toString());
+            if (minIntensityDuration !== undefined) params.append('min_intensity_duration', minIntensityDuration.toString());
+            if (partialPercent !== undefined) params.append('partial_percent', partialPercent.toString());
+            if (useConsecutiveIntensities !== undefined) params.append('use_consecutive_intensities', useConsecutiveIntensities.toString());
+
+            // Legacy fallbacks if strictly needed, but better to rely on new params
             if (minDurationHours !== undefined) params.append('min_duration_hours', minDurationHours.toString());
             if (precedingDryHours !== undefined) params.append('preceding_dry_hours', precedingDryHours.toString());
 
@@ -1503,7 +1533,7 @@ export const useDetectEvents = () => {
 export const useUpdateEvent = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: async ({ eventId, ...updates }: { eventId: number; reviewed?: boolean; review_comment?: string; event_type?: string }) => {
+        mutationFn: async ({ eventId, ...updates }: { eventId: number; name?: string; reviewed?: boolean; review_comment?: string; event_type?: string }) => {
             const { data } = await api.put<FsmEvent>(`/events/${eventId}`, updates);
             return data;
         },

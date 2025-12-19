@@ -10,7 +10,7 @@ from database import get_session
 from domain.fsm import (
     FsmProjectRead, FsmProjectCreate, FsmProjectUpdate, 
     SiteRead, SiteCreate, 
-    InstallRead, InstallCreate,
+    Install, InstallRead, InstallCreate,
     MonitorRead, MonitorCreate,
     VisitRead, VisitCreate,
     NoteRead, NoteCreate,
@@ -877,18 +877,28 @@ def list_interim_reviews(
     current_user: User = Depends(get_current_active_user)
 ):
     """List all reviews for an interim."""
-    reviews = session.query(InterimReview).filter(
+    results = session.query(InterimReview, Install.install_id).join(
+        Install, InterimReview.install_id == Install.id
+    ).filter(
         InterimReview.interim_id == interim_id
     ).all()
     
+    # Get interim dates
+    interim = session.get(Interim, interim_id)
+    start_date = interim.start_date if interim else None
+    end_date = interim.end_date if interim else None
+    
     result = []
-    for review in reviews:
+    for review, install_name in results:
         review_dict = InterimReviewRead(
             id=review.id,
             interim_id=review.interim_id,
             install_id=review.install_id,
-            monitor_id=review.monitor_id,
+            install_name=install_name,
             install_type=review.install_type,
+            # Dates
+            start_date=start_date,
+            end_date=end_date,
             data_coverage_pct=review.data_coverage_pct,
             gaps_json=review.gaps_json,
             data_import_acknowledged=review.data_import_acknowledged,
@@ -921,15 +931,22 @@ def get_interim_review(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get an interim review by ID."""
-    review = session.get(InterimReview, review_id)
-    if not review:
+    result = session.query(InterimReview, Install.install_id).join(
+        Install, InterimReview.install_id == Install.id
+    ).filter(
+        InterimReview.id == review_id
+    ).first()
+    
+    if not result:
         raise HTTPException(status_code=404, detail="Review not found")
+        
+    review, install_name = result
     
     return InterimReviewRead(
         id=review.id,
         interim_id=review.interim_id,
         install_id=review.install_id,
-        monitor_id=review.monitor_id,
+        install_name=install_name,
         install_type=review.install_type,
         data_coverage_pct=review.data_coverage_pct,
         gaps_json=review.gaps_json,
@@ -1355,9 +1372,12 @@ def detect_project_events(
     project_id: int,
     start_date: datetime = Query(...),
     end_date: Optional[datetime] = Query(None),
-    min_intensity: float = Query(default=0.5, description="Minimum intensity threshold (mm/hr)"),
-    min_duration_hours: float = Query(default=0.5, description="Minimum event duration (hours)"),
-    preceding_dry_hours: float = Query(default=6.0, description="Required dry period before event"),
+    inter_event_minutes: int = Query(default=10, description="Inter-event time (minutes)"),
+    min_total_mm: float = Query(default=2.0, description="Minimum total rainfall (mm)"),
+    min_intensity: float = Query(default=0.0, description="Minimum intensity threshold (mm/hr)"),
+    min_intensity_duration: int = Query(default=0, description="Minimum intensity duration (minutes)"),
+    partial_percent: float = Query(default=20.0, description="Partial event percentage threshold"),
+    use_consecutive_intensities: bool = Query(default=True, description="Use consecutive intensities check"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1441,18 +1461,24 @@ def detect_project_events(
             data=combined,
             timestamp_col='timestamp',
             intensity_col=intensity_col,
+            inter_event_minutes=inter_event_minutes,
+            min_total_mm=min_total_mm,
             min_intensity=min_intensity,
-            min_duration_hours=min_duration_hours,
-            preceding_dry_hours=preceding_dry_hours
+            min_intensity_duration=min_intensity_duration,
+            partial_percent=partial_percent,
+            use_consecutive_intensities=use_consecutive_intensities
         )
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Event detection failed: {str(e)}")
     
-    # Delete existing events for this project in this date range
+    # Delete existing UNREVIEWED events for this project in this date range (or overlapping)
+    # We want to replace un-actioned candidates with new ones.
+    # Keep reviewed events.
     session.query(FsmEvent).filter(
         FsmEvent.project_id == project_id,
+        FsmEvent.reviewed == False, # Only delete unreviewed
         FsmEvent.start_time >= start_date,
         FsmEvent.end_time <= end_date
     ).delete()
@@ -1460,6 +1486,15 @@ def detect_project_events(
     # Save detected events
     created_events = []
     for event in events:
+        # Filter out non-events
+        if event.get('event_type') == 'No Event':
+            continue
+
+        # Check if an overlapping REVIEWED event exists?
+        # For now, let's just save the candidates. Users can decide to keep/delete.
+        # Ideally, we should not create a candidate if it overlaps a saved event to avoid noise,
+        # but the user might want to compare.
+        
         db_event = FsmEvent(
             project_id=project_id,
             start_time=event['start_time'],
@@ -1467,7 +1502,11 @@ def detect_project_events(
             event_type=event.get('event_type', 'Storm'),
             total_rainfall_mm=event.get('total_rainfall_mm'),
             max_intensity_mm_hr=event.get('max_intensity_mm_hr'),
-            preceding_dry_hours=event.get('preceding_dry_hours')
+            preceding_dry_hours=event.get('preceding_dry_hours'),
+            intensity_duration_minutes=event.get('intensity_duration_minutes'),
+            # New field:
+            name=f"C-{event['start_time'].strftime('%Y%m%d-%H%M')}", # Candidate name
+            reviewed=False
         )
         session.add(db_event)
         created_events.append(db_event)

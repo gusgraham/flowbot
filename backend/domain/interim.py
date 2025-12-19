@@ -132,8 +132,12 @@ class InterimReviewCreate(SQLModel):
 
 class InterimReviewRead(InterimReviewBase):
     id: int
-    interim_id: int
+    install_id: int
+    install_name: Optional[str] = None
+    monitor_id: Optional[int] = None
     annotation_count: Optional[int] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
 
 
 class StageSignoff(SQLModel):

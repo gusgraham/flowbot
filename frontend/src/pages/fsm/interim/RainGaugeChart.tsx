@@ -1,15 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-    Legend, ResponsiveContainer, BarChart, Bar, ComposedChart, Area
+    Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+    Line, ComposedChart, ReferenceArea
 } from 'recharts';
-import { Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useInstallTimeseries } from '../../../api/hooks';
 
 interface RainGaugeChartProps {
     installId: number;
     startDate?: string;
     endDate?: string;
+    visibleVariables?: string[];
+    highlightDate?: string | null;
 }
 
 const COLORS = {
@@ -17,7 +19,9 @@ const COLORS = {
     cumulative: '#3B82F6',    // blue
 };
 
-const RainGaugeChart: React.FC<RainGaugeChartProps> = ({ installId, startDate, endDate }) => {
+const RainGaugeChart: React.FC<RainGaugeChartProps> = ({ installId, startDate, endDate, visibleVariables, highlightDate }) => {
+    const defaultHighlightStart = highlightDate ? new Date(highlightDate).getTime() : 0;
+    const defaultHighlightEnd = highlightDate ? new Date(highlightDate).getTime() + 86400000 : 0; // +1 day
     const [showCumulative, setShowCumulative] = useState(true);
 
     const { data, isLoading, error } = useInstallTimeseries(
@@ -138,11 +142,14 @@ const RainGaugeChart: React.FC<RainGaugeChartProps> = ({ installId, startDate, e
                             labelFormatter={(val) => new Date(val).toLocaleString()}
                             contentStyle={{ fontSize: 11 }}
                             formatter={(value: number, name: string) => [
-                                name === 'intensity' ? `${value.toFixed(2)} mm/hr` : `${value.toFixed(1)} mm`,
+                                name === 'intensity' ? `${value.toFixed(2)} mm / hr` : `${value.toFixed(1)} mm`,
                                 name === 'intensity' ? 'Intensity' : 'Cumulative'
                             ]}
                         />
                         <Legend wrapperStyle={{ fontSize: 10 }} />
+                        {highlightDate && (
+                            <ReferenceArea yAxisId="left" x1={defaultHighlightStart} x2={defaultHighlightEnd} fill="#FCD34D" fillOpacity={0.3} />
+                        )}
 
                         <Bar
                             yAxisId="left"
@@ -150,9 +157,10 @@ const RainGaugeChart: React.FC<RainGaugeChartProps> = ({ installId, startDate, e
                             fill={COLORS.intensity}
                             opacity={0.8}
                             name="Intensity (mm/hr)"
+                            hide={visibleVariables && !visibleVariables.includes('Intensity')}
                         />
 
-                        {showCumulative && (
+                        {showCumulative && (!visibleVariables || visibleVariables.includes('Cumulative')) && (
                             <Line
                                 yAxisId="right"
                                 type="monotone"

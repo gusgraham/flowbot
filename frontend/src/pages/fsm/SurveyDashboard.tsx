@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall, useIngestProject, useProcessProject, useProjectInterims, useFsmProjectEvents, useDetectEvents, useUpdateEvent } from '../../api/hooks';
+import { useProject, useSites, useProjectMonitors, useProjectInstalls, useDeleteInstall, useUninstallInstall, useIngestProject, useProcessProject, useProjectInterims, useFsmProjectEvents, useDetectEvents, useUpdateEvent, useDeleteEvent } from '../../api/hooks';
 import { useToast } from '../../contexts/ToastContext';
 import type { Site, Monitor, Install, Interim, FsmEvent } from '../../api/hooks';
 import {
     ArrowLeft, MapPin, Loader2, Plus, Building2, CloudRain,
-    ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive, Play, Calendar, FileText, Pencil
+    ChevronDown, ChevronRight, Activity, Droplets, Trash2, Database, HardDrive, Play, Calendar, FileText, Pencil, Save, X, Settings
 } from 'lucide-react';
 import AddSiteModal from './AddSiteModal';
 import EditProjectModal from './EditProjectModal';
@@ -47,6 +47,17 @@ const SurveyDashboard: React.FC = () => {
     const [editingInterim, setEditingInterim] = useState<Interim | null>(null);
     const [deletingInterimConfirm, setDeletingInterimConfirm] = useState<Interim | null>(null);
 
+    // Event Detection State
+    const [showEventSettings, setShowEventSettings] = useState(false);
+    const [eventParams, setEventParams] = useState({
+        interEventMinutes: 10,
+        minTotalMm: 5.0,
+        minIntensity: 6.0,
+        minIntensityDuration: 4,
+        partialPercent: 20.0,
+        useConsecutiveIntensities: true
+    });
+
     // Group sites by type
     const networkAssets = sites?.filter(s => s.site_type === 'Flow Monitor' || s.site_type === 'Pump Station') || [];
     const locations = sites?.filter(s => s.site_type === 'Rain Gauge') || [];
@@ -64,6 +75,7 @@ const SurveyDashboard: React.FC = () => {
     const { data: events } = useFsmProjectEvents(id);
     const detectEvents = useDetectEvents();
     const updateEvent = useUpdateEvent();
+    const deleteEvent = useDeleteEvent();
     const { showToast } = useToast();
 
     if (projectLoading || sitesLoading) {
@@ -512,78 +524,215 @@ const SurveyDashboard: React.FC = () => {
 
                         {isEventsOpen && (
                             <div className="px-6 pb-6 border-t border-gray-100 pt-4">
-                                <div className="mb-4">
-                                    <p className="text-sm text-gray-600 mb-3">
-                                        Detect and review rainfall events from all rain gauges in this project.
-                                    </p>
-                                    <button
-                                        onClick={() => {
-                                            if (!project.survey_start_date) {
-                                                showToast('Please set survey start date in project settings', 'error');
-                                                return;
-                                            }
-                                            detectEvents.mutate({
-                                                projectId: id,
-                                                startDate: project.survey_start_date,
-                                                endDate: project.survey_end_date || new Date().toISOString(),
-                                                minIntensity: 0.5,
-                                                minDurationHours: 0.5,
-                                                precedingDryHours: 6.0,
-                                            }, {
-                                                onSuccess: () => showToast('Events detected successfully', 'success'),
-                                                onError: () => showToast('Failed to detect events', 'error'),
-                                            });
-                                        }}
-                                        disabled={detectEvents.isPending}
-                                        className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                                    >
-                                        {detectEvents.isPending ? <Loader2 size={18} className="animate-spin" /> : <CloudRain size={18} />}
-                                        Detect Events
-                                    </button>
-                                </div>
 
-                                {events && events.length > 0 ? (
-                                    <div className="space-y-2">
-                                        {events.map((event) => (
-                                            <div
-                                                key={event.id}
-                                                className="border border-gray-200 rounded-lg p-3 flex items-center justify-between"
-                                                style={{ borderLeftWidth: '4px', borderLeftColor: event.event_type === 'Storm' ? '#3b82f6' : '#6b7280' }}
+                                {/* Detection Controls */}
+                                <div className="mb-6 bg-gray-50 rounded-lg p-4">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => setShowEventSettings(!showEventSettings)}
+                                                className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
                                             >
-                                                <div className="flex items-center gap-3">
+                                                <Settings size={16} />
+                                                {showEventSettings ? 'Hide Parameters' : 'Configure Parameters'}
+                                            </button>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                if (!project.survey_start_date) {
+                                                    showToast('Please set survey start date in project settings', 'error');
+                                                    return;
+                                                }
+                                                // Clear unreviewed events warning?
+                                                if (confirm("This will clear all currently UNREVIEWED candidate events and detect new ones. Saved events will be preserved. Continue?")) {
+                                                    detectEvents.mutate({
+                                                        projectId: id,
+                                                        startDate: project.survey_start_date,
+                                                        endDate: project.survey_end_date || new Date().toISOString(),
+                                                        ...eventParams
+                                                    }, {
+                                                        onSuccess: (data: any) => showToast(`Detection complete. Found ${data.events_count} events.`, 'success'),
+                                                        onError: (err) => showToast(`Failed to detect events: ${err.message}`, 'error'),
+                                                    });
+                                                }
+                                            }}
+                                            disabled={detectEvents.isPending}
+                                            className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                        >
+                                            {detectEvents.isPending ? <Loader2 size={18} className="animate-spin" /> : <CloudRain size={18} />}
+                                            Run Detection
+                                        </button>
+                                    </div>
+
+                                    {showEventSettings && (
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                                            <div>
+                                                <label className="block text-gray-500 mb-1">Required Depth (mm)</label>
+                                                <input
+                                                    type="number" step="0.1"
+                                                    value={eventParams.minTotalMm}
+                                                    onChange={e => setEventParams({ ...eventParams, minTotalMm: parseFloat(e.target.value) || 0 })}
+                                                    className="w-full border border-gray-300 rounded px-2 py-1"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-gray-500 mb-1">Required Intensity (mm/hr)</label>
+                                                <input
+                                                    type="number" step="0.1"
+                                                    value={eventParams.minIntensity}
+                                                    onChange={e => setEventParams({ ...eventParams, minIntensity: parseFloat(e.target.value) || 0 })}
+                                                    className="w-full border border-gray-300 rounded px-2 py-1"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-gray-500 mb-1">Req. Intensity Duration (min)</label>
+                                                <input
+                                                    type="number"
+                                                    value={eventParams.minIntensityDuration}
+                                                    onChange={e => setEventParams({ ...eventParams, minIntensityDuration: parseInt(e.target.value) || 0 })}
+                                                    className="w-full border border-gray-300 rounded px-2 py-1"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-gray-500 mb-1">Partial Event (%)</label>
+                                                <input
+                                                    type="number"
+                                                    value={eventParams.partialPercent}
+                                                    onChange={e => setEventParams({ ...eventParams, partialPercent: parseFloat(e.target.value) || 0 })}
+                                                    className="w-full border border-gray-300 rounded px-2 py-1"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-gray-500 mb-1">Inter-event Gap (min)</label>
+                                                <input
+                                                    type="number"
+                                                    value={eventParams.interEventMinutes}
+                                                    onChange={e => setEventParams({ ...eventParams, interEventMinutes: parseInt(e.target.value) || 0 })}
+                                                    className="w-full border border-gray-300 rounded px-2 py-1"
+                                                />
+                                            </div>
+                                            <div className="flex items-center pt-5">
+                                                <label className="flex items-center gap-2 cursor-pointer">
                                                     <input
                                                         type="checkbox"
-                                                        checked={event.reviewed}
-                                                        onChange={() => {
-                                                            updateEvent.mutate({
-                                                                eventId: event.id,
-                                                                reviewed: !event.reviewed,
-                                                            });
-                                                        }}
-                                                        className="w-4 h-4 cursor-pointer"
+                                                        checked={eventParams.useConsecutiveIntensities}
+                                                        onChange={e => setEventParams({ ...eventParams, useConsecutiveIntensities: e.target.checked })}
+                                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                                     />
-                                                    <div>
-                                                        <p className="text-sm font-medium text-gray-900">
-                                                            {new Date(event.start_time).toLocaleString()} - {new Date(event.end_time).toLocaleString()}
-                                                        </p>
-                                                        <p className="text-xs text-gray-500">
-                                                            {event.total_rainfall_mm?.toFixed(1)} mm • {event.max_intensity_mm_hr?.toFixed(1)} mm/hr • {event.event_type}
-                                                        </p>
+                                                    <span className="text-gray-700">Use Consecutive Check</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Two-Column Layout */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Left: Suggested Events (Unreviewed) */}
+                                    <div className="space-y-4">
+                                        <h3 className="font-semibold text-gray-700 border-b border-gray-200 pb-2">
+                                            Suggested Events <span className="text-gray-400 font-normal">({events?.filter(e => !e.reviewed).length || 0})</span>
+                                        </h3>
+                                        <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+                                            {events?.filter(e => !e.reviewed).map(event => (
+                                                <div key={event.id} className="border border-gray-200 rounded-lg p-3 bg-white hover:shadow-sm transition-shadow">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-bold text-blue-600">{event.event_type}</span>
+                                                                <span className="text-xs text-gray-400">{new Date(event.start_time).toLocaleDateString()}</span>
+                                                            </div>
+                                                            <p className="text-sm font-medium text-gray-900 mt-1">
+                                                                {new Date(event.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -
+                                                                {new Date(event.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex gap-1">
+                                                            <button
+                                                                title="Save Event"
+                                                                onClick={() => updateEvent.mutate({ eventId: event.id, reviewed: true })}
+                                                                className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded"
+                                                            >
+                                                                <Save size={16} />
+                                                            </button>
+                                                            <button
+                                                                title="Discard"
+                                                                onClick={() => deleteEvent.mutate(event.id)}
+                                                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mt-1">
+                                                        <div>Depth: <span className="text-gray-900 font-medium">{event.total_rainfall_mm?.toFixed(1)}mm</span></div>
+                                                        <div>Peak: <span className="text-gray-900 font-medium">{event.max_intensity_mm_hr?.toFixed(1)}mm/hr</span></div>
+                                                        <div>Duration: <span className="text-gray-900 font-medium">{event.intensity_duration_minutes}min</span></div>
+                                                        <div>Type: <span className="text-gray-900 font-medium">{event.event_type}</span></div>
                                                     </div>
                                                 </div>
-                                                {event.reviewed && (
-                                                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">
-                                                        ✓ Reviewed
-                                                    </span>
-                                                )}
-                                            </div>
-                                        ))}
+                                            ))}
+                                            {(!events || events.filter(e => !e.reviewed).length === 0) && (
+                                                <p className="text-sm text-gray-400 italic text-center py-8 bg-gray-50 rounded-lg">No new candidates</p>
+                                            )}
+                                        </div>
                                     </div>
-                                ) : (
-                                    <p className="text-sm text-gray-400 italic text-center py-4">
-                                        No events detected yet. Click "Detect Events" to analyze rainfall data.
-                                    </p>
-                                )}
+
+                                    {/* Right: Project Events (Reviewed/Saved) */}
+                                    <div className="space-y-4">
+                                        <h3 className="font-semibold text-gray-700 border-b border-gray-200 pb-2">
+                                            Saved Project Events <span className="text-gray-400 font-normal">({events?.filter(e => e.reviewed).length || 0})</span>
+                                        </h3>
+                                        <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+                                            {events?.filter(e => e.reviewed).map(event => (
+                                                <div key={event.id} className="border border-green-200 rounded-lg p-3 bg-green-50/20 hover:shadow-sm transition-shadow">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="flex-1 mr-2">
+                                                            <input
+                                                                type="text"
+                                                                defaultValue={event.name || `Event ${new Date(event.start_time).toLocaleDateString()}`}
+                                                                className="text-sm font-bold text-gray-900 bg-transparent border-none p-0 focus:ring-0 w-full hover:bg-white/50 rounded"
+                                                                onBlur={(e) => {
+                                                                    if (e.target.value !== event.name) {
+                                                                        updateEvent.mutate({ eventId: event.id, name: e.target.value });
+                                                                    }
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.currentTarget.blur();
+                                                                    }
+                                                                }}
+                                                            />
+                                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                                {new Date(event.start_time).toLocaleString()} - {new Date(event.end_time).toLocaleTimeString()}
+                                                            </p>
+                                                        </div>
+                                                        <button
+                                                            title="Delete"
+                                                            onClick={() => {
+                                                                if (confirm("Are you sure you want to delete this event?")) {
+                                                                    deleteEvent.mutate(event.id);
+                                                                }
+                                                            }}
+                                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 mt-2">
+                                                        <div>Depth: <span className="font-medium text-gray-900">{event.total_rainfall_mm?.toFixed(1)}mm</span></div>
+                                                        <div>Peak: <span className="font-medium text-gray-900">{event.max_intensity_mm_hr?.toFixed(1)}mm/hr</span></div>
+                                                        <div>Duration: <span className="font-medium text-gray-900">{event.intensity_duration_minutes}min</span></div>
+                                                        <div>Type: <span className="font-medium text-gray-900">{event.event_type}</span></div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {(!events || events.filter(e => e.reviewed).length === 0) && (
+                                                <p className="text-sm text-gray-400 italic text-center py-8 bg-gray-50 rounded-lg">No saved events</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>

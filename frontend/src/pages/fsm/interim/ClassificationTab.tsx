@@ -2,19 +2,56 @@ import React, { useState } from 'react';
 import { useSignoffReviewStage, useReviewClassifications, useRunClassification, useOverrideClassification, useModelsStatus } from '../../../api/hooks';
 import type { InterimReview, DailyClassification } from '../../../api/hooks';
 import { useToast } from '../../../contexts/ToastContext';
-import { CheckCircle2, AlertTriangle, Loader2, Tag, Zap, Play, Edit2, X, AlertCircle } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Loader2, Tag, Zap, Play, Edit2, X, AlertCircle, TrendingUp } from 'lucide-react';
+import FlowMonitorChart from './FlowMonitorChart';
+import RainGaugeChart from './RainGaugeChart';
+import PumpLoggerChart from './PumpLoggerChart';
 
 interface ClassificationTabProps {
     review: InterimReview;
     username: string;
     onRefresh: () => void;
+    startDate?: string;
+    endDate?: string;
 }
 
-const ClassificationTab: React.FC<ClassificationTabProps> = ({ review, username, onRefresh }) => {
+const classificationCodes: Record<string, string> = {
+    'X': 'Not Working',
+    'G': 'Dry Pipe',
+    'L': 'Low Flow <10l/s',
+    'P': 'Pluming',
+    'U': 'Dislodged Sensor',
+    'O': 'Taken Out',
+    'V': 'Velocity Problem',
+    'B': 'Blocked Filter RG',
+    'T': 'Sediment',
+    'K': 'Monitor Submerged',
+    'H': 'Standing Water',
+    'M': 'Monitor Changed',
+    'D': 'Depth Problem',
+    'R': 'Ragging',
+    'S': 'Surcharged',
+    'W': 'Working',
+    'I': 'Installed'
+};
+
+const classificationOptions = Object.entries(classificationCodes).map(([code, desc]) => ({
+    value: code,
+    label: `${code} - ${desc}`
+}));
+
+const ClassificationTab: React.FC<ClassificationTabProps> = ({ review, username, onRefresh, startDate, endDate }) => {
     const [comment, setComment] = useState(review.classification_comment || '');
     const [editingId, setEditingId] = useState<number | null>(null);
     const [overrideClass, setOverrideClass] = useState('');
     const [overrideReason, setOverrideReason] = useState('');
+    const [selectedVariable, setSelectedVariable] = useState<string>('Flow');
+    const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+
+    React.useEffect(() => {
+        console.log('ClassTab Review:', review);
+        console.log('Dates:', review.start_date, review.end_date);
+    }, [review]);
 
     const { mutate: signoff, isPending: isSigningOff } = useSignoffReviewStage();
     const { data: classifications, refetch: refetchClassifications, isLoading } = useReviewClassifications(review.id);
@@ -80,10 +117,6 @@ const ClassificationTab: React.FC<ClassificationTabProps> = ({ review, username,
         review.install_type === 'Rain Gauge' ? 'RG' : 'DM';
     const modelAvailable = modelsStatus?.[modelType] ?? false;
 
-    const classificationOptions = [
-        'Good', 'Suspect', 'Bad', 'No Data', 'Calibration', 'Event', 'Unknown'
-    ];
-
     const getConfidenceColor = (confidence: number) => {
         if (confidence >= 0.8) return 'text-green-600';
         if (confidence >= 0.5) return 'text-amber-600';
@@ -91,16 +124,31 @@ const ClassificationTab: React.FC<ClassificationTabProps> = ({ review, username,
     };
 
     const getClassificationBadge = (classification: string) => {
-        const colors: Record<string, string> = {
-            Good: 'bg-green-100 text-green-700',
-            Suspect: 'bg-amber-100 text-amber-700',
-            Bad: 'bg-red-100 text-red-700',
-            'No Data': 'bg-gray-100 text-gray-600',
-            Calibration: 'bg-blue-100 text-blue-700',
-            Event: 'bg-purple-100 text-purple-700',
-            Unknown: 'bg-gray-100 text-gray-500',
-        };
-        return colors[classification] || 'bg-gray-100 text-gray-500';
+        // Map codes to colors
+        // Green: Working, Installed
+        // Red: Not Working, Taken Out, Blocked
+        // Amber: Problems (Ragging, Surcharged, etc.)
+        // Gray: Dry, Off, etc.
+
+        const greenCodes = ['W', 'I', 'Good'];
+        const redCodes = ['X', 'O', 'B', 'Bad'];
+        const amberCodes = ['L', 'P', 'U', 'V', 'T', 'K', 'H', 'M', 'D', 'R', 'S', 'Suspect'];
+
+        if (greenCodes.includes(classification)) return 'bg-green-100 text-green-700';
+        if (redCodes.includes(classification)) return 'bg-red-100 text-red-700';
+        if (amberCodes.includes(classification)) return 'bg-amber-100 text-amber-700';
+
+        return 'bg-gray-100 text-gray-500';
+    };
+
+    const getVariableOptions = () => {
+        if (review.install_type === 'Flow Monitor') {
+            return ['All', 'Flow', 'Depth', 'Velocity'];
+        }
+        if (review.install_type === 'Rain Gauge') {
+            return ['All', 'Intensity', 'Cumulative'];
+        }
+        return [];
     };
 
     return (
@@ -170,6 +218,57 @@ const ClassificationTab: React.FC<ClassificationTabProps> = ({ review, username,
                 </div>
             )}
 
+            {/* Data Visualization Chart */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <TrendingUp size={20} className="text-blue-500" />
+                        Data Visualization
+                    </h3>
+
+                    {getVariableOptions().length > 0 && (
+                        <div className="flex items-center gap-2">
+                            <label className="text-sm text-gray-600">Variable:</label>
+                            <select
+                                value={selectedVariable}
+                                onChange={(e) => setSelectedVariable(e.target.value)}
+                                className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                {getVariableOptions().map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                </div>
+
+                {review.install_type === 'Flow Monitor' && (
+                    <FlowMonitorChart
+                        installId={review.install_id}
+                        startDate={startDate || review.start_date}
+                        endDate={endDate || review.end_date}
+                        visibleVariables={selectedVariable === 'All' ? undefined : [selectedVariable]}
+                        highlightDate={hoveredDate}
+                    />
+                )}
+
+                {review.install_type === 'Rain Gauge' && (
+                    <RainGaugeChart
+                        installId={review.install_id}
+                        startDate={startDate || review.start_date}
+                        endDate={endDate || review.end_date}
+                        visibleVariables={selectedVariable === 'All' ? undefined : [selectedVariable]}
+                        highlightDate={hoveredDate}
+                    />
+                )}
+
+                {review.install_type === 'Pump Logger' && (
+                    <PumpLoggerChart
+                        installId={review.install_id}
+                    />
+                )}
+            </div>
+
             {/* Classification Results */}
             <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -195,7 +294,12 @@ const ClassificationTab: React.FC<ClassificationTabProps> = ({ review, username,
                             </thead>
                             <tbody>
                                 {classifications.map((c: DailyClassification) => (
-                                    <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
+                                    <tr
+                                        key={c.id}
+                                        className="border-t border-gray-100 hover:bg-gray-50 transition-colors cursor-default"
+                                        onMouseEnter={() => setHoveredDate(c.date)}
+                                        onMouseLeave={() => setHoveredDate(null)}
+                                    >
                                         <td className="p-2">{new Date(c.date).toLocaleDateString()}</td>
                                         <td className="p-2">
                                             <span className={`px-2 py-1 rounded-full text-xs ${getClassificationBadge(c.ml_classification)}`}>
@@ -209,9 +313,14 @@ const ClassificationTab: React.FC<ClassificationTabProps> = ({ review, username,
                                         </td>
                                         <td className="p-2">
                                             {c.manual_classification ? (
-                                                <span className={`px-2 py-1 rounded-full text-xs ${getClassificationBadge(c.manual_classification)}`}>
-                                                    {c.manual_classification}
-                                                </span>
+                                                <div className="flex flex-col">
+                                                    <span className={`px-2 py-1 rounded-full text-xs w-fit ${getClassificationBadge(c.manual_classification)}`}>
+                                                        {c.manual_classification}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500 mt-0.5">
+                                                        {classificationCodes[c.manual_classification] || c.manual_classification}
+                                                    </span>
+                                                </div>
                                             ) : (
                                                 <span className="text-gray-400">-</span>
                                             )}
@@ -223,11 +332,11 @@ const ClassificationTab: React.FC<ClassificationTabProps> = ({ review, username,
                                                         <select
                                                             value={overrideClass}
                                                             onChange={(e) => setOverrideClass(e.target.value)}
-                                                            className="border rounded px-2 py-1 text-sm"
+                                                            className="border rounded px-2 py-1 text-xs max-w-[150px]"
                                                         >
                                                             <option value="">Select...</option>
                                                             {classificationOptions.map((opt) => (
-                                                                <option key={opt} value={opt}>{opt}</option>
+                                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
                                                             ))}
                                                         </select>
                                                         <button

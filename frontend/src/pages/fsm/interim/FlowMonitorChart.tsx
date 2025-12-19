@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-    Legend, ResponsiveContainer, BarChart, Bar, ComposedChart, Area,
-    ScatterChart, Scatter, ZAxis, Cell
+    Legend, ResponsiveContainer, ComposedChart, ReferenceArea
 } from 'recharts';
 import { Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useInstallTimeseries } from '../../../api/hooks';
@@ -12,6 +11,8 @@ interface FlowMonitorChartProps {
     startDate?: string;
     endDate?: string;
     pipeHeight?: number;
+    visibleVariables?: string[];
+    highlightDate?: string | null;
 }
 
 const COLORS = {
@@ -22,7 +23,12 @@ const COLORS = {
     soffit: '#1E3A8A',     // dark blue
 };
 
-const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDate, endDate, pipeHeight = 225 }) => {
+const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDate, endDate, pipeHeight = 225, visibleVariables, highlightDate }) => {
+    const defaultHighlightStart = highlightDate ? new Date(highlightDate).getTime() : 0;
+    const defaultHighlightEnd = highlightDate ? new Date(highlightDate).getTime() + 86400000 : 0; // +1 day
+
+    console.log('FlowChart Dates:', startDate, endDate);
+
     const [showFdv, setShowFdv] = useState(true);
     const [showDwf, setShowDwf] = useState(false);
 
@@ -133,7 +139,7 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
                 {showFdv && (
                     <div className="p-4 pt-0 space-y-2">
                         {/* Flow */}
-                        {variables.includes('Flow') && (
+                        {variables.includes('Flow') && (!visibleVariables || visibleVariables.includes('Flow')) && (
                             <div>
                                 <h5 className="text-xs font-medium text-blue-600 mb-1">Flow (L/s)</h5>
                                 <ResponsiveContainer width="100%" height={120}>
@@ -142,6 +148,9 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
                                         <XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tick={false} />
                                         <YAxis tick={{ fontSize: 9 }} width={50} />
                                         <Tooltip labelFormatter={(val) => new Date(val).toLocaleString()} contentStyle={{ fontSize: 11 }} />
+                                        {highlightDate && (
+                                            <ReferenceArea x1={defaultHighlightStart} x2={defaultHighlightEnd} fill="#FCD34D" fillOpacity={0.3} />
+                                        )}
                                         <Line type="monotone" dataKey="Flow" stroke={COLORS.flow} dot={false} strokeWidth={1} />
                                     </LineChart>
                                 </ResponsiveContainer>
@@ -149,20 +158,24 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
                         )}
 
                         {/* Depth with Soffit */}
-                        {variables.includes('Depth') && (
+                        {variables.includes('Depth') && (!visibleVariables || visibleVariables.includes('Depth')) && (
                             <div>
                                 <h5 className="text-xs font-medium text-red-600 mb-1">Depth (mm) - Soffit: {pipeHeight}mm</h5>
                                 <ResponsiveContainer width="100%" height={120}>
                                     <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                                         <XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tick={false} />
-                                        <YAxis tick={{ fontSize: 9 }} width={50} domain={[0, Math.max(pipeHeight * 1.1, (stats as any).depthMax * 1.1)]} />
+                                        <YAxis tick={{ fontSize: 9 }} width={50} domain={[0, Math.max((pipeHeight / 1000) * 1.1, (stats as any).depthMax * 1.1)]} />
+                                        <YAxis tick={{ fontSize: 9 }} width={50} domain={[0, Math.max((pipeHeight / 1000) * 1.1, (stats as any).depthMax * 1.1)]} />
                                         <Tooltip labelFormatter={(val) => new Date(val).toLocaleString()} contentStyle={{ fontSize: 11 }} />
+                                        {highlightDate && (
+                                            <ReferenceArea x1={defaultHighlightStart} x2={defaultHighlightEnd} fill="#FCD34D" fillOpacity={0.3} />
+                                        )}
                                         <Line type="monotone" dataKey="Depth" stroke={COLORS.depth} dot={false} strokeWidth={1} />
                                         {/* Soffit reference line */}
                                         <Line
                                             type="monotone"
-                                            dataKey={() => pipeHeight}
+                                            dataKey={() => pipeHeight / 1000}
                                             stroke={COLORS.soffit}
                                             strokeDasharray="5 5"
                                             dot={false}
@@ -175,7 +188,7 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
                         )}
 
                         {/* Velocity */}
-                        {variables.includes('Velocity') && (
+                        {variables.includes('Velocity') && (!visibleVariables || visibleVariables.includes('Velocity')) && (
                             <div>
                                 <h5 className="text-xs font-medium text-green-600 mb-1">Velocity (m/s)</h5>
                                 <ResponsiveContainer width="100%" height={120}>
@@ -184,6 +197,9 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
                                         <XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatDate} tick={{ fontSize: 9 }} />
                                         <YAxis tick={{ fontSize: 9 }} width={50} />
                                         <Tooltip labelFormatter={(val) => new Date(val).toLocaleString()} contentStyle={{ fontSize: 11 }} />
+                                        {highlightDate && (
+                                            <ReferenceArea x1={defaultHighlightStart} x2={defaultHighlightEnd} fill="#FCD34D" fillOpacity={0.3} />
+                                        )}
                                         <Line type="monotone" dataKey="Velocity" stroke={COLORS.velocity} dot={false} strokeWidth={1} />
                                     </LineChart>
                                 </ResponsiveContainer>
