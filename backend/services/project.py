@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlmodel import Session
 from domain.fsm import (
     FsmProject, FsmProjectCreate, FsmProjectUpdate, Site, SiteCreate, Install, InstallCreate, 
-    Monitor, MonitorCreate, RawDataSettings, RawDataSettingsCreate, RawDataSettingsUpdate
+    Monitor, MonitorCreate, RawDataSettings, RawDataSettingsCreate, RawDataSettingsUpdate, InstallUpdate
 )
 from repositories.project import ProjectRepository, SiteRepository, InstallRepository
 from repositories.monitor import MonitorRepository
@@ -188,6 +188,20 @@ class ProjectService:
     def get_install(self, install_id: int) -> Optional[Install]:
         return self.install_repo.get(install_id)
     
+    def update_install(self, install_id: int, install_update: InstallUpdate) -> Optional[Install]:
+        install = self.install_repo.get(install_id)
+        if not install:
+            return None
+        
+        update_data = install_update.dict(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(install, key, value)
+            
+        self.session.add(install)
+        self.session.commit()
+        self.session.refresh(install)
+        return install
+
     def delete_install(self, install_id: int):
         self.install_repo.delete(install_id)
     

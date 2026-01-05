@@ -498,7 +498,7 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 // TODO: Open edit modal
-                                                                console.log('Edit event:', event.id);
+                                                                // console.log('Edit event:', event.id);
                                                             }}
                                                             className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                                             title="Edit event"

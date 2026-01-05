@@ -96,6 +96,17 @@ const RainGaugeChart: React.FC<RainGaugeChartProps> = ({ installId, startDate, e
         );
     }
 
+    const startTime = startDate ? new Date(startDate).getTime() : (chartData.length > 0 ? chartData[0].time : 'dataMin');
+
+    // Check if endDate has time component, if not assume end of day
+    const getEndTime = (dateStr?: string) => {
+        if (!dateStr) return (chartData.length > 0 ? chartData[chartData.length - 1].time : 'dataMax');
+        const dt = new Date(dateStr);
+        dt.setHours(23, 59, 59, 999);
+        return dt.getTime();
+    };
+    const endTime = getEndTime(endDate);
+
     return (
         <div className="space-y-4">
             {/* Intensity Chart with optional Cumulative */}
@@ -119,7 +130,7 @@ const RainGaugeChart: React.FC<RainGaugeChartProps> = ({ installId, startDate, e
                         <XAxis
                             dataKey="time"
                             type="number"
-                            domain={['dataMin', 'dataMax']}
+                            domain={[startTime, endTime]}
                             tickFormatter={formatDate}
                             tick={{ fontSize: 9 }}
                         />

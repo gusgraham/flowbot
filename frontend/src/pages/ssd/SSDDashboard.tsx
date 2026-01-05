@@ -44,12 +44,12 @@ export default function SSDDashboard() {
 
     const handleRunAnalysis = async (scenarioIds: number[]) => {
         try {
-            console.log('Starting analysis for scenarios:', scenarioIds);
+            //console.log('Starting analysis for scenarios:', scenarioIds);
             const result = await scenarioAnalysisMutation.mutateAsync({
                 projectId: numericProjectId,
                 scenarioIds
             });
-            console.log('Analysis complete, result:', result);
+            //console.log('Analysis complete, result:', result);
             // Results are auto-saved to database by backend
             return result;
         } catch (error) {

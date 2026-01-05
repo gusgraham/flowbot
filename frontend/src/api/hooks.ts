@@ -705,6 +705,20 @@ export const useInstall = (installId: number) => {
     });
 };
 
+export const useUpdateInstall = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ installId, ...update }: { installId: number;[key: string]: any }) => {
+            const { data } = await api.put<Install>(`/installs/${installId}`, update);
+            return data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['install', data.id] });
+            queryClient.invalidateQueries({ queryKey: ['installs'] });
+        },
+    });
+};
+
 export const useDeleteInstall = () => {
     const queryClient = useQueryClient();
     return useMutation({

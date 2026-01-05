@@ -10,7 +10,7 @@ from database import get_session
 from domain.fsm import (
     FsmProjectRead, FsmProjectCreate, FsmProjectUpdate, 
     SiteRead, SiteCreate, 
-    Install, InstallRead, InstallCreate,
+    Install, InstallRead, InstallCreate, InstallUpdate,
     MonitorRead, MonitorCreate,
     VisitRead, VisitCreate,
     NoteRead, NoteCreate,
@@ -255,6 +255,24 @@ def delete_install(
     
     service.delete_install(install_id)
     return {"status": "success"}
+
+@router.put("/installs/{install_id}", response_model=InstallRead)
+def update_install(
+    install_id: int,
+    install_update: InstallUpdate,
+    service: ProjectService = Depends(get_project_service),
+    current_user: User = Depends(get_current_active_user)
+):
+    install = service.get_install(install_id)
+    if not install:
+        raise HTTPException(status_code=404, detail="Install not found")
+    
+    # Check project ownership
+    project = service.get_project(install.project_id)
+    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized to modify this install")
+    
+    return service.update_install(install_id, install_update)
 
 @router.put("/installs/{install_id}/uninstall")
 def uninstall_install(
@@ -517,7 +535,13 @@ def get_install_timeseries(
     if start_date:
         combined = combined[combined[time_col] >= pd.to_datetime(start_date)]
     if end_date:
-        combined = combined[combined[time_col] <= pd.to_datetime(end_date)]
+        # Check if end_date string implies a full day (no time component)
+        # If it's effectively 00:00:00, we likely want to include the whole day
+        end_dt = pd.to_datetime(end_date)
+        if end_dt.hour == 0 and end_dt.minute == 0 and end_dt.second == 0 and ' ' not in end_date.strip() and 'T' not in end_date.strip():
+             end_dt = end_dt + pd.Timedelta(days=1, microseconds=-1)
+        
+        combined = combined[combined[time_col] <= end_dt]
     
     # Process each variable
     result_variables = {}
@@ -1203,10 +1227,17 @@ def run_classification_for_review(
             detail=f"ML model for {install.install_type} not found. Please add {model_type}_model to backend/resources/classifier/models/"
         )
     
-    # Load timeseries data for the interim period
+    # Load timeseries data for the interim period - Filter for Processed data
     timeseries = session.query(TimeSeries).filter(
-        TimeSeries.install_id == review.install_id
+        TimeSeries.install_id == review.install_id,
+        TimeSeries.data_type == 'Processed'
     ).all()
+    
+    # Fallback to find any data if no processed data found (optional, but good for robustness if user hasn't processed yet)
+    if not timeseries:
+        timeseries = session.query(TimeSeries).filter(
+            TimeSeries.install_id == review.install_id
+        ).all()
     
     if not timeseries:
         raise HTTPException(status_code=400, detail="No timeseries data found for this install")
@@ -1230,8 +1261,21 @@ def run_classification_for_review(
                 
                 # Rename value column to expected name
                 if 'value' in ts_data.columns:
-                    col_name = f"{ts.variable}Data"
+                    # Map variable names to standard names expected by classifier
+                    var_map = {
+                        'Level': 'Depth',
+                        'Vel': 'Velocity',
+                        'Rain': 'Intensity',
+                        'Flow': 'Flow'
+                    }
+                    standard_var = var_map.get(ts.variable, ts.variable)
+                    col_name = f"{standard_var}Data"
                     ts_data = ts_data.rename(columns={'value': col_name})
+                    
+                    # Convert units if necessary (Model expects mm for Depth/Level)
+                    if standard_var == 'Depth' and ts.unit == 'm':
+                        ts_data[col_name] = ts_data[col_name] * 1000
+                        
                 all_data.append(ts_data)
         except Exception as e:
             print(f"Error loading timeseries {ts.variable}: {e}")
@@ -1301,7 +1345,8 @@ def run_classification_for_review(
     return {
         "status": "success",
         "message": f"Classified {len(results)} days",
-        "results_count": len(results)
+        "results_count": len(results),
+        "results": results  # Return full results including features
     }
 
 

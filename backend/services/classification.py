@@ -323,12 +323,6 @@ def run_classification(
             # Fill NaN values
             features = features.fillna(0)
             
-            # Debug: Print feature comparison for first day only
-            if current_date == start_date and model_type == 'FM':
-                print(f"Our features ({len(features.columns)}): {list(features.columns)}")
-                if hasattr(model, 'feature_names_'):
-                    print(f"Model expects ({len(model.feature_names_)}): {model.feature_names_}")
-            
             # Reorder features to match model's expected order (for CatBoost)
             if model_type == 'FM' and hasattr(model, 'feature_names_'):
                 expected_cols = model.feature_names_
@@ -355,10 +349,14 @@ def run_classification(
             except:
                 confidence = 0.0
             
+            # Convert features to dict for frontend
+            features_dict = features.iloc[0].to_dict()
+            
             results.append({
                 'date': current_date.isoformat(),
                 'classification': str(prediction),
-                'confidence': confidence
+                'confidence': confidence,
+                'features': features_dict
             })
             
         except Exception as e:

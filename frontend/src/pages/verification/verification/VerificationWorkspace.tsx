@@ -298,17 +298,17 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
     const handleChartClick = (chartType: 'flow' | 'depth') => (e: any) => {
         console.log('Chart Click Event:', chartType, e);
         if (analysisSettings.peak_mode !== 'manual' || !editSeries) {
-            console.log('Click ignored: Not in manual mode or no series selected', { peakMode: analysisSettings.peak_mode, editSeries });
+            //console.log('Click ignored: Not in manual mode or no series selected', { peakMode: analysisSettings.peak_mode, editSeries });
             return;
         }
 
         // Ensure we're clicking on the right chart for the selected series
         if (chartType === 'flow' && !isFlowSeries) {
-            console.log('Click ignored: Flow chart clicked but depth series selected');
+            //console.log('Click ignored: Flow chart clicked but depth series selected');
             return;
         }
         if (chartType === 'depth' && !isDepthSeries) {
-            console.log('Click ignored: Depth chart clicked but flow series selected');
+            //console.log('Click ignored: Depth chart clicked but flow series selected');
             return;
         }
 
@@ -316,11 +316,11 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         const clickedLabel = e?.activeLabel;
 
         if (!clickedLabel) {
-            console.log('Click ignored: No activeLabel in event');
+            //console.log('Click ignored: No activeLabel in event');
             return;
         }
 
-        console.log('Processing click for label:', clickedLabel);
+        //console.log('Processing click for label:', clickedLabel);
 
         // Find existing peaks for this series
         const currentPeaks = analysisSettings.manual_peaks?.[editSeries] || [];
@@ -337,7 +337,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         let newPeaks;
         if (existingIndex >= 0) {
             // Remove
-            console.log('Removing existing peak at:', clickedLabel);
+            //console.log('Removing existing peak at:', clickedLabel);
             newPeaks = currentPeaks.filter((_, i) => i !== existingIndex);
         } else {
             // Add
@@ -365,7 +365,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
             }
 
             if (valueToAdd !== undefined && valueToAdd !== null && clickedIso) {
-                console.log('Adding new peak:', { time: clickedIso, value: valueToAdd });
+                //console.log('Adding new peak:', { time: clickedIso, value: valueToAdd });
                 newPeaks = [...currentPeaks, { time: clickedIso, value: valueToAdd }];
             } else {
                 console.warn('Could not determine value or ISO time for peak at:', clickedLabel);

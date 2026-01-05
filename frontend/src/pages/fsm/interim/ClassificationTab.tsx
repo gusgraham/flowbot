@@ -45,12 +45,12 @@ const ClassificationTab: React.FC<ClassificationTabProps> = ({ review, username,
     const [editingId, setEditingId] = useState<number | null>(null);
     const [overrideClass, setOverrideClass] = useState('');
     const [overrideReason, setOverrideReason] = useState('');
-    const [selectedVariable, setSelectedVariable] = useState<string>('Flow');
+    const [selectedVariable, setSelectedVariable] = useState<string>('All');
     const [hoveredDate, setHoveredDate] = useState<string | null>(null);
 
     React.useEffect(() => {
-        console.log('ClassTab Review:', review);
-        console.log('Dates:', review.start_date, review.end_date);
+        // console.log('ClassTab Review:', review);
+        // console.log('Dates:', review.start_date, review.end_date);
     }, [review]);
 
     const { mutate: signoff, isPending: isSigningOff } = useSignoffReviewStage();

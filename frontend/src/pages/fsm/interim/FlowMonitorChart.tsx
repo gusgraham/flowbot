@@ -27,7 +27,7 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
     const defaultHighlightStart = highlightDate ? new Date(highlightDate).getTime() : 0;
     const defaultHighlightEnd = highlightDate ? new Date(highlightDate).getTime() + 86400000 : 0; // +1 day
 
-    console.log('FlowChart Dates:', startDate, endDate);
+    // console.log('FlowChart Dates:', startDate, endDate);
 
     const [showFdv, setShowFdv] = useState(true);
     const [showDwf, setShowDwf] = useState(false);
@@ -124,6 +124,25 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
 
     const variables = Object.keys(data.variables || {});
 
+    const startTime = startDate ? new Date(startDate).getTime() : (chartData.length > 0 ? chartData[0].time : 'dataMin');
+
+    // Check if endDate has time component, if not assume end of day
+    // Or just always map to end of day if it looks like a semantic date range
+    const getEndTime = (dateStr?: string) => {
+        if (!dateStr) return (chartData.length > 0 ? chartData[chartData.length - 1].time : 'dataMax');
+        const dt = new Date(dateStr);
+        // If passing a raw date like "2024-01-01", javascript might parse as midnight UTC. 
+        // We want to force the view to include the whole day.
+        // Simple heuristic: set to 23:59:59.999 of that day.
+        // Assuming the backend passes "YYYY-MM-DD" or similar.
+        const d = new Date(dateStr);
+        d.setHours(23, 59, 59, 999);
+        return d.getTime();
+    };
+    const endTime = getEndTime(endDate);
+
+    // ...
+
     return (
         <div className="space-y-4">
             {/* FDV Chart Section */}
@@ -145,7 +164,7 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
                                 <ResponsiveContainer width="100%" height={120}>
                                     <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                                        <XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tick={false} />
+                                        <XAxis dataKey="time" type="number" domain={[startTime, endTime]} tick={false} />
                                         <YAxis tick={{ fontSize: 9 }} width={50} />
                                         <Tooltip labelFormatter={(val) => new Date(val).toLocaleString()} contentStyle={{ fontSize: 11 }} />
                                         {highlightDate && (
@@ -164,8 +183,7 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
                                 <ResponsiveContainer width="100%" height={120}>
                                     <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                                        <XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tick={false} />
-                                        <YAxis tick={{ fontSize: 9 }} width={50} domain={[0, Math.max((pipeHeight / 1000) * 1.1, (stats as any).depthMax * 1.1)]} />
+                                        <XAxis dataKey="time" type="number" domain={[startTime, endTime]} tick={false} />
                                         <YAxis tick={{ fontSize: 9 }} width={50} domain={[0, Math.max((pipeHeight / 1000) * 1.1, (stats as any).depthMax * 1.1)]} />
                                         <Tooltip labelFormatter={(val) => new Date(val).toLocaleString()} contentStyle={{ fontSize: 11 }} />
                                         {highlightDate && (
@@ -194,7 +212,7 @@ const FlowMonitorChart: React.FC<FlowMonitorChartProps> = ({ installId, startDat
                                 <ResponsiveContainer width="100%" height={120}>
                                     <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                                        <XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatDate} tick={{ fontSize: 9 }} />
+                                        <XAxis dataKey="time" type="number" domain={[startTime, endTime]} tickFormatter={formatDate} tick={{ fontSize: 9 }} />
                                         <YAxis tick={{ fontSize: 9 }} width={50} />
                                         <Tooltip labelFormatter={(val) => new Date(val).toLocaleString()} contentStyle={{ fontSize: 11 }} />
                                         {highlightDate && (

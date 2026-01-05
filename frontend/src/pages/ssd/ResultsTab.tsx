@@ -348,11 +348,11 @@ const ResultsTab: React.FC<ResultsTabProps> = ({ projectId }) => {
     // Handle chart click for zoom selection
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleChartClick = useCallback((data: any) => {
-        console.log('Chart clicked:', data);
+        // console.log('Chart clicked:', data);
 
         // Use activeIndex to find the data point
         if (data.activeIndex === undefined || data.activeIndex === null) {
-            console.log('No activeIndex in click data');
+            // console.log('No activeIndex in click data');
             return;
         }
 
@@ -360,28 +360,28 @@ const ResultsTab: React.FC<ResultsTabProps> = ({ projectId }) => {
         const clickedPoint = formatChartData[index];
 
         if (!clickedPoint) {
-            console.log('No data point at index:', index);
+            // console.log('No data point at index:', index);
             return;
         }
 
         const rawTime = clickedPoint._rawTime as string;
-        console.log('Clicked index:', index, 'rawTime:', rawTime);
+        // console.log('Clicked index:', index, 'rawTime:', rawTime);
 
         if (!rawTime) {
-            console.log('No _rawTime in data point');
+            // console.log('No _rawTime in data point');
             return;
         }
 
         if (!isSelectingZoom) {
             // First click - set start
-            console.log('Setting zoom start:', rawTime);
+            // console.log('Setting zoom start:', rawTime);
             setClickStart(rawTime);
             setIsSelectingZoom(true);
         } else {
             // Second click - set end and apply zoom
             const start = clickStart!;
             const end = rawTime;
-            console.log('Setting zoom end:', end, 'start was:', start);
+            // console.log('Setting zoom end:', end, 'start was:', start);
 
             // Ensure start < end
             if (new Date(start) > new Date(end)) {

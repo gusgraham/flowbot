@@ -13,6 +13,7 @@ import AddMonitorModal from './AddMonitorModal';
 import ManageSiteModal from './ManageSiteModal';
 import ManageMonitorModal from './ManageMonitorModal';
 import AddInstallModal from './AddInstallModal';
+import EditInstallModal from './EditInstallModal';
 import DeleteInstallModal from './DeleteInstallModal';
 import CreateInterimModal from './CreateInterimModal';
 import EditInterimModal from './EditInterimModal';
@@ -35,6 +36,7 @@ const SurveyDashboard: React.FC = () => {
     const [managingSite, setManagingSite] = useState<Site | null>(null);
     const [managingMonitor, setManagingMonitor] = useState<Monitor | null>(null);
     const [deletingInstall, setDeletingInstall] = useState<Install | null>(null);
+    const [editingInstall, setEditingInstall] = useState<Install | null>(null);
 
     // Section Collapse State
     const [isMonitorsOpen, setIsMonitorsOpen] = useState(false);
@@ -365,6 +367,13 @@ const SurveyDashboard: React.FC = () => {
                                                     >
                                                         Manage
                                                     </Link>
+                                                    <button
+                                                        onClick={() => setEditingInstall(install)}
+                                                        className="text-gray-500 hover:text-blue-600"
+                                                        title="Edit Install"
+                                                    >
+                                                        <Pencil size={16} />
+                                                    </button>
                                                     <button
                                                         onClick={() => setDeletingInstall(install)}
                                                         className="text-red-600 hover:text-red-700"
@@ -1002,6 +1011,16 @@ const SurveyDashboard: React.FC = () => {
                 onClose={() => setIsAddInstallModalOpen(false)}
                 projectId={id}
             />
+
+            {editingInstall && (
+                <EditInstallModal
+                    isOpen={!!editingInstall}
+                    onClose={() => setEditingInstall(null)}
+                    install={editingInstall}
+                    sites={sites || []}
+                    monitors={monitors || []}
+                />
+            )}
 
             {deletingInstall && (
                 <DeleteInstallModal

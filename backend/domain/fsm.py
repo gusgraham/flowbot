@@ -167,6 +167,24 @@ class InstallCreate(InstallBase):
     site_id: int
     monitor_id: int
 
+class InstallUpdate(SQLModel):
+    install_id: Optional[str] = None
+    install_type: Optional[str] = None
+    client_ref: Optional[str] = None
+    install_date: Optional[datetime] = None
+    removal_date: Optional[datetime] = None
+    
+    # FM Specific
+    fm_pipe_letter: Optional[str] = None
+    fm_pipe_shape: Optional[str] = None
+    fm_pipe_height_mm: Optional[int] = None
+    fm_pipe_width_mm: Optional[int] = None
+    fm_pipe_depth_to_invert_mm: Optional[int] = None
+    fm_sensor_offset_mm: Optional[int] = None
+    
+    # RG Specific
+    rg_position: Optional[str] = None
+
 class InstallRead(InstallBase):
     id: int
     project_id: int

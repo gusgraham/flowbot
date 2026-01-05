@@ -81,20 +81,20 @@ export const CumulativeDepthChart: React.FC<CumulativeDepthChartProps> = ({ data
             // Only handle rainfall datasets (check 'variable' field)
             const rainfallIds = datasetIds.filter(id => {
                 const ds = datasets.find(d => d.id === id);
-                console.log(`Dataset ${id}:`, ds); // Debug log
+                // console.log(`Dataset ${id}:`, ds); // Debug log
                 return ds && ds.variable && ds.variable.toLowerCase() === 'rainfall';
             });
-            console.log('Filtered rainfall IDs:', rainfallIds);
+            // console.log('Filtered rainfall IDs:', rainfallIds);
             for (const id of rainfallIds) {
                 try {
-                    console.log(`Fetching data for dataset ${id}...`);
+                    // console.log(`Fetching data for dataset ${id}...`);
                     const response = await fetch(`/api/fsa/rainfall/${id}/cumulative-depth`);
                     if (!response.ok) {
                         console.error(`HTTP error for dataset ${id}: ${response.status}`);
                         continue;
                     }
                     const result = await response.json();
-                    console.log(`Data for dataset ${id}:`, result);
+                    // console.log(`Data for dataset ${id}:`, result);
                     if (result && result.data) {
                         newData[id] = result.data.map((d: any) => ({
                             ...d,
@@ -108,7 +108,7 @@ export const CumulativeDepthChart: React.FC<CumulativeDepthChartProps> = ({ data
                     console.error(`Failed to fetch data for dataset ${id}`, e);
                 }
             }
-            console.log('All processed data:', newData);
+            // console.log('All processed data:', newData);
             setAllData(newData);
             setIsLoading(false);
         };

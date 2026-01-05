@@ -37,8 +37,8 @@ const UploadDatasetModal: React.FC<UploadDatasetModalProps> = ({ isOpen, onClose
             // Upload files sequentially
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                console.log(`Uploading file ${i + 1}/${files.length}: ${file.name}`);
-                
+                //(`Uploading file ${i + 1}/${files.length}: ${file.name}`);
+
                 try {
                     const isStdFile = file.name.toLowerCase().endsWith('.std');
                     await uploadMutation.mutateAsync({
@@ -55,9 +55,9 @@ const UploadDatasetModal: React.FC<UploadDatasetModalProps> = ({ isOpen, onClose
                     return;
                 }
             }
-            
+
             // All files uploaded successfully
-            console.log('✅ All files uploaded successfully');
+            //console.log('✅ All files uploaded successfully');
             onClose();
             setFiles([]);
             setDatasetType('Rainfall');
