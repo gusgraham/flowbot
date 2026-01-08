@@ -1,7 +1,7 @@
 import os
 from sqlmodel import create_engine, SQLModel, Session
 from sqlalchemy import event
-from domain import auth, fsm, fsa, wq, verification, interim, ssd
+from domain import admin, auth, fsm, fsa, wq, verification, interim, ssd
 
 # SQLite database URL
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./flowbot.db")

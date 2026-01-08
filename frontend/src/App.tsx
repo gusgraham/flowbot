@@ -20,9 +20,11 @@ import VerificationWorkspace from './pages/verification/verification/Verificatio
 import WQProjectList from './pages/wq/WQProjectList';
 import WQDashboard from './pages/wq/WQDashboard';
 import UserManagement from './pages/admin/UserManagement';
+import CostCentreManagement from './pages/admin/CostCentreManagement';
 import { useCurrentUser } from './api/hooks';
 import SSDProjectList from './pages/ssd/SSDProjectList';
 import SSDDashboard from './pages/ssd/SSDDashboard';
+import UsageDashboard from './pages/UsageDashboard';
 
 // Placeholder components for other routes
 const Placeholder = ({ title }: { title: string }) => (
@@ -118,9 +120,13 @@ function App() {
                   <Route path="ssd/:projectId" element={<SSDDashboard />} />
                 </Route>
 
+                {/* Usage Dashboard - available to all authenticated users */}
+                <Route path="usage" element={<UsageDashboard />} />
+
                 {/* Admin Routes */}
                 <Route element={<RequireAccess module="admin" />}>
                   <Route path="admin/users" element={<UserManagement />} />
+                  <Route path="admin/costs" element={<CostCentreManagement />} />
                 </Route>
               </Route>
             </Route>

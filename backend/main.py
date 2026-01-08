@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 
-from api import fsm, verification, wq, auth, fsa, users, ssd, dry_day
+from api import fsm, verification, wq, auth, fsa, users, ssd, dry_day, admin
 from database import get_session, create_db_and_tables
 from domain.auth import User, UserCreate
 from services.auth import AuthService
@@ -26,6 +26,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Usage logging middleware for cost tracking
+from middleware.usage_logging import UsageLoggingMiddleware
+app.add_middleware(UsageLoggingMiddleware)
+
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(fsm.router, prefix="/api", tags=["fsm"])
@@ -34,6 +38,7 @@ app.include_router(verification.router, prefix="/api", tags=["verification"])
 app.include_router(dry_day.router, prefix="/api")  # Dry Day Analysis endpoints
 app.include_router(wq.router, prefix="/api", tags=["wq"])
 app.include_router(ssd.router, prefix="/api", tags=["ssd"])
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
 from api import ingestion
 app.include_router(ingestion.router, prefix="/api", tags=["ingestion"])
@@ -61,6 +66,22 @@ def on_startup():
                 session.add(admin_user)
                 session.commit()
                 print("Created default admin user: admin@flowbot.com / admin123")
+            
+            # Seed default module weights if not exist
+            from domain.admin import ModuleWeight
+            existing_weights = session.exec(select(ModuleWeight)).all()
+            if not existing_weights:
+                default_modules = [
+                    ("FSM", "Flow Survey Management"),
+                    ("FSA", "Flow Survey Analysis"),
+                    ("WQ", "Water Quality"),
+                    ("VER", "Verification"),
+                    ("SSD", "Spill Storage Design"),
+                ]
+                for module, desc in default_modules:
+                    session.add(ModuleWeight(module=module, weight=1.0, description=desc))
+                session.commit()
+                print("Seeded default module weights")
     except Exception as e:
         print(f"Warning: Could not create default user: {e}")
         print("You may need to create users manually or check the database.")
@@ -68,3 +89,19 @@ def on_startup():
 @app.get("/")
 def read_root():
     return {"message": "Welcome to FlowBot Hub"}
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from services.storage import create_storage_snapshots
+from datetime import date
+
+scheduler = BackgroundScheduler()
+
+@app.on_event("startup")
+def start_scheduler():
+    scheduler.add_job(create_storage_snapshots, 'cron', hour=0, minute=0, id='daily_storage_snapshot', replace_existing=True)
+    scheduler.start()
+    print("Scheduler started: Daily storage snapshots scheduled for 00:00")
+
+@app.on_event("shutdown")
+def shutdown_scheduler():
+    scheduler.shutdown()

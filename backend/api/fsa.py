@@ -13,7 +13,7 @@ from domain.fsa import (
     FsaProject, FsaProjectCreate, FsaProjectRead,
     FsaDataset, FsaDatasetCreate, FsaDatasetRead,
     FlowMonitor, FlowMonitorRead,
-    FsaTimeSeries
+    FsaTimeSeries, FsaProjectCollaborator
 )
 from services.importers import import_fdv_file, import_r_file
 from services.fsa_services import FsaRainfallService, FsaEventService, FsaFDVService
@@ -77,7 +77,15 @@ def read_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
-    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id):
+    # Check permissions
+    is_collaborator = session.exec(
+        select(FsaProjectCollaborator).where(
+            FsaProjectCollaborator.project_id == project_id,
+            FsaProjectCollaborator.user_id == current_user.id
+        )
+    ).first()
+
+    if not (current_user.is_superuser or current_user.role == 'Admin' or project.owner_id == current_user.id or is_collaborator):
         raise HTTPException(status_code=403, detail="Not authorized to view this project")
         
     return project

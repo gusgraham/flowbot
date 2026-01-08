@@ -27,7 +27,7 @@ const Login: React.FC = () => {
             localStorage.setItem('token', response.data.access_token);
             navigate('/');
         } catch (err: any) {
-            setError('Invalid email or password');
+            setError(err.response?.data?.detail || 'Invalid email or password');
         } finally {
             setLoading(false);
         }

@@ -1,5 +1,8 @@
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from sqlmodel import SQLModel, Field, Relationship
+
+if TYPE_CHECKING:
+    from domain.admin import CostCentre
 
 class UserBase(SQLModel):
     username: str = Field(index=True, unique=True)
@@ -18,16 +21,17 @@ class User(UserBase, table=True):
     __tablename__ = "auth_user"
     id: Optional[int] = Field(default=None, primary_key=True)
     hashed_password: str
+    cost_centre_id: Optional[int] = Field(default=None, foreign_key="admin_cost_centre.id")
     
     # Relationships
-    # projects: List["FsmProject"] = Relationship(back_populates="owner")
-    # collaborations: List["FsmProject"] = Relationship(link_model="ProjectCollaborator")
+    cost_centre: Optional["CostCentre"] = Relationship(back_populates="users")
 
 class UserCreate(UserBase):
     password: str
 
 class UserRead(UserBase):
     id: int
+    cost_centre_id: Optional[int] = None
 
 class UserUpdate(SQLModel):
     email: Optional[str] = None
@@ -41,6 +45,7 @@ class UserUpdate(SQLModel):
     access_wq: Optional[bool] = None
     access_verification: Optional[bool] = None
     access_ssd: Optional[bool] = None
+    cost_centre_id: Optional[int] = None
 
 class Token(SQLModel):
     access_token: str

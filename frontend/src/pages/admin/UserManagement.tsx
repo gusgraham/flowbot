@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '../../api/hooks';
+import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useCostCentres } from '../../api/hooks';
 import type { User, UserCreate, UserUpdate } from '../../api/hooks';
 import { Plus, Edit2, Check, X, Shield, User as UserIcon, Trash2 } from 'lucide-react';
 
@@ -8,6 +8,7 @@ const UserManagement = () => {
     const createUser = useCreateUser();
     const updateUser = useUpdateUser();
     const deleteUser = useDeleteUser();
+    const { data: costCentres } = useCostCentres();
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -66,7 +67,8 @@ const UserManagement = () => {
                 access_fsa: formData.access_fsa,
                 access_wq: formData.access_wq,
                 access_verification: formData.access_verification,
-                access_ssd: formData.access_ssd
+                access_ssd: formData.access_ssd,
+                cost_centre_id: (formData as any).cost_centre_id ?? null
             };
 
             await updateUser.mutateAsync({ id: selectedUser.id, updates });
@@ -89,8 +91,9 @@ const UserManagement = () => {
             access_fsa: user.access_fsa ?? true,
             access_wq: user.access_wq ?? true,
             access_verification: user.access_verification ?? true,
-            access_ssd: user.access_ssd ?? true
-        });
+            access_ssd: user.access_ssd ?? true,
+            cost_centre_id: user.cost_centre_id ?? undefined
+        } as any);
         setIsEditModalOpen(true);
     };
 
@@ -182,9 +185,14 @@ const UserManagement = () => {
                                             <Edit2 size={18} />
                                         </button>
                                         <button
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 if (confirm(`Are you sure you want to delete ${user.full_name || user.username}? This action cannot be undone.`)) {
-                                                    deleteUser.mutate(user.id);
+                                                    try {
+                                                        await deleteUser.mutateAsync(user.id);
+                                                    } catch (err: any) {
+                                                        console.error("Failed to delete user:", err);
+                                                        alert(`Failed to delete user: ${err.response?.data?.detail || err.message || 'Unknown error'}`);
+                                                    }
                                                 }
                                             }}
                                             className="p-2 hover:bg-red-900/50 rounded-lg text-gray-400 hover:text-red-400 transition-colors"
@@ -354,6 +362,20 @@ const UserManagement = () => {
                                     <option value="Manager">Manager</option>
                                     <option value="Engineer">Engineer</option>
                                     <option value="Field">Field</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-400 mb-1">Cost Centre</label>
+                                <select
+                                    value={(formData as any).cost_centre_id ?? ''}
+                                    onChange={(e) => setFormData({ ...formData, cost_centre_id: e.target.value ? parseInt(e.target.value) : null } as any)}
+                                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                >
+                                    <option value="">No Cost Centre</option>
+                                    {costCentres?.map((cc) => (
+                                        <option key={cc.id} value={cc.id}>{cc.name} ({cc.code})</option>
+                                    ))}
                                 </select>
                             </div>
 

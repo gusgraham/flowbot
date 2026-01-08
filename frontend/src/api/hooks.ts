@@ -2909,3 +2909,238 @@ export function useSaveDWFProfiles() {
         }
     });
 }
+
+// ==========================================
+// ADMIN: COST CENTRES
+// ==========================================
+
+export interface CostCentre {
+    id: number;
+    name: string;
+    code: string;
+    is_overhead: boolean;
+    created_at: string;
+}
+
+export interface CostCentreCreate {
+    name: string;
+    code: string;
+    is_overhead?: boolean;
+}
+
+export const useCostCentres = () => {
+    return useQuery({
+        queryKey: ['cost_centres'],
+        queryFn: async () => {
+            const { data } = await api.get<CostCentre[]>('/admin/cost-centres');
+            return data;
+        },
+    });
+};
+
+export const useCreateCostCentre = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (newCostCentre: CostCentreCreate) => {
+            const { data } = await api.post<CostCentre>('/admin/cost-centres', newCostCentre);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['cost_centres'] });
+        },
+    });
+};
+
+export const useUpdateCostCentre = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, updates }: { id: number; updates: Partial<CostCentreCreate> }) => {
+            const { data } = await api.put<CostCentre>(`/admin/cost-centres/${id}`, updates);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['cost_centres'] });
+        },
+    });
+};
+
+export const useDeleteCostCentre = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            await api.delete(`/admin/cost-centres/${id}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['cost_centres'] });
+        },
+    });
+};
+
+// ==========================================
+// ADMIN: MODULE WEIGHTS
+// ==========================================
+
+export interface ModuleWeight {
+    id: number;
+    module: string;
+    weight: number;
+    description: string | null;
+}
+
+export const useModuleWeights = () => {
+    return useQuery({
+        queryKey: ['module_weights'],
+        queryFn: async () => {
+            const { data } = await api.get<ModuleWeight[]>('/admin/module-weights');
+            return data;
+        },
+    });
+};
+
+export const useUpdateModuleWeight = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, updates }: { id: number; updates: { weight?: number; description?: string } }) => {
+            const { data } = await api.put<ModuleWeight>(`/admin/module-weights/${id}`, updates);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['module_weights'] });
+        },
+    });
+};
+
+// ==========================================
+// ADMIN: BUDGETS
+// ==========================================
+
+export interface BudgetConfig {
+    id: number;
+    effective_date: string;
+    hosting_budget: number;
+    development_budget: number;
+    storage_weight_pct: number;
+    notes: string | null;
+    created_at: string;
+}
+
+export interface BudgetConfigCreate {
+    effective_date: string;
+    hosting_budget: number;
+    development_budget: number;
+    storage_weight_pct: number;
+    notes?: string;
+}
+
+export const useBudgets = () => {
+    return useQuery({
+        queryKey: ['budgets'],
+        queryFn: async () => {
+            const { data } = await api.get<BudgetConfig[]>('/admin/budgets');
+            return data;
+        },
+    });
+};
+
+export const useCurrentBudget = () => {
+    return useQuery({
+        queryKey: ['budgets', 'current'],
+        queryFn: async () => {
+            const { data } = await api.get<BudgetConfig | null>('/admin/budgets/current');
+            return data;
+        },
+    });
+};
+
+export const useCreateBudget = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (newBudget: BudgetConfigCreate) => {
+            const { data } = await api.post<BudgetConfig>('/admin/budgets', newBudget);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['budgets'] });
+        },
+    });
+};
+
+export const useUpdateBudget = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, updates }: { id: number; updates: BudgetConfigCreate }) => {
+            const { data } = await api.put<BudgetConfig>(`/admin/budgets/${id}`, updates);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['budgets'] });
+            queryClient.invalidateQueries({ queryKey: ['budgets', 'current'] });
+        },
+    });
+};
+
+export const useDeleteBudget = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (budgetId: number) => {
+            await api.delete(`/admin/budgets/${budgetId}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['budgets'] });
+            queryClient.invalidateQueries({ queryKey: ['budgets', 'current'] });
+        },
+    });
+};
+
+// ==========================================
+// ADMIN: INVOICES & STORAGE
+// ==========================================
+
+export interface MonthlyInvoice {
+    id: number;
+    cost_centre_id: number;
+    year_month: string;
+    total_budget: number;
+    share_pct: number;
+    utilization_cost: number;
+    storage_cost: number;
+    total_cost: number;
+    details_json: string | null;
+    generated_at: string;
+}
+
+export const useInvoices = (filters?: { cost_centre_id?: number; year_month?: string }) => {
+    return useQuery({
+        queryKey: ['invoices', filters],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (filters?.cost_centre_id) params.append('cost_centre_id', String(filters.cost_centre_id));
+            if (filters?.year_month) params.append('year_month', filters.year_month);
+            const { data } = await api.get<MonthlyInvoice[]>(`/admin/invoices?${params.toString()}`);
+            return data;
+        },
+    });
+};
+
+export const useGenerateInvoices = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (year_month: string) => {
+            const { data } = await api.post(`/admin/invoices/generate?year_month=${year_month}`);
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+        },
+    });
+};
+
+export const useCreateStorageSnapshot = () => {
+    return useMutation({
+        mutationFn: async () => {
+            const { data } = await api.post('/admin/storage/snapshot');
+            return data;
+        },
+    });
+};
+

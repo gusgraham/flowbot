@@ -9,6 +9,7 @@ from database import get_session
 from domain.auth import Token, User
 from repositories.auth import UserRepository
 from services.auth import AuthService, ACCESS_TOKEN_EXPIRE_MINUTES
+from api.deps import get_current_active_user, oauth2_scheme
 
 router = APIRouter()
 
@@ -48,7 +49,7 @@ def register_user(
         full_name=user_in.full_name,
         hashed_password=hashed_password,
         role=user_in.role,
-        is_active=False,  # Pending admin approval
+        is_active=True,  # Auto-activate new users
         is_superuser=False,
         access_fsm=False,  # Not included by default
         access_fsa=True,
@@ -89,7 +90,62 @@ async def login_for_access_token(
         )
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    # Store original login time to enforce max session duration
+    import time
+    orig_iat = int(time.time())
+    
     access_token = auth_service.create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.username, "orig_iat": orig_iat},
+        expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/refresh-token", response_model=Token)
+def refresh_token(
+    current_user: User = Depends(get_current_active_user),
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    Refresh access token if within max session window.
+    Sliding window: 30 mins active.
+    Max window: 10 hours from initial login.
+    """
+    from jose import jwt, JWTError
+    from services.auth import SECRET_KEY, ALGORITHM
+    import time
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        orig_iat = payload.get("orig_iat")
+        if not orig_iat:
+            orig_iat = int(time.time()) # Fallback for old tokens
+            
+        # Check max session duration (10 hours = 36000 seconds)
+        MAX_SESSION_SECONDS = 10 * 60 * 60
+        now = int(time.time())
+        
+        if now - orig_iat > MAX_SESSION_SECONDS:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired. Please login again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        # Create new token with same orig_iat
+        auth_service = AuthService()
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        new_token = auth_service.create_access_token(
+            data={"sub": current_user.username, "orig_iat": orig_iat},
+            expires_delta=access_token_expires
+        )
+        
+        return {"access_token": new_token, "token_type": "bearer"}
+
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

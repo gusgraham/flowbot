@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ClipboardList, Activity, CheckCircle, Droplets, LogOut, Menu, X, Users, Container } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, Activity, CheckCircle, Droplets, LogOut, Menu, X, Users, Container, DollarSign, BarChart3 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../lib/utils';
 import { useCurrentUser } from '../api/hooks';
+import SessionManager from '../components/SessionManager';
 
 const MainLayout: React.FC = () => {
     const location = useLocation();
@@ -30,7 +31,11 @@ const MainLayout: React.FC = () => {
 
     if (user?.is_superuser || user?.role === 'Admin') {
         filteredNavItems.push({ name: 'Users', shortName: 'Users', path: '/admin/users', icon: Users });
+        filteredNavItems.push({ name: 'Cost Management', shortName: 'Costs', path: '/admin/costs', icon: DollarSign });
     }
+
+    // Usage dashboard available to all authenticated users
+    filteredNavItems.push({ name: 'My Usage', shortName: 'Usage', path: '/usage', icon: BarChart3 });
 
     const handleSignOut = () => {
         localStorage.removeItem('token');
@@ -40,6 +45,7 @@ const MainLayout: React.FC = () => {
 
     return (
         <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
+            <SessionManager />
             {/* Sidebar */}
             <aside className={cn(
                 "bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out",
