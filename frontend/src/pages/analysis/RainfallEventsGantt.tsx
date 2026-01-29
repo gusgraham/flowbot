@@ -26,12 +26,14 @@ interface EventResult {
 
 interface RainfallEventsGanttProps {
     events: EventResult[];
+    onZoomChange?: (domain: [number, number] | null, minTime: number, totalDuration: number) => void;
+    externalZoomDomain?: [number, number] | null;
 }
 
 // Keep margins here so chart + mouse math stay in sync
 const chartMargin = { top: 20, right: 30, left: 100, bottom: 20 };
 
-const RainfallEventsGantt: React.FC<RainfallEventsGanttProps> = ({ events }) => {
+const RainfallEventsGantt: React.FC<RainfallEventsGanttProps> = ({ events, onZoomChange, externalZoomDomain }) => {
     // Tooltip state
     const [cursorTime, setCursorTime] = useState<Date | null>(null);
     const [cursorX, setCursorX] = useState(0);
@@ -94,14 +96,26 @@ const RainfallEventsGantt: React.FC<RainfallEventsGanttProps> = ({ events }) => 
     const { chartData, maxSegments, minTime, maxTime } = processedData;
     const totalDuration = maxTime - minTime;
 
-    // Zoom domain
-    const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
+    // Zoom domain - use external if provided
+    const [internalZoomDomain, setInternalZoomDomain] = useState<[number, number] | null>(null);
+    const zoomDomain = externalZoomDomain ?? internalZoomDomain;
+
+    const setZoomDomain = (domain: [number, number] | null) => {
+        setInternalZoomDomain(domain);
+        if (onZoomChange && domain) {
+            onZoomChange(domain, minTime, totalDuration);
+        }
+    };
 
     useEffect(() => {
-        if (totalDuration > 0) {
-            setZoomDomain([0, totalDuration]);
+        if (totalDuration > 0 && !externalZoomDomain) {
+            const initial: [number, number] = [0, totalDuration];
+            setInternalZoomDomain(initial);
+            if (onZoomChange) {
+                onZoomChange(initial, minTime, totalDuration);
+            }
         }
-    }, [totalDuration]);
+    }, [totalDuration, externalZoomDomain, minTime, onZoomChange]);
 
     // Zoom/pan handlers
     const handleZoomIn = () => {

@@ -16,3 +16,5 @@ catboost
 argon2-cffi
 reportlab
 apscheduler
+psycopg2-binary
+python-dotenv

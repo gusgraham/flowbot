@@ -84,9 +84,11 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
     const [flowExpanded, setFlowExpanded] = useState(true);
     const [eventsExpanded, setEventsExpanded] = useState(true);
 
-    // Group datasets by type
-    const rainfallDatasets = datasets?.filter(d => d.variable === 'Rainfall') || [];
-    const flowDatasets = datasets?.filter(d => d.variable === 'Flow/Depth' || d.variable === 'Flow') || [];
+    // Group datasets by type and sort alphabetically
+    const rainfallDatasets = (datasets?.filter(d => d.variable === 'Rainfall') || [])
+        .sort((a, b) => a.name.localeCompare(b.name));
+    const flowDatasets = (datasets?.filter(d => d.variable === 'Flow/Depth' || d.variable === 'Flow') || [])
+        .sort((a, b) => a.name.localeCompare(b.name));
 
     // Auto-select first dataset if available and none selected
     React.useEffect(() => {

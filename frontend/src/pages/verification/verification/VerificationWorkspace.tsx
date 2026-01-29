@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, AlertTriangle, XCircle, Activity, Droplets, Settings, BarChart2, RefreshCw, X, MousePointer2 } from 'lucide-react';
-import { useWorkspaceData, useUpdateVerificationRunSettings, type AnalysisSettings } from '../../../api/hooks';
+import { Loader2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, AlertTriangle, XCircle, Activity, Droplets, Settings, BarChart2, RefreshCw, X, MousePointer2, Camera } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { useWorkspaceData, useUpdateVerificationRunSettings, useUpdateVerificationRun, type AnalysisSettings } from '../../../api/hooks';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceDot,
     ScatterChart, Scatter, ReferenceLine, BarChart, Bar, Cell, ReferenceArea, Customized
@@ -13,7 +15,7 @@ interface VerificationWorkspaceProps {
 }
 
 // Simple decimation downsampling (moved outside component)
-const downsample = <T,>(data: T[], targetPoints: number = 2000): T[] => {
+const downsample = <T,>(data: T[], targetPoints: number = 50000): T[] => {
     if (!data || data.length <= targetPoints) return data;
     const step = Math.ceil(data.length / targetPoints);
     return data.filter((_, i) => i % step === 0);
@@ -22,8 +24,8 @@ const downsample = <T,>(data: T[], targetPoints: number = 2000): T[] => {
 const formatTime = (isoString: string) => new Date(isoString).toLocaleString();
 
 // Compact date formatter for chart axis (show "12 Dec 14:00" format)
-const formatAxisDate = (isoString: string) => {
-    const d = new Date(isoString);
+const formatAxisDate = (value: string | number) => {
+    const d = new Date(value);
     const day = d.getDate();
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const month = months[d.getMonth()];
@@ -233,6 +235,10 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
     const [showControls, setShowControls] = useState(false);
     const [viewMode, setViewMode] = useState<'timeseries' | 'shapefit'>('timeseries');
 
+
+    const workspaceRef = useRef<HTMLDivElement>(null);
+    const [isCapturing, setIsCapturing] = useState(false);
+
     // Manual Peak Editing State
     const [editSeries, setEditSeries] = useState<EditSeriesType>(null);
 
@@ -244,6 +250,15 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
     // Fetch Data
     const { data, isLoading, error, isFetching, refetch } = useWorkspaceData(effectiveRunId, analysisSettings);
     const updateSettingsMutation = useUpdateVerificationRunSettings();
+    const updateRunMutation = useUpdateVerificationRun();
+
+    // Depth Only State
+    const [isDepthOnly, setIsDepthOnly] = useState(false);
+    const [depthOnlyComment, setDepthOnlyComment] = useState('');
+
+    // Effective Depth Only (Monitor setting takes precedence)
+    const isMonitorDepthOnly = (data as any)?.monitor?.is_depth_only ?? false;
+    const effectiveDepthOnly = isDepthOnly || isMonitorDepthOnly;
 
     // Initialize local settings from server data on load
     // IMPORTANT: Only reset when runId actually changes, not on every data fetch
@@ -276,7 +291,43 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
             // No server settings - use defaults
             setAnalysisSettings(defaults);
         }
-    }, [effectiveRunId, data?.run?.analysis_settings]);
+
+
+        // Sync Depth Only state
+        if (data?.run) {
+            setIsDepthOnly(data.run.is_depth_only || false);
+            setDepthOnlyComment(data.run.depth_only_comment || '');
+        }
+
+        // Force view mode if depth only
+        if ((data?.run?.is_depth_only || (data as any)?.monitor?.is_depth_only) && viewMode !== 'timeseries') {
+            setViewMode('timeseries');
+        }
+    }, [effectiveRunId, data?.run?.analysis_settings, data?.run?.is_depth_only, data?.run?.depth_only_comment, (data as any)?.monitor?.is_depth_only]);
+
+    const handleDepthOverrideChange = (checked: boolean) => {
+        setIsDepthOnly(checked);
+        if (checked) {
+            setViewMode('timeseries');
+        }
+        if (effectiveRunId) {
+            updateRunMutation.mutate({
+                runId: effectiveRunId,
+                update: { is_depth_only: checked }
+            }, {
+                onSuccess: () => refetch()
+            });
+        }
+    };
+
+    const handleDepthCommentSave = () => {
+        if (effectiveRunId) {
+            updateRunMutation.mutate({
+                runId: effectiveRunId,
+                update: { depth_only_comment: depthOnlyComment }
+            });
+        }
+    };
 
     const handleApplyAnalysis = () => {
         if (!effectiveRunId) return;
@@ -289,6 +340,65 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                 setEditSeries(null); // Exit edit mode
             }
         });
+    };
+
+    const handleCapture = async () => {
+        if (!workspaceRef.current) return;
+        setIsCapturing(true);
+
+        try {
+            // Wait for any renders
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Create a clone of the element to render full height
+            const element = workspaceRef.current;
+            const clone = element.cloneNode(true) as HTMLElement;
+
+            // Style the clone to be full height and invisible but rendered
+            clone.style.position = 'fixed'; // Fixed to viewport
+            clone.style.top = '0';
+            clone.style.left = '0';
+            clone.style.width = `${element.offsetWidth}px`; // Match original width
+            clone.style.height = 'auto'; // Let it grow to full height
+            clone.style.overflow = 'visible'; // Show all content
+            clone.style.zIndex = '-9999'; // Behind everything
+            clone.style.background = '#f9fafb'; // Ensure background color (bg-gray-50)
+
+            // Append to body to render
+            document.body.appendChild(clone);
+
+            // Wait a tick for layout
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Capture the clone
+            const canvas = await html2canvas(clone, {
+                useCORS: true,
+                scale: 2,
+                logging: false,
+                height: clone.scrollHeight,
+                windowHeight: clone.scrollHeight,
+                scrollY: 0, // IMPORTANT: Ignore window scroll
+                x: 0,
+                y: 0
+            });
+
+            // Cleanup
+            document.body.removeChild(clone);
+
+            const image = canvas.toDataURL("image/png");
+
+            // Create download link
+            const link = document.createElement('a');
+            link.href = image;
+            link.download = `verification_trace_${data?.monitor?.name}_${data?.event?.name}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (err) {
+            console.error('Screen capture failed:', err);
+        } finally {
+            setIsCapturing(false);
+        }
     };
 
     // Determine if current editSeries is for flow or depth chart
@@ -312,7 +422,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
             return;
         }
 
-        // Recharts gives 'activeLabel' which matches our XAxis dataKey 'time' (formatted string)
+        // Recharts gives 'activeLabel' which matches our XAxis dataKey 'iso_time' (raw ISO string)
         const clickedLabel = e?.activeLabel;
 
         if (!clickedLabel) {
@@ -329,8 +439,24 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         const chartData = chartType === 'flow' ? flowChartData : depthChartData;
 
         // Find data point to get ISO for clicked label
-        const clickedDataPoint = chartData.find(d => d.time === clickedLabel);
-        const clickedIso = (clickedDataPoint as any)?.iso_time;
+        // activeLabel comes from XAxis dataKey 'timestamp' (number)
+        // We need to find the corresponding ISO time string from the data
+        let clickedIso: string | undefined;
+        let dataPoint: any;
+
+        if (typeof clickedLabel === 'number') {
+            dataPoint = chartData.find(d => d.timestamp === clickedLabel);
+            clickedIso = dataPoint?.iso_time;
+        } else {
+            // Fallback if it's already a string (shouldn't happen with type="number" axis)
+            clickedIso = clickedLabel;
+            dataPoint = chartData.find(d => d.iso_time === clickedLabel);
+        }
+
+        if (!clickedIso) {
+            console.warn('Click ignored: Could not resolve ISO time for label:', clickedLabel);
+            return;
+        }
 
         const existingIndex = currentPeaks.findIndex(p => p.time === clickedIso);
 
@@ -355,13 +481,10 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                 }
             }
 
-            // Fallback: Look up in chart data directly using the label
-            if (valueToAdd === undefined) {
-                const dataPoint = chartData.find(d => d.time === clickedLabel);
-                if (dataPoint) {
-                    if (editSeries === 'obs_flow' || editSeries === 'obs_depth') valueToAdd = (dataPoint.obs_smoothed as number) ?? (dataPoint.observed as number);
-                    if (editSeries === 'pred_flow' || editSeries === 'pred_depth') valueToAdd = (dataPoint.pred_smoothed as number) ?? (dataPoint.predicted as number);
-                }
+            // Fallback: Look up in chart data directly using the resolved dataPoint
+            if (valueToAdd === undefined && dataPoint) {
+                if (editSeries === 'obs_flow' || editSeries === 'obs_depth') valueToAdd = (dataPoint.obs_smoothed as number) ?? (dataPoint.observed as number);
+                if (editSeries === 'pred_flow' || editSeries === 'pred_depth') valueToAdd = (dataPoint.pred_smoothed as number) ?? (dataPoint.predicted as number);
             }
 
             if (valueToAdd !== undefined && valueToAdd !== null && clickedIso) {
@@ -401,89 +524,122 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
     const { flowChartData, depthChartData, velocityChartData, flowScatterData } = useMemo(() => {
         if (!data?.series) return { flowChartData: [], depthChartData: [], velocityChartData: [], flowScatterData: [] };
 
-        const obs = data.series.obs_flow ? downsample(data.series.obs_flow.values) : [];
-        const pred = data.series.pred_flow ? downsample(data.series.pred_flow.values) : [];
-        const time = data.series.obs_flow ? downsample(data.series.obs_flow.time) : [];
+        // Helper to merge obs and pred series by timestamp (not index!)
+        const mergeSeries = (obsData: { time: string[], values: number[] } | undefined,
+            predData: { time: string[], values: number[] } | undefined,
+            obsSmoothData?: { time: string[], values: number[] } | undefined,
+            predSmoothData?: { time: string[], values: number[] } | undefined) => {
+            const timeMap = new Map<string, any>();
 
-        const obsSmooth = data.series.obs_flow_smoothed ? downsample(data.series.obs_flow_smoothed.values) : null;
-        const predSmooth = data.series.pred_flow_smoothed ? downsample(data.series.pred_flow_smoothed.values) : null;
+            // Add observed data
+            if (obsData) {
+                obsData.time.forEach((t, i) => {
+                    timeMap.set(t, {
+                        time: formatTime(t),
+                        iso_time: t,
+                        timestamp: new Date(t).getTime(),
+                        observed: obsData.values[i],
+                        predicted: null,
+                        obs_smoothed: null,
+                        pred_smoothed: null
+                    });
+                });
+            }
 
-        const flowChartData = time.map((t, i) => ({
-            time: formatTime(t),
-            iso_time: t, // Keep raw ISO for backend
-            observed: obs[i],
-            predicted: pred[i],
-            obs_smoothed: obsSmooth ? obsSmooth[i] : null,
-            pred_smoothed: predSmooth ? predSmooth[i] : null,
-        }));
+            // Add/merge predicted data
+            if (predData) {
+                predData.time.forEach((t, i) => {
+                    if (timeMap.has(t)) {
+                        timeMap.get(t).predicted = predData.values[i];
+                    } else {
+                        timeMap.set(t, {
+                            time: formatTime(t),
+                            iso_time: t,
+                            timestamp: new Date(t).getTime(),
+                            observed: null,
+                            predicted: predData.values[i],
+                            obs_smoothed: null,
+                            pred_smoothed: null
+                        });
+                    }
+                });
+            }
 
-        const obsDepth = data.series.obs_depth ? downsample(data.series.obs_depth.values) : [];
-        const predDepth = data.series.pred_depth ? downsample(data.series.pred_depth.values) : [];
-        const timeDepth = data.series.obs_depth ? downsample(data.series.obs_depth.time) : [];
-        const obsDepthSmooth = data.series.obs_depth_smoothed ? downsample(data.series.obs_depth_smoothed.values) : null;
-        const predDepthSmooth = data.series.pred_depth_smoothed ? downsample(data.series.pred_depth_smoothed.values) : null;
+            // Add smoothed observed
+            if (obsSmoothData) {
+                obsSmoothData.time.forEach((t, i) => {
+                    if (timeMap.has(t)) {
+                        timeMap.get(t).obs_smoothed = obsSmoothData.values[i];
+                    }
+                });
+            }
 
-        const depthChartData = timeDepth.map((t, i) => ({
-            time: formatTime(t),
-            iso_time: t, // Keep raw ISO for backend
-            observed: obsDepth[i],
-            predicted: predDepth[i],
-            obs_smoothed: obsDepthSmooth ? obsDepthSmooth[i] : null,
-            pred_smoothed: predDepthSmooth ? predDepthSmooth[i] : null,
-        }));
+            // Add smoothed predicted
+            if (predSmoothData) {
+                predSmoothData.time.forEach((t, i) => {
+                    if (timeMap.has(t)) {
+                        timeMap.get(t).pred_smoothed = predSmoothData.values[i];
+                    }
+                });
+            }
 
-        // Velocity data (no smoothing needed, just for reference)
-        const obsVelocity = data.series.obs_velocity ? downsample(data.series.obs_velocity.values) : [];
-        const predVelocity = data.series.pred_velocity ? downsample(data.series.pred_velocity.values) : [];
-        const timeVelocity = data.series.obs_velocity ? downsample(data.series.obs_velocity.time) :
-            (data.series.pred_velocity ? downsample(data.series.pred_velocity.time) : []);
+            // Sort by timestamp and downsample
+            const sorted = Array.from(timeMap.values()).sort((a, b) =>
+                new Date(a.iso_time).getTime() - new Date(b.iso_time).getTime()
+            );
 
-        const velocityChartData = timeVelocity.map((t, i) => ({
-            time: formatTime(t),
-            observed: obsVelocity[i] ?? null,
-            predicted: predVelocity[i] ?? null,
-        }));
+            return downsample(sorted);
+        };
 
-        const flowScatterData = downsample(data.series.obs_flow?.values.map((val, i) => ({
-            observed: val,
-            predicted: data.series.pred_flow?.values[i]
-        })).filter(d => d.observed != null && d.predicted != null) || [], 2000);
+        const flowChartData = mergeSeries(
+            data.series.obs_flow,
+            data.series.pred_flow,
+            data.series.obs_flow_smoothed,
+            data.series.pred_flow_smoothed
+        );
+
+        const depthChartData = mergeSeries(
+            data.series.obs_depth,
+            data.series.pred_depth,
+            data.series.obs_depth_smoothed,
+            data.series.pred_depth_smoothed
+        );
+
+        // Velocity data merged the same way
+        const velocityChartData = mergeSeries(
+            data.series.obs_velocity,
+            data.series.pred_velocity
+        );
+
+        // Scatter data - only include points where both obs and pred exist
+        const flowScatterData = flowChartData
+            .filter(d => d.observed != null && d.predicted != null)
+            .map(d => ({ observed: d.observed, predicted: d.predicted }));
 
         return { flowChartData, depthChartData, velocityChartData, flowScatterData };
     }, [data?.series]);
 
-    // Peaks to display: Prioritize local manuals if mode is manual, otherwise use server peaks (which might be persisted manuals or auto)
-    // Actually, we should just visualize what's in `analysisSettings.manual_peaks` if mode is manual.
-    // NOTE: 'manual_peaks' in settings might be unsaved (local edits).
+    // Peaks to display: Prioritize local manuals if mode is manual, otherwise use server peaks
     const displayPeaks = useMemo(() => {
         if (analysisSettings.peak_mode === 'manual') {
             const manual = analysisSettings.manual_peaks || {};
-            // Format time to match chart labels (toLocaleString) for ReferenceDot validation
-            // Wait, ReferenceDot matches XAxis which uses `formatTime(t)`.
-            // My manual peaks store ISO string.
-            // I need to ensure matches.
             return {
-                obs_flow: manual.obs_flow?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
-                pred_flow: manual.pred_flow?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
-                obs_depth: manual.obs_depth?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
-                pred_depth: manual.pred_depth?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
+                obs_flow: manual.obs_flow || [],
+                pred_flow: manual.pred_flow || [],
+                obs_depth: manual.obs_depth || [],
+                pred_depth: manual.pred_depth || [],
             };
         }
         // Auto mode or initial load: use server provided peaks (formatted with time string already?)
         // Server peaks have `time` as ISO? Check backend workspace.
         // Backend `get_run_workspace`: `peaks_data` items have `time` formatted as `strftime('%Y-%m-%dT%H:%M:%S')`.
-        // Frontend `formatTime` uses `toLocaleString`.
-        // Mismatch risk?
-        // `formatTime`: `new Date(isoString).toLocaleString()`.
-        // Server: '2023...'. `new Date()` works.
-        // IMPORTANT: The chart XAxis uses `formatTime`. So ReferenceDot `x` must match `formatTime`.
-        // Server data `peaks` need to be mapped.
-        // `data.peaks` items have `time` string.
+        // This IS an ISO-like string. The Chart data `iso_time` matches this format.
+        // So we can pass `p` directly, interpreting `p.time` as the `x` value.
         return {
-            obs_flow: data?.peaks?.obs_flow?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
-            pred_flow: data?.peaks?.pred_flow?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
-            obs_depth: data?.peaks?.obs_depth?.map(p => ({ ...p, time_label: formatTime(p.time) })) || [],
-            pred_depth: data?.peaks?.pred_depth?.map(p => ({ ...p, time_label: formatTime(p.time) })) || []
+            obs_flow: data?.peaks?.obs_flow || [],
+            pred_flow: data?.peaks?.pred_flow || [],
+            obs_depth: data?.peaks?.obs_depth || [],
+            pred_depth: data?.peaks?.pred_depth || []
         };
     }, [analysisSettings.peak_mode, analysisSettings.manual_peaks, data?.peaks]);
 
@@ -530,6 +686,11 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         return labels[name] || name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     };
 
+    const formatTooltipLabel = (value: number) => {
+        if (!value) return '';
+        return new Date(value).toLocaleString();
+    };
+
     // Summary statistics for the summary table
     const summaryStats = useMemo(() => {
         if (!data?.series) return null;
@@ -553,7 +714,16 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
             return filtered.reduce((sum, v) => sum + v * timestepSeconds, 0);
         };
 
-        const timestep = data.timestep_minutes || 5;
+        const detectTimestep = (times: string[] | undefined): number => {
+            if (!times || times.length < 2) return data.timestep_minutes || 5;
+            const t1 = new Date(times[0]).getTime();
+            const t2 = new Date(times[1]).getTime();
+            const diffMinutes = (t2 - t1) / 60000;
+            return diffMinutes > 0 ? diffMinutes : (data.timestep_minutes || 5);
+        };
+
+        const obsTimestep = detectTimestep(data.series.obs_flow?.time);
+        const predTimestep = detectTimestep(data.series.pred_flow?.time);
 
         const obsFlowStats = calcStats(data.series.obs_flow?.values);
         const predFlowStats = calcStats(data.series.pred_flow?.values);
@@ -562,8 +732,8 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
         const obsVelocityStats = calcStats(data.series.obs_velocity?.values);
         const predVelocityStats = calcStats(data.series.pred_velocity?.values);
 
-        const obsVolume = calcVolume(data.series.obs_flow?.values, timestep);
-        const predVolume = calcVolume(data.series.pred_flow?.values, timestep);
+        const obsVolume = calcVolume(data.series.obs_flow?.values, obsTimestep);
+        const predVolume = calcVolume(data.series.pred_flow?.values, predTimestep);
 
         return {
             depth: {
@@ -617,7 +787,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
     if (!data) return null;
 
     return (
-        <div className="h-full flex flex-col bg-gray-50 overflow-y-auto">
+        <div ref={workspaceRef} className="h-full flex flex-col bg-gray-50 overflow-y-auto">
             <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
                 <div className="flex justify-between items-center">
                     <div className="flex items-center gap-4">
@@ -648,13 +818,23 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                             >
                                 Time Series
                             </button>
-                            <button
-                                className={`px-3 py-1.5 text-sm font-medium ${viewMode === 'shapefit' ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-50'}`}
-                                onClick={() => setViewMode('shapefit')}
-                            >
-                                Shape Fit
-                            </button>
+                            {!effectiveDepthOnly && (
+                                <button
+                                    className={`px-3 py-1.5 text-sm font-medium ${viewMode === 'shapefit' ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-50'}`}
+                                    onClick={() => setViewMode('shapefit')}
+                                >
+                                    Shape Fit
+                                </button>
+                            )}
                         </div>
+                        <button
+                            onClick={handleCapture}
+                            disabled={isCapturing}
+                            title="Capture Screen"
+                            className="p-1.5 text-gray-500 hover:text-gray-900 bg-white hover:bg-gray-50 border border-gray-300 rounded-md transition-colors disabled:opacity-50"
+                        >
+                            {isCapturing ? <Loader2 size={20} className="animate-spin" /> : <Camera size={20} />}
+                        </button>
                         <button
                             onClick={() => setShowControls(!showControls)}
                             className={`flex items-center gap-2 px-3 py-1.5 rounded-md border font-medium transition-colors ${showControls ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
@@ -685,6 +865,47 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
             <div className="p-6">
                 {viewMode === 'timeseries' ? (
                     <>
+                        {/* Status Overrides */}
+                        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+                            <div className="flex items-center gap-4">
+                                {isMonitorDepthOnly ? (
+                                    <div className="flex items-center gap-2 bg-blue-50 text-blue-800 px-3 py-1.5 rounded-md border border-blue-200">
+                                        <CheckCircle size={16} />
+                                        <span className="font-medium text-sm">Depth Verification Only (Enforced by Monitor)</span>
+                                    </div>
+                                ) : (
+                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={isDepthOnly}
+                                            onChange={(e) => handleDepthOverrideChange(e.target.checked)}
+                                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                        />
+                                        <span className="font-medium text-gray-700">Depth Verification Only</span>
+                                    </label>
+                                )}
+
+                                {effectiveDepthOnly && !isMonitorDepthOnly && (
+                                    <div className="flex-1 flex items-center gap-2 animate-in fade-in slide-in-from-left-2 transition-all">
+                                        <span className="text-sm text-gray-500 whitespace-nowrap">Reason:</span>
+                                        <input
+                                            type="text"
+                                            value={depthOnlyComment}
+                                            onChange={(e) => setDepthOnlyComment(e.target.value)}
+                                            onBlur={handleDepthCommentSave}
+                                            placeholder="e.g. Flow sensor failure..."
+                                            className="w-full max-w-md px-3 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                            {effectiveDepthOnly && (
+                                <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+                                    <AlertTriangle size={12} />
+                                    Flow scores will be ignored. Overall verification status depends on Depth scores only.
+                                </p>
+                            )}
+                        </div>
                         {/* Summary Statistics Table */}
                         {summaryStats && (
                             <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6 overflow-x-auto">
@@ -693,18 +914,26 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                         <tr className="border-b border-gray-300">
                                             <th className="py-2 px-3 text-left font-medium text-gray-600"></th>
                                             <th colSpan={2} className="py-2 px-3 text-center font-semibold text-gray-700 border-l border-gray-200">Depth</th>
-                                            <th colSpan={3} className="py-2 px-3 text-center font-semibold text-gray-700 border-l border-gray-200">Flow</th>
-                                            <th colSpan={2} className="py-2 px-3 text-center font-semibold text-gray-700 border-l border-gray-200">Velocity</th>
+                                            {!effectiveDepthOnly && (
+                                                <>
+                                                    <th colSpan={3} className="py-2 px-3 text-center font-semibold text-gray-700 border-l border-gray-200">Flow</th>
+                                                    <th colSpan={2} className="py-2 px-3 text-center font-semibold text-gray-700 border-l border-gray-200">Velocity</th>
+                                                </>
+                                            )}
                                         </tr>
                                         <tr className="border-b border-gray-200 text-xs text-gray-500">
                                             <th className="py-1 px-3 text-left"></th>
                                             <th className="py-1 px-2 text-center border-l border-gray-200">Min (m)</th>
                                             <th className="py-1 px-2 text-center">Max (m)</th>
-                                            <th className="py-1 px-2 text-center border-l border-gray-200">Min (m³/s)</th>
-                                            <th className="py-1 px-2 text-center">Max (m³/s)</th>
-                                            <th className="py-1 px-2 text-center">Volume (m³)</th>
-                                            <th className="py-1 px-2 text-center border-l border-gray-200">Min (m/s)</th>
-                                            <th className="py-1 px-2 text-center">Max (m/s)</th>
+                                            {!effectiveDepthOnly && (
+                                                <>
+                                                    <th className="py-1 px-2 text-center border-l border-gray-200">Min (m³/s)</th>
+                                                    <th className="py-1 px-2 text-center">Max (m³/s)</th>
+                                                    <th className="py-1 px-2 text-center">Volume (m³)</th>
+                                                    <th className="py-1 px-2 text-center border-l border-gray-200">Min (m/s)</th>
+                                                    <th className="py-1 px-2 text-center">Max (m/s)</th>
+                                                </>
+                                            )}
                                         </tr>
                                     </thead>
                                     <tbody className="font-mono text-xs">
@@ -712,21 +941,29 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             <td className="py-2 px-3 font-medium text-gray-700">Observed</td>
                                             <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.depth.obs.min?.toFixed(3) ?? '-'}</td>
                                             <td className="py-2 px-2 text-center">{summaryStats.depth.obs.max?.toFixed(3) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.flow.obs.min?.toFixed(3) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center">{summaryStats.flow.obs.max?.toFixed(3) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center">{summaryStats.flow.obs.volume?.toFixed(1) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.velocity.obs.min?.toFixed(3) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center">{summaryStats.velocity.obs.max?.toFixed(3) ?? '-'}</td>
+                                            {!effectiveDepthOnly && (
+                                                <>
+                                                    <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.flow.obs.min?.toFixed(3) ?? '-'}</td>
+                                                    <td className="py-2 px-2 text-center">{summaryStats.flow.obs.max?.toFixed(3) ?? '-'}</td>
+                                                    <td className="py-2 px-2 text-center">{summaryStats.flow.obs.volume?.toFixed(1) ?? '-'}</td>
+                                                    <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.velocity.obs.min?.toFixed(3) ?? '-'}</td>
+                                                    <td className="py-2 px-2 text-center">{summaryStats.velocity.obs.max?.toFixed(3) ?? '-'}</td>
+                                                </>
+                                            )}
                                         </tr>
                                         <tr className="border-b border-gray-100 hover:bg-gray-50">
                                             <td className="py-2 px-3 font-medium text-gray-700">Predicted</td>
                                             <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.depth.pred.min?.toFixed(3) ?? '-'}</td>
                                             <td className="py-2 px-2 text-center">{summaryStats.depth.pred.max?.toFixed(3) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.flow.pred.min?.toFixed(3) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center">{summaryStats.flow.pred.max?.toFixed(3) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center">{summaryStats.flow.pred.volume?.toFixed(1) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.velocity.pred.min?.toFixed(3) ?? '-'}</td>
-                                            <td className="py-2 px-2 text-center">{summaryStats.velocity.pred.max?.toFixed(3) ?? '-'}</td>
+                                            {!effectiveDepthOnly && (
+                                                <>
+                                                    <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.flow.pred.min?.toFixed(3) ?? '-'}</td>
+                                                    <td className="py-2 px-2 text-center">{summaryStats.flow.pred.max?.toFixed(3) ?? '-'}</td>
+                                                    <td className="py-2 px-2 text-center">{summaryStats.flow.pred.volume?.toFixed(1) ?? '-'}</td>
+                                                    <td className="py-2 px-2 text-center border-l border-gray-200">{summaryStats.velocity.pred.min?.toFixed(3) ?? '-'}</td>
+                                                    <td className="py-2 px-2 text-center">{summaryStats.velocity.pred.max?.toFixed(3) ?? '-'}</td>
+                                                </>
+                                            )}
                                         </tr>
                                         <tr className="bg-blue-50 text-blue-800 font-medium">
                                             <td className="py-2 px-3">Difference</td>
@@ -740,31 +977,35 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                                     <>{summaryStats.depth.diff.max.toFixed(3)} {summaryStats.depth.diff.maxPct != null && <span className="text-gray-500">({summaryStats.depth.diff.maxPct.toFixed(0)}%)</span>}</>
                                                 ) : '-'}
                                             </td>
-                                            <td className="py-2 px-2 text-center border-l border-gray-200">
-                                                {summaryStats.flow.diff.min != null ? (
-                                                    <>{summaryStats.flow.diff.min.toFixed(3)} {summaryStats.flow.diff.minPct != null && <span className="text-gray-500">({summaryStats.flow.diff.minPct.toFixed(0)}%)</span>}</>
-                                                ) : '-'}
-                                            </td>
-                                            <td className="py-2 px-2 text-center">
-                                                {summaryStats.flow.diff.max != null ? (
-                                                    <>{summaryStats.flow.diff.max.toFixed(3)} {summaryStats.flow.diff.maxPct != null && <span className="text-gray-500">({summaryStats.flow.diff.maxPct.toFixed(0)}%)</span>}</>
-                                                ) : '-'}
-                                            </td>
-                                            <td className="py-2 px-2 text-center">
-                                                {summaryStats.flow.diff.volume != null ? (
-                                                    <>{summaryStats.flow.diff.volume.toFixed(1)} {summaryStats.flow.diff.volumePct != null && <span className="text-gray-500">({summaryStats.flow.diff.volumePct.toFixed(0)}%)</span>}</>
-                                                ) : '-'}
-                                            </td>
-                                            <td className="py-2 px-2 text-center border-l border-gray-200">
-                                                {summaryStats.velocity.diff.min != null ? (
-                                                    <>{summaryStats.velocity.diff.min.toFixed(3)} {summaryStats.velocity.diff.minPct != null && <span className="text-gray-500">({summaryStats.velocity.diff.minPct.toFixed(0)}%)</span>}</>
-                                                ) : '-'}
-                                            </td>
-                                            <td className="py-2 px-2 text-center">
-                                                {summaryStats.velocity.diff.max != null ? (
-                                                    <>{summaryStats.velocity.diff.max.toFixed(3)} {summaryStats.velocity.diff.maxPct != null && <span className="text-gray-500">({summaryStats.velocity.diff.maxPct.toFixed(0)}%)</span>}</>
-                                                ) : '-'}
-                                            </td>
+                                            {!effectiveDepthOnly && (
+                                                <>
+                                                    <td className="py-2 px-2 text-center border-l border-gray-200">
+                                                        {summaryStats.flow.diff.min != null ? (
+                                                            <>{summaryStats.flow.diff.min.toFixed(3)} {summaryStats.flow.diff.minPct != null && <span className="text-gray-500">({summaryStats.flow.diff.minPct.toFixed(0)}%)</span>}</>
+                                                        ) : '-'}
+                                                    </td>
+                                                    <td className="py-2 px-2 text-center">
+                                                        {summaryStats.flow.diff.max != null ? (
+                                                            <>{summaryStats.flow.diff.max.toFixed(3)} {summaryStats.flow.diff.maxPct != null && <span className="text-gray-500">({summaryStats.flow.diff.maxPct.toFixed(0)}%)</span>}</>
+                                                        ) : '-'}
+                                                    </td>
+                                                    <td className="py-2 px-2 text-center">
+                                                        {summaryStats.flow.diff.volume != null ? (
+                                                            <>{summaryStats.flow.diff.volume.toFixed(1)} {summaryStats.flow.diff.volumePct != null && <span className="text-gray-500">({summaryStats.flow.diff.volumePct.toFixed(0)}%)</span>}</>
+                                                        ) : '-'}
+                                                    </td>
+                                                    <td className="py-2 px-2 text-center border-l border-gray-200">
+                                                        {summaryStats.velocity.diff.min != null ? (
+                                                            <>{summaryStats.velocity.diff.min.toFixed(3)} {summaryStats.velocity.diff.minPct != null && <span className="text-gray-500">({summaryStats.velocity.diff.minPct.toFixed(0)}%)</span>}</>
+                                                        ) : '-'}
+                                                    </td>
+                                                    <td className="py-2 px-2 text-center">
+                                                        {summaryStats.velocity.diff.max != null ? (
+                                                            <>{summaryStats.velocity.diff.max.toFixed(3)} {summaryStats.velocity.diff.maxPct != null && <span className="text-gray-500">({summaryStats.velocity.diff.maxPct.toFixed(0)}%)</span>}</>
+                                                        ) : '-'}
+                                                    </td>
+                                                </>
+                                            )}
                                         </tr>
                                     </tbody>
                                 </table>
@@ -772,7 +1013,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                         )}
 
                         {/* Flow Chart */}
-                        {flowChartData.length > 0 && (
+                        {flowChartData.length > 0 && !effectiveDepthOnly && (
                             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
                                 <h3 className="text-lg font-semibold mb-4 flex items-center justify-between">
                                     Flow Comparison
@@ -791,13 +1032,15 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                     >
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis
-                                            dataKey="time"
+                                            dataKey="timestamp"
+                                            type="number"
+                                            domain={['dataMin', 'dataMax']}
                                             tickFormatter={formatAxisDate}
                                             tick={{ fontSize: 10 }}
                                             interval="preserveStartEnd"
                                         />
                                         <YAxis label={{ value: 'Flow', angle: -90, position: 'insideLeft' }} />
-                                        <Tooltip formatter={chartTooltipFormatter} />
+                                        <Tooltip formatter={chartTooltipFormatter} labelFormatter={formatTooltipLabel} />
                                         <Legend />
                                         <Line
                                             type="monotone"
@@ -805,6 +1048,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             stroke="#15803d" // Leaf Green
                                             strokeWidth={2}
                                             dot={false}
+                                            connectNulls
                                             name="Observed (Raw)"
                                             opacity={data.series.obs_flow_smoothed ? 0.3 : 1}
                                             isAnimationActive={false} // Disable animation for faster click feedback
@@ -816,6 +1060,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             stroke="#dc2626" // Nice Red
                                             strokeWidth={2}
                                             dot={false}
+                                            connectNulls
                                             name="Predicted (Raw)"
                                             opacity={data.series.pred_flow_smoothed ? 0.3 : 1}
                                             isAnimationActive={false}
@@ -828,6 +1073,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                                 stroke="#15803d"
                                                 strokeWidth={2}
                                                 dot={false}
+                                                connectNulls
                                                 name="Observed (Smoothed)"
                                                 isAnimationActive={false}
                                             />
@@ -839,16 +1085,16 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                                 stroke="#dc2626"
                                                 strokeWidth={2}
                                                 dot={false}
+                                                connectNulls
                                                 name="Predicted (Smoothed)"
                                                 isAnimationActive={false}
                                             />
                                         )}
 
-                                        {/* Peak markers use time_label to match XAxis */}
                                         {displayPeaks.obs_flow?.map((peak: any, i: number) => (
                                             <ReferenceDot
                                                 key={`obs-peak-${i}`}
-                                                x={peak.time_label}
+                                                x={new Date(peak.time).getTime()}
                                                 y={peak.value}
                                                 r={6}
                                                 fill="#15803d"
@@ -859,7 +1105,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                         {displayPeaks.pred_flow?.map((peak: any, i: number) => (
                                             <ReferenceDot
                                                 key={`pred-peak-${i}`}
-                                                x={peak.time_label}
+                                                x={new Date(peak.time).getTime()}
                                                 y={peak.value}
                                                 r={6}
                                                 fill="#dc2626"
@@ -892,13 +1138,15 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                     >
                                         <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis
-                                            dataKey="time"
+                                            dataKey="timestamp"
+                                            type="number"
+                                            domain={['dataMin', 'dataMax']}
                                             tickFormatter={formatAxisDate}
                                             tick={{ fontSize: 10 }}
                                             interval="preserveStartEnd"
                                         />
                                         <YAxis label={{ value: 'Depth', angle: -90, position: 'insideLeft' }} />
-                                        <Tooltip formatter={chartTooltipFormatter} />
+                                        <Tooltip formatter={chartTooltipFormatter} labelFormatter={formatTooltipLabel} />
                                         <Legend />
                                         <Line
                                             type="monotone"
@@ -906,6 +1154,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             stroke="#15803d"
                                             strokeWidth={2}
                                             dot={false}
+                                            connectNulls
                                             name="Observed (Raw)"
                                             opacity={data.series.obs_depth_smoothed ? 0.3 : 1}
                                             isAnimationActive={false}
@@ -917,6 +1166,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             stroke="#dc2626"
                                             strokeWidth={2}
                                             dot={false}
+                                            connectNulls
                                             name="Predicted (Raw)"
                                             opacity={data.series.pred_depth_smoothed ? 0.3 : 1}
                                             isAnimationActive={false}
@@ -929,6 +1179,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                                 stroke="#15803d"
                                                 strokeWidth={2}
                                                 dot={false}
+                                                connectNulls
                                                 name="Observed (Smoothed)"
                                             />
                                         )}
@@ -939,13 +1190,14 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                                 stroke="#dc2626"
                                                 strokeWidth={2}
                                                 dot={false}
+                                                connectNulls
                                                 name="Predicted (Smoothed)"
                                             />
                                         )}
                                         {displayPeaks.obs_depth?.map((peak: any, i: number) => (
                                             <ReferenceDot
                                                 key={`obs-peak-${i}`}
-                                                x={peak.time_label}
+                                                x={new Date(peak.time).getTime()}
                                                 y={peak.value}
                                                 r={6}
                                                 fill="#15803d"
@@ -955,7 +1207,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                         {displayPeaks.pred_depth?.map((peak: any, i: number) => (
                                             <ReferenceDot
                                                 key={`pred-peak-${i}`}
-                                                x={peak.time_label}
+                                                x={new Date(peak.time).getTime()}
                                                 y={peak.value}
                                                 r={6}
                                                 fill="#dc2626"
@@ -968,19 +1220,19 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                         )}
 
                         {/* Velocity Chart */}
-                        {velocityChartData.length > 0 && (
+                        {velocityChartData.length > 0 && !effectiveDepthOnly && (
                             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
                                 <h3 className="text-lg font-semibold mb-4">Velocity Comparison</h3>
                                 <ResponsiveContainer width="100%" height={300}>
                                     <LineChart data={velocityChartData}>
                                         <CartesianGrid strokeDasharray="3 3" />
+                                        <CartesianGrid strokeDasharray="3 3" />
                                         <XAxis
-                                            dataKey="time"
+                                            dataKey="timestamp"
+                                            type="number"
+                                            domain={['dataMin', 'dataMax']}
+                                            tickFormatter={formatAxisDate}
                                             fontSize={12}
-                                            tickFormatter={(value) => {
-                                                const date = new Date(value);
-                                                return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
-                                            }}
                                             interval="preserveStartEnd"
                                             minTickGap={60}
                                         />
@@ -990,8 +1242,8 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             label={{ value: 'Velocity (m/s)', angle: -90, position: 'insideLeft', fontSize: 12 }}
                                         />
                                         <Tooltip
-                                            labelFormatter={(value) => new Date(value).toLocaleString()}
-                                            formatter={(value: number, name: string) => [value?.toFixed(3), name === 'observed' ? 'Observed' : 'Predicted']}
+                                            labelFormatter={formatTooltipLabel}
+                                            formatter={(value: number, name: string) => [value?.toFixed(3), name]}
                                         />
                                         <Legend />
                                         <Line
@@ -1000,6 +1252,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             stroke="#15803d"
                                             strokeWidth={2}
                                             dot={false}
+                                            connectNulls
                                             name="Observed"
                                         />
                                         <Line
@@ -1008,6 +1261,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                                             stroke="#dc2626"
                                             strokeWidth={2}
                                             dot={false}
+                                            connectNulls
                                             name="Predicted"
                                         />
                                     </LineChart>
@@ -1016,29 +1270,32 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                         )}
 
                         {/* Flow Metrics */}
-                        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-                            <div className="flex items-center gap-2 mb-4">
-                                <Activity className="text-blue-600" />
-                                <h3 className="text-lg font-semibold">Flow Metrics</h3>
-                            </div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                {data?.metrics?.flow?.map((metric) => (
-                                    <div key={metric.name} className="p-4 bg-gray-50 rounded-lg">
-                                        <div className="text-sm text-gray-500 capitalize">
-                                            {getMetricLabel(metric.name)}
+                        {!effectiveDepthOnly && (
+                            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <Activity className="text-blue-600" />
+                                    <h3 className="text-lg font-semibold">Flow Metrics</h3>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    {data?.metrics?.flow?.map((metric) => (
+                                        <div key={metric.name} className="p-4 bg-gray-50 rounded-lg">
+                                            <div className="text-sm text-gray-500 capitalize">
+                                                {getMetricLabel(metric.name)}
+                                            </div>
+                                            <div className="text-xl font-bold text-gray-900">
+                                                {typeof metric.value === 'number' ? metric.value.toFixed(3) : 'N/A'}
+                                            </div>
+                                            {metric.band && (
+                                                <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded ${getBandColor(metric.band)}`}>
+                                                    {metric.band} ({metric.points} pts)
+                                                </span>
+                                            )}
                                         </div>
-                                        <div className="text-xl font-bold text-gray-900">
-                                            {typeof metric.value === 'number' ? metric.value.toFixed(3) : 'N/A'}
-                                        </div>
-                                        {metric.band && (
-                                            <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded ${getBandColor(metric.band)}`}>
-                                                {metric.band} ({metric.points} pts)
-                                            </span>
-                                        )}
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
-                        </div>
+                        )}
+
 
                         {/* Depth Metrics */}
                         {data.metrics.depth && data.metrics.depth.length > 0 && (
@@ -1193,7 +1450,7 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                         </div>
 
                         {/* KGE Components Bar Chart */}
-                        {(data as any)?.kge_components && (
+                        {!effectiveDepthOnly && (data as any)?.kge_components && (
                             <div className="bg-white rounded-lg border border-gray-200 p-6">
                                 <div className="flex items-center gap-2 mb-4">
                                     <Activity className="text-blue-600" />
@@ -1238,87 +1495,91 @@ export default function VerificationWorkspace({ runId: propRunId, embedded = fal
                         )}
 
                         {/* KGE Explanation Card */}
-                        <div className="bg-white rounded-lg border border-gray-200 p-6">
-                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                                <Droplets className="text-purple-600" />
-                                KGE Component Reference
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
-                                {/* Correlation (r) */}
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="font-bold text-gray-900 mb-2">Correlation (r)</h4>
-                                    <p className="text-gray-600 mb-3">Pearson correlation between observed and predicted time series. Measures timing and shape, not magnitude.</p>
-                                    <div className="space-y-1 text-xs">
-                                        <div className="flex justify-between"><span className="text-gray-500">Range:</span><span className="font-mono">–1 to +1</span></div>
-                                        <div className="flex justify-between"><span className="text-gray-500">Perfect:</span><span className="font-mono text-green-600">+1</span></div>
+                        {!effectiveDepthOnly && (
+                            <div className="bg-white rounded-lg border border-gray-200 p-6">
+                                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                    <Droplets className="text-purple-600" />
+                                    KGE Component Reference
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
+                                    {/* Correlation (r) */}
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <h4 className="font-bold text-gray-900 mb-2">Correlation (r)</h4>
+                                        <p className="text-gray-600 mb-3">Pearson correlation between observed and predicted time series. Measures timing and shape, not magnitude.</p>
+                                        <div className="space-y-1 text-xs">
+                                            <div className="flex justify-between"><span className="text-gray-500">Range:</span><span className="font-mono">–1 to +1</span></div>
+                                            <div className="flex justify-between"><span className="text-gray-500">Perfect:</span><span className="font-mono text-green-600">+1</span></div>
+                                        </div>
+                                        <div className="mt-3 pt-3 border-t border-gray-200">
+                                            <p className="font-semibold text-gray-700 mb-1">Interpretation:</p>
+                                            <ul className="text-xs text-gray-600 space-y-0.5">
+                                                <li><span className="font-mono text-green-600">1.0:</span> Perfect timing and shape</li>
+                                                <li><span className="font-mono text-green-600">0.8–0.9:</span> Good timing, some mismatch</li>
+                                                <li><span className="font-mono text-amber-600">~0.5:</span> Weak pattern agreement</li>
+                                                <li><span className="font-mono text-red-600">0:</span> No relationship</li>
+                                                <li><span className="font-mono text-red-600">&lt; 0:</span> Actively wrong timing</li>
+                                            </ul>
+                                        </div>
                                     </div>
-                                    <div className="mt-3 pt-3 border-t border-gray-200">
-                                        <p className="font-semibold text-gray-700 mb-1">Interpretation:</p>
-                                        <ul className="text-xs text-gray-600 space-y-0.5">
-                                            <li><span className="font-mono text-green-600">1.0:</span> Perfect timing and shape</li>
-                                            <li><span className="font-mono text-green-600">0.8–0.9:</span> Good timing, some mismatch</li>
-                                            <li><span className="font-mono text-amber-600">~0.5:</span> Weak pattern agreement</li>
-                                            <li><span className="font-mono text-red-600">0:</span> No relationship</li>
-                                            <li><span className="font-mono text-red-600">&lt; 0:</span> Actively wrong timing</li>
-                                        </ul>
-                                    </div>
-                                </div>
 
-                                {/* Variability ratio (α) */}
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="font-bold text-gray-900 mb-2">Variability ratio (α)</h4>
-                                    <p className="text-gray-600 mb-3">Ratio of standard deviations. Measures how "lively" the model response is.</p>
-                                    <div className="space-y-1 text-xs">
-                                        <div className="flex justify-between"><span className="text-gray-500">Range:</span><span className="font-mono">0 to ∞</span></div>
-                                        <div className="flex justify-between"><span className="text-gray-500">Perfect:</span><span className="font-mono text-green-600">1</span></div>
+                                    {/* Variability ratio (α) */}
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <h4 className="font-bold text-gray-900 mb-2">Variability ratio (α)</h4>
+                                        <p className="text-gray-600 mb-3">Ratio of standard deviations. Measures how "lively" the model response is.</p>
+                                        <div className="space-y-1 text-xs">
+                                            <div className="flex justify-between"><span className="text-gray-500">Range:</span><span className="font-mono">0 to ∞</span></div>
+                                            <div className="flex justify-between"><span className="text-gray-500">Perfect:</span><span className="font-mono text-green-600">1</span></div>
+                                        </div>
+                                        <div className="mt-3 pt-3 border-t border-gray-200">
+                                            <p className="font-semibold text-gray-700 mb-1">Interpretation:</p>
+                                            <ul className="text-xs text-gray-600 space-y-0.5">
+                                                <li><span className="font-mono text-amber-600">&lt;1:</span> Model too smooth / damped</li>
+                                                <li><span className="font-mono text-green-600">1:</span> Correct variability</li>
+                                                <li><span className="font-mono text-amber-600">&gt;1:</span> Model too jumpy / noisy</li>
+                                            </ul>
+                                            <p className="font-semibold text-gray-700 mt-2 mb-1">Indicative Values:</p>
+                                            <ul className="text-xs text-gray-600 space-y-0.5">
+                                                <li><span className="font-mono text-green-600">0.8–1.2:</span> Good / acceptable</li>
+                                                <li><span className="font-mono text-amber-600">0.6–0.8 or 1.25–1.5:</span> Noticeable mismatch</li>
+                                                <li><span className="font-mono text-red-600">&lt;0.6 or &gt;1.5:</span> Poor variability match</li>
+                                            </ul>
+                                        </div>
                                     </div>
-                                    <div className="mt-3 pt-3 border-t border-gray-200">
-                                        <p className="font-semibold text-gray-700 mb-1">Interpretation:</p>
-                                        <ul className="text-xs text-gray-600 space-y-0.5">
-                                            <li><span className="font-mono text-amber-600">&lt;1:</span> Model too smooth / damped</li>
-                                            <li><span className="font-mono text-green-600">1:</span> Correct variability</li>
-                                            <li><span className="font-mono text-amber-600">&gt;1:</span> Model too jumpy / noisy</li>
-                                        </ul>
-                                        <p className="font-semibold text-gray-700 mt-2 mb-1">Indicative Values:</p>
-                                        <ul className="text-xs text-gray-600 space-y-0.5">
-                                            <li><span className="font-mono text-green-600">0.8–1.2:</span> Good / acceptable</li>
-                                            <li><span className="font-mono text-amber-600">0.6–0.8 or 1.25–1.5:</span> Noticeable mismatch</li>
-                                            <li><span className="font-mono text-red-600">&lt;0.6 or &gt;1.5:</span> Poor variability match</li>
-                                        </ul>
-                                    </div>
-                                </div>
 
-                                {/* Bias ratio (β) */}
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="font-bold text-gray-900 mb-2">Bias ratio (β)</h4>
-                                    <p className="text-gray-600 mb-3">Ratio of mean flows. Measures systematic offset.</p>
-                                    <div className="space-y-1 text-xs">
-                                        <div className="flex justify-between"><span className="text-gray-500">Range:</span><span className="font-mono">0 to ∞</span></div>
-                                        <div className="flex justify-between"><span className="text-gray-500">Perfect:</span><span className="font-mono text-green-600">1</span></div>
-                                    </div>
-                                    <div className="mt-3 pt-3 border-t border-gray-200">
-                                        <p className="font-semibold text-gray-700 mb-1">Interpretation:</p>
-                                        <ul className="text-xs text-gray-600 space-y-0.5">
-                                            <li><span className="font-mono text-amber-600">&lt;1:</span> Under-prediction</li>
-                                            <li><span className="font-mono text-green-600">1.0:</span> Perfect mean match</li>
-                                            <li><span className="font-mono text-red-600">≈0:</span> Model predicts almost nothing</li>
-                                            <li><span className="font-mono text-amber-600">&gt;1:</span> Over-prediction</li>
-                                            <li><span className="font-mono text-red-600">≫1:</span> Model massively overestimates</li>
-                                        </ul>
-                                        <p className="font-semibold text-gray-700 mt-2 mb-1">Indicative Values:</p>
-                                        <ul className="text-xs text-gray-600 space-y-0.5">
-                                            <li><span className="font-mono text-green-600">0.9–1.1:</span> Very good</li>
-                                            <li><span className="font-mono text-amber-600">0.8–0.9 or 1.1–1.25:</span> Acceptable / minor bias</li>
-                                            <li><span className="font-mono text-red-600">&lt;0.8 or &gt;1.25:</span> Significant bias</li>
-                                            <li><span className="font-mono text-red-600">&lt;0.5 or &gt;2:</span> Poor</li>
-                                        </ul>
+                                    {/* Bias ratio (β) */}
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <h4 className="font-bold text-gray-900 mb-2">Bias ratio (β)</h4>
+                                        <p className="text-gray-600 mb-3">Ratio of mean flows. Measures systematic offset.</p>
+                                        <div className="space-y-1 text-xs">
+                                            <div className="flex justify-between"><span className="text-gray-500">Range:</span><span className="font-mono">0 to ∞</span></div>
+                                            <div className="flex justify-between"><span className="text-gray-500">Perfect:</span><span className="font-mono text-green-600">1</span></div>
+                                        </div>
+                                        <div className="mt-3 pt-3 border-t border-gray-200">
+                                            <p className="font-semibold text-gray-700 mb-1">Interpretation:</p>
+                                            <ul className="text-xs text-gray-600 space-y-0.5">
+                                                <li><span className="font-mono text-amber-600">&lt;1:</span> Under-prediction</li>
+                                                <li><span className="font-mono text-green-600">1.0:</span> Perfect mean match</li>
+                                                <li><span className="font-mono text-red-600">≈0:</span> Model predicts almost nothing</li>
+                                                <li><span className="font-mono text-amber-600">&gt;1:</span> Over-prediction</li>
+                                                <li><span className="font-mono text-red-600">≫1:</span> Model massively overestimates</li>
+                                            </ul>
+                                            <p className="font-semibold text-gray-700 mt-2 mb-1">Indicative Values:</p>
+                                            <ul className="text-xs text-gray-600 space-y-0.5">
+                                                <li><span className="font-mono text-green-600">0.9–1.1:</span> Very good</li>
+                                                <li><span className="font-mono text-amber-600">0.8–0.9 or 1.1–1.25:</span> Acceptable / minor bias</li>
+                                                <li><span className="font-mono text-red-600">&lt;0.8 or &gt;1.25:</span> Significant bias</li>
+                                                <li><span className="font-mono text-red-600">&lt;0.5 or &gt;2:</span> Poor</li>
+                                            </ul>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 )}
             </div>
+
+            {/* DEBUG OVERLAY - REMOVED */}
         </div>
     );
 }

@@ -2284,6 +2284,7 @@ export interface VerificationFlowMonitor {
     icm_node_reference?: string;
     is_critical: boolean;
     is_surcharged: boolean;
+    is_depth_only: boolean;
     created_at: string;
 }
 
@@ -2292,6 +2293,7 @@ export interface VerificationFlowMonitorCreate {
     icm_node_reference?: string;
     is_critical?: boolean;
     is_surcharged?: boolean;
+    is_depth_only?: boolean;
 }
 
 export interface VerificationFlowMonitorUpdate {
@@ -2299,6 +2301,7 @@ export interface VerificationFlowMonitorUpdate {
     icm_node_reference?: string;
     is_critical?: boolean;
     is_surcharged?: boolean;
+    is_depth_only?: boolean;
 }
 
 export interface TracePreviewMonitor {
@@ -2331,6 +2334,14 @@ export interface VerificationRun {
     created_at: string;
     finalized_at?: string;
     analysis_settings?: AnalysisSettings;
+    is_depth_only: boolean;
+    depth_only_comment?: string;
+}
+export interface VerificationRunUpdate {
+    status?: string;
+    is_final_for_monitor_event?: boolean;
+    is_depth_only?: boolean;
+    depth_only_comment?: string;
 }
 
 export interface VerificationMatrixCell {
@@ -2608,6 +2619,20 @@ export function useUpdateVerificationRunSettings() {
         },
         onSuccess: (_, variables) => {
             queryClient.invalidateQueries({ queryKey: ['verification-workspace', variables.runId] });
+            queryClient.invalidateQueries({ queryKey: ['verification-matrix'] });
+        },
+    });
+}
+
+export function useUpdateVerificationRun() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ runId, update }: { runId: number; update: VerificationRunUpdate }) => {
+            const response = await api.patch<VerificationRun>(`/verification/runs/${runId}`, update);
+            return response.data;
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['verification-workspace', data.id] });
             queryClient.invalidateQueries({ queryKey: ['verification-matrix'] });
         },
     });

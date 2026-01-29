@@ -64,9 +64,9 @@ export default function ReviewTab({ projectId }: ReviewTabProps) {
     const selectedEvent = matrix.events.find((e: VerificationEvent) => e.id === selectedEventId);
 
     // Filter monitors
-    const filteredMonitors = matrix.monitors.filter((m: any) =>
-        m.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredMonitors = matrix.monitors
+        .filter((m: any) => m.name.toLowerCase().includes(searchTerm.toLowerCase()))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -193,7 +193,9 @@ export default function ReviewTab({ projectId }: ReviewTabProps) {
                                             <span className="text-purple-600 font-medium">Surcharged</span>
                                         )}
                                         {cell?.nse !== undefined && (
-                                            <span className="ml-auto font-mono">NSE: {cell.nse.toFixed(2)}</span>
+                                            <span className="ml-auto font-mono">
+                                                {cell.nse <= -90000 ? 'NSE: N/A' : `NSE: ${cell.nse.toFixed(2)}`}
+                                            </span>
                                         )}
                                     </div>
                                 </button>

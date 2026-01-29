@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp, Play, AlertCircle, Loader2, Plus } from 'lucide-react';
 import RainfallEventsGantt from './RainfallEventsGantt';
+import RainfallEventsHistogram from './RainfallEventsHistogram';
 import CaptureEventModal from './CaptureEventModal';
 
 interface RainfallEventsAnalysisProps {
@@ -80,6 +81,30 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
     // Collapsible tables
     const [isEventsTableOpen, setIsEventsTableOpen] = useState(true);
     const [isDryDaysTableOpen, setIsDryDaysTableOpen] = useState(true);
+
+    // Shared zoom state for histogram + Gantt chart sync
+    const [sharedZoomDomain, setSharedZoomDomain] = useState<[number, number] | null>(null);
+    const [minTime, setMinTime] = useState<number>(0);
+
+    // Histogram capture state
+    const [histogramCaptureData, setHistogramCaptureData] = useState<{
+        type: 'storm' | 'dryDay';
+        startTime: Date;
+        endTime: Date;
+    } | null>(null);
+
+    const handleZoomChange = (domain: [number, number] | null, newMinTime: number) => {
+        setSharedZoomDomain(domain);
+        setMinTime(newMinTime);
+    };
+
+    // Handle histogram capture
+    const handleHistogramCapture = (data: { type: 'storm' | 'dryDay'; startTime: Date; endTime: Date }) => {
+        setHistogramCaptureData(data);
+        setSelectedEvent(null);
+        setSelectedDryDay(null);
+        setIsModalOpen(true);
+    };
 
     const handleParamChange = (key: keyof AnalysisParams, value: any) => {
         setParams(prev => ({ ...prev, [key]: value }));
@@ -172,6 +197,9 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
         ? ['All', 'Event', 'Partial Event', 'No Event']
         : ['All', 'Event', 'Partial Event'];
 
+    // Count unique datasets for histogram y-axis
+    const totalDatasets = new Set(result?.events.map(e => e.dataset_id) || []).size;
+
 
 
     return (
@@ -237,6 +265,18 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
                                         className="w-full px-3 py-2 border rounded-md focus:ring-purple-500 focus:border-purple-500"
                                     />
                                 </div>
+                            </div>
+                            <div className="mt-3 flex items-center gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={params.useConsecutiveIntensities}
+                                        onChange={e => handleParamChange('useConsecutiveIntensities', e.target.checked)}
+                                        className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700">Require Consecutive Intensities</span>
+                                </label>
+                                <span className="text-xs text-gray-500">(intensity threshold must be met for consecutive time intervals)</span>
                             </div>
                         </div>
 
@@ -305,13 +345,29 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
             {/* Results */}
             {result && result.events.length > 0 && (
                 <div className="space-y-6">
-                    {/* Gantt Chart */}
+                    {/* Histogram + Gantt Chart */}
                     <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-semibold">Rainfall Events Gantt Chart</h3>
+                            <h3 className="text-lg font-semibold">Rainfall Events Timeline</h3>
                         </div>
-                        <div className="overflow-x-auto">
-                            <RainfallEventsGantt events={ganttEvents} />
+
+                        {/* Histogram - above Gantt */}
+                        <RainfallEventsHistogram
+                            events={ganttEvents}
+                            dryDays={result.dry_days || []}
+                            totalDatasets={totalDatasets}
+                            zoomDomain={sharedZoomDomain}
+                            minTime={minTime}
+                            onCaptureEvent={handleHistogramCapture}
+                        />
+
+                        {/* Gantt Chart */}
+                        <div className="overflow-x-auto mt-2">
+                            <RainfallEventsGantt
+                                events={ganttEvents}
+                                onZoomChange={handleZoomChange}
+                                externalZoomDomain={sharedZoomDomain}
+                            />
                         </div>
                         <div className="mt-4 flex gap-4 text-sm justify-center">
                             <div className="flex items-center gap-2">
@@ -484,10 +540,14 @@ const RainfallEventsAnalysis: React.FC<RainfallEventsAnalysisProps> = ({ dataset
             {/* Capture Event Modal */}
             <CaptureEventModal
                 isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
+                onClose={() => {
+                    setIsModalOpen(false);
+                    setHistogramCaptureData(null);
+                }}
                 onSave={handleSaveEvent}
                 sourceEvent={selectedEvent}
                 sourceDryDay={selectedDryDay}
+                histogramCapture={histogramCaptureData}
                 projectId={projectId}
             />
         </div >

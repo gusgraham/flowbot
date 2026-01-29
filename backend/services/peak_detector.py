@@ -198,9 +198,17 @@ class PeakDetector:
         obs_arr = np.array(obs)
         pred_arr = np.array(pred)
         
-        mean_obs = np.mean(obs_arr)
-        numerator = np.sum((obs_arr - pred_arr) ** 2)
-        denominator = np.sum((obs_arr - mean_obs) ** 2)
+        # Filter NaNs
+        mask = ~(np.isnan(obs_arr) | np.isnan(pred_arr))
+        obs_valid = obs_arr[mask]
+        pred_valid = pred_arr[mask]
+        
+        if len(obs_valid) < 2:
+            return -99999.0
+            
+        mean_obs = np.mean(obs_valid)
+        numerator = np.sum((obs_valid - pred_valid) ** 2)
+        denominator = np.sum((obs_valid - mean_obs) ** 2)
         
         if denominator == 0:
             return 0.0
@@ -394,8 +402,23 @@ class PeakDetector:
         if len(obs) != len(pred) or len(obs) < 2:
             return -99999.0
         
-        obs_volume = sum(obs) * timestep_minutes * 60
-        pred_volume = sum(pred) * timestep_minutes * 60
+        # Convert to numpy for easier NaN handling
+        obs_arr = np.array(obs)
+        pred_arr = np.array(pred)
+        
+        # For volume, we just ignore NaNs in each series independently? 
+        # Or should we only count valid pairs?
+        # Usually volume is total volume. So Independent Sum is better.
+        # Just filter NaNs from each.
+        
+        obs_valid = obs_arr[~np.isnan(obs_arr)]
+        pred_valid = pred_arr[~np.isnan(pred_arr)]
+        
+        if len(obs_valid) == 0:
+            return -99999.0
+            
+        obs_volume = np.sum(obs_valid) * timestep_minutes * 60
+        pred_volume = np.sum(pred_valid) * timestep_minutes * 60
         
         if obs_volume == 0:
             return 0.0

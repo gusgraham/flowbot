@@ -401,7 +401,8 @@ def score_verification_results(
     flow_metrics: VerificationMetrics,
     depth_metrics: VerificationMetrics,
     is_critical: bool = False,
-    is_surcharged: bool = False
+    is_surcharged: bool = False,
+    is_depth_only: bool = False
 ) -> Dict:
     """
     Convenience function to score verification results.
@@ -415,7 +416,18 @@ def score_verification_results(
     
     scorer = ToleranceScorer(config)
     
-    flow_score = scorer.score_flow_metrics(flow_metrics)
+    if is_depth_only:
+        # Ignore flow metrics for scoring
+        flow_score = ParameterScore(
+            parameter='FLOW',
+            metrics={},
+            total_points=0,
+            max_points=0,
+            score_fraction=0.0
+        )
+    else:
+        flow_score = scorer.score_flow_metrics(flow_metrics)
+        
     depth_score = scorer.score_depth_metrics(depth_metrics)
     overall_status = scorer.get_overall_status(flow_score, depth_score)
     

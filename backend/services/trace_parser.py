@@ -23,7 +23,7 @@ class ParsedMonitorTrace:
     pred_location_name: str
     upstream_end: bool
     timestep_minutes: int
-    dates: List[datetime]
+    dates: List[datetime]  # Observed timestamps
     obs_flow: List[float]
     pred_flow: List[float]
     obs_depth: List[float]
@@ -34,6 +34,10 @@ class ParsedMonitorTrace:
     rainfall: Optional[List[float]] = None
     # Predicted profile name (if multiple profiles in file)
     pred_profile_name: Optional[str] = None
+    # Predicted timestamps (may differ from observed if different time bases)
+    pred_dates: Optional[List[datetime]] = None
+    # Predicted timestep (may differ from obs)
+    pred_timestep_minutes: Optional[int] = None
 
 
 @dataclass
@@ -180,6 +184,8 @@ class ICMTraceParser:
         if not obs_name:
             return None
         
+
+
         # Find header line (line after page title)
         if len(lines) < 2:
             return None
@@ -189,19 +195,31 @@ class ICMTraceParser:
         
         if not headers:
             return None
-        
+            
         # Parse data rows
         data_rows = []
         for line in lines[2:]:
             line = line.strip()
-            if not line or line.startswith('Page title'):
+            # If empty line, skip but don't stop (might be gap between blocks)
+            if not line:
+                continue
+            # Logic to detecting next page title is tricky if we strip too much
+            # But earlier code found page starts. We should probably trust that or break if we see it.
+            if line.startswith('Page title'):
                 break
+                
             try:
                 values = line.split(',')
+                # Handle rows shorter than headers (e.g. trailing empty columns omitted)
+                if len(values) < len(headers):
+                    values.extend([''] * (len(headers) - len(values)))
+                    
                 if len(values) >= len(headers):
                     data_rows.append(values[:len(headers)])
             except:
                 continue
+        
+
         
         if not data_rows:
             return None
@@ -209,20 +227,55 @@ class ICMTraceParser:
         # Create DataFrame
         df = pd.DataFrame(data_rows, columns=headers)
         
+
+        
         # Identify column indices
         obs_cols = self._identify_observed_columns(headers)
         pred_cols = self._identify_predicted_columns(headers, selected_profile_index, num_profiles)
         
-        # Parse dates
-        dates = self._parse_dates(df, obs_cols)
-        if not dates:
+        # Parse observed dates
+        obs_dates = self._parse_dates(df, obs_cols)
+        if not obs_dates:
             return None
         
-        # Calculate timestep
-        if len(dates) >= 2:
-            timestep_minutes = int((dates[1] - dates[0]).total_seconds() / 60)
+
+        
+        # Parse observed dates
+        obs_dates = self._parse_dates(df, obs_cols)
+        
+        try:
+            valid_obs = len([d for d in obs_dates if d is not None])
+            with open("d:/antigravity/flowbot_hub/backend/debug_parser_log.txt", "a") as f:
+                f.write(f"Obs dates parsed: {valid_obs}/{len(obs_dates)}\n")
+        except:
+            pass
+
+        if not obs_dates:
+            return None
+        
+        # Parse predicted dates (may have different time base)
+        pred_dates = self._parse_dates(df, pred_cols)
+
+        try:
+            valid_pred = len([d for d in pred_dates if d is not None])
+            with open("d:/antigravity/flowbot_hub/backend/debug_parser_log.txt", "a") as f:
+                f.write(f"Pred dates parsed: {valid_pred}/{len(pred_dates)}\n")
+        except:
+            pass
+        
+        # Calculate observed timestep
+        # Calculate observed timestep
+        valid_obs_dates = [d for d in obs_dates if d is not None]
+        if len(valid_obs_dates) >= 2:
+            timestep_minutes = int((valid_obs_dates[1] - valid_obs_dates[0]).total_seconds() / 60)
         else:
             timestep_minutes = 2  # Default
+        
+        # Calculate predicted timestep if different dates exist
+        pred_timestep_minutes = None
+        valid_pred_dates = [d for d in pred_dates if d is not None] if pred_dates else []
+        if valid_pred_dates and len(valid_pred_dates) >= 2:
+            pred_timestep_minutes = int((valid_pred_dates[1] - valid_pred_dates[0]).total_seconds() / 60)
         
         # Extract data series
         obs_flow = self._extract_series(df, obs_cols.get('flow'))
@@ -240,14 +293,16 @@ class ICMTraceParser:
             pred_location_name=pred_name,
             upstream_end=upstream_end,
             timestep_minutes=timestep_minutes,
-            dates=dates,
+            dates=obs_dates,
             obs_flow=obs_flow,
             pred_flow=pred_flow,
             obs_depth=obs_depth,
             pred_depth=pred_depth,
             obs_velocity=obs_velocity,
             pred_velocity=pred_velocity,
-            rainfall=rainfall if rainfall else None
+            rainfall=rainfall if rainfall else None,
+            pred_dates=pred_dates if pred_dates else None,
+            pred_timestep_minutes=pred_timestep_minutes
         )
     
     def _parse_page_title(self, title: str) -> Tuple[Optional[str], bool, Optional[str]]:
@@ -497,6 +552,7 @@ class ICMTraceParser:
         col_names = df.columns.tolist()
         
         for _, row in df.iterrows():
+            parsed_dt = None
             try:
                 date_str = str(row.iloc[date_col])
                 time_str = str(row.iloc[time_col]) if time_col is not None else '00:00:00'
@@ -508,12 +564,15 @@ class ICMTraceParser:
                 for fmt in ['%d/%m/%Y %H:%M:%S', '%d/%m/%Y %H:%M', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M']:
                     try:
                         dt = datetime.strptime(datetime_str, fmt)
-                        dates.append(dt)
+                        parsed_dt = dt
                         break
                     except ValueError:
                         continue
             except:
-                continue
+                pass
+            
+            # Always append result (None or datetime) to maintain alignment with DF
+            dates.append(parsed_dt)
         
         return dates
     
@@ -538,6 +597,10 @@ class ICMTraceParser:
         """
         Save monitor trace data to parquet files.
         
+        Uses the correct timestamps for each series:
+        - Observed series use monitor.dates (observed timestamps)
+        - Predicted series use monitor.pred_dates if available, else fallback to dates
+        
         Returns:
             Dictionary mapping series_type to parquet file path
         """
@@ -546,21 +609,68 @@ class ICMTraceParser:
         
         paths = {}
         
-        series_data = [
+        # Separate observed and predicted series with their corresponding dates
+        obs_series_data = [
             ('obs_flow', monitor.obs_flow),
-            ('pred_flow', monitor.pred_flow),
             ('obs_depth', monitor.obs_depth),
-            ('pred_depth', monitor.pred_depth),
             ('obs_velocity', monitor.obs_velocity),
+        ]
+        
+        pred_series_data = [
+            ('pred_flow', monitor.pred_flow),
+            ('pred_depth', monitor.pred_depth),
             ('pred_velocity', monitor.pred_velocity),
         ]
         
-        for series_type, values in series_data:
+        # Determine which dates to use for predicted series
+        # Use pred_dates if available and different from observed dates, else use dates
+        pred_dates = monitor.pred_dates if monitor.pred_dates else monitor.dates
+        
+        # Save observed series with observed timestamps
+        # Save observed series with observed timestamps
+        for series_type, values in obs_series_data:
             if values:
+
+                    
                 df = pd.DataFrame({
                     'time': monitor.dates[:len(values)],
                     'value': values
                 })
+                # Drop invalid rows (where date parsing failed)
+                df = df.dropna(subset=['time'])
+                
+
+                
+                filename = f"monitor_{monitor_id}_{series_type}.parquet"
+                filepath = output_dir / filename
+                df.to_parquet(filepath, index=False)
+                paths[series_type] = str(filepath)
+        
+        # Save predicted series with predicted timestamps
+        # Save predicted series with predicted timestamps
+        for series_type, values in pred_series_data:
+            if values:
+                # Use pred_dates if available, otherwise fallback to dates
+                # Ensure we handle case where pred_dates might be None (though fallback handles it)
+                dates_to_use = pred_dates if pred_dates and len(pred_dates) >= len(values) else monitor.dates
+                
+                # Careful: dates_to_use might be shorter than values if fallback used on truncated obs
+                # But our fix in _parse_dates and _parse_page helps ensure they match DF length
+                
+                # If values is longer than dates, we must truncate values or pad dates?
+                # Pandas requires same length.
+                # If dates_to_use is shorter (from Obs), but values is longer (from Pred), we have a mismatch.
+                # Ideally pred_dates should be full length.
+                
+                # Construct with safe slicing
+                length = min(len(dates_to_use), len(values))
+                
+                df = pd.DataFrame({
+                    'time': dates_to_use[:length],
+                    'value': values[:length]
+                })
+                # Drop invalid rows (where date parsing failed)
+                df = df.dropna(subset=['time'])
                 
                 filename = f"monitor_{monitor_id}_{series_type}.parquet"
                 filepath = output_dir / filename
@@ -568,6 +678,7 @@ class ICMTraceParser:
                 paths[series_type] = str(filepath)
         
         return paths
+
 
 
 # Convenience function for quick parsing

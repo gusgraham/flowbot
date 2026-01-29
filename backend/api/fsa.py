@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Body, Form
 from sqlmodel import Session, select
 import shutil
 import os
@@ -152,7 +152,7 @@ def delete_project(
 def upload_dataset(
     project_id: int,
     file: UploadFile = File(...),
-    dataset_type: Optional[str] = None,
+    dataset_type: Optional[str] = Form(None),
     session: Session = Depends(get_session)
 ):
     print(f"\n{'='*60}")

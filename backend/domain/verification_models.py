@@ -75,7 +75,7 @@ class VerificationEvent(VerificationEventBase, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     
     # Relationships
-    trace_sets: List["TraceSet"] = Relationship(back_populates="event")
+    trace_sets: List["TraceSet"] = Relationship(back_populates="event", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 
 class VerificationEventCreate(SQLModel):
@@ -101,6 +101,7 @@ class VerificationFlowMonitorBase(SQLModel):
     icm_node_reference: Optional[str] = None
     is_critical: bool = Field(default=False)
     is_surcharged: bool = Field(default=False)
+    is_depth_only: bool = Field(default=False)
 
 
 class VerificationFlowMonitor(VerificationFlowMonitorBase, table=True):
@@ -119,6 +120,7 @@ class VerificationFlowMonitorCreate(SQLModel):
     icm_node_reference: Optional[str] = None
     is_critical: bool = False
     is_surcharged: bool = False
+    is_depth_only: bool = False
 
 
 class VerificationFlowMonitorRead(VerificationFlowMonitorCreate):
@@ -132,6 +134,7 @@ class VerificationFlowMonitorUpdate(SQLModel):
     icm_node_reference: Optional[str] = None
     is_critical: Optional[bool] = None
     is_surcharged: Optional[bool] = None
+    is_depth_only: Optional[bool] = None
 
 
 # ============================================
@@ -152,7 +155,7 @@ class TraceSet(TraceSetBase, table=True):
     
     # Relationships
     event: Optional[VerificationEvent] = Relationship(back_populates="trace_sets")
-    monitor_traces: List["MonitorTraceVersion"] = Relationship(back_populates="trace_set")
+    monitor_traces: List["MonitorTraceVersion"] = Relationship(back_populates="trace_set", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 
 class TraceSetCreate(SQLModel):
@@ -187,8 +190,8 @@ class MonitorTraceVersion(MonitorTraceVersionBase, table=True):
     # Relationships
     trace_set: Optional[TraceSet] = Relationship(back_populates="monitor_traces")
     monitor: Optional[VerificationFlowMonitor] = Relationship(back_populates="monitor_traces")
-    time_series: List["VerificationTimeSeries"] = Relationship(back_populates="monitor_trace")
-    runs: List["VerificationRun"] = Relationship(back_populates="monitor_trace")
+    time_series: List["VerificationTimeSeries"] = Relationship(back_populates="monitor_trace", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    runs: List["VerificationRun"] = Relationship(back_populates="monitor_trace", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 
 class MonitorTraceVersionRead(MonitorTraceVersionBase):
@@ -303,6 +306,10 @@ class VerificationRunBase(SQLModel):
     status: str = Field(default="DRAFT")  # DRAFT, FINAL, SUPERSEDED
     is_final_for_monitor_event: bool = Field(default=False)
     
+    # Depth Only Override
+    is_depth_only: bool = Field(default=False)
+    depth_only_comment: Optional[str] = None
+    
     # Aggregate scores
     overall_flow_score: Optional[float] = None
     overall_depth_score: Optional[float] = None
@@ -347,6 +354,8 @@ class VerificationRunRead(VerificationRunBase):
 class VerificationRunUpdate(SQLModel):
     status: Optional[str] = None
     is_final_for_monitor_event: Optional[bool] = None
+    is_depth_only: Optional[bool] = None
+    depth_only_comment: Optional[str] = None
 
 
 # ============================================

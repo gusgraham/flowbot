@@ -568,13 +568,37 @@ async def import_trace(
             paths = parser.save_to_parquet(parsed_monitor, event.project_id, trace_set.id, monitor.id)
             
             for series_type, parquet_path in paths.items():
+                # Determine which dates/counts to use based on series type
+                is_pred_series = series_type.startswith('pred_')
+                if is_pred_series and parsed_monitor.pred_dates:
+                    series_dates = parsed_monitor.pred_dates
+                else:
+                    series_dates = parsed_monitor.dates
+                
+                # Get the actual data length for this series
+                series_data = None
+                if series_type == 'obs_flow':
+                    series_data = parsed_monitor.obs_flow
+                elif series_type == 'obs_depth':
+                    series_data = parsed_monitor.obs_depth
+                elif series_type == 'obs_velocity':
+                    series_data = parsed_monitor.obs_velocity
+                elif series_type == 'pred_flow':
+                    series_data = parsed_monitor.pred_flow
+                elif series_type == 'pred_depth':
+                    series_data = parsed_monitor.pred_depth
+                elif series_type == 'pred_velocity':
+                    series_data = parsed_monitor.pred_velocity
+                
+                actual_count = len(series_data) if series_data else 0
+                
                 ts_record = VerificationTimeSeries(
                     monitor_trace_id=mtv.id,
                     series_type=series_type,
                     parquet_path=parquet_path,
-                    start_time=parsed_monitor.dates[0] if parsed_monitor.dates else None,
-                    end_time=parsed_monitor.dates[-1] if parsed_monitor.dates else None,
-                    record_count=len(parsed_monitor.dates)
+                    start_time=series_dates[0] if series_dates else None,
+                    end_time=series_dates[min(actual_count-1, len(series_dates)-1)] if series_dates and actual_count > 0 else None,
+                    record_count=actual_count
                 )
                 session.add(ts_record)
             
@@ -637,11 +661,40 @@ def create_verification_run(
         select(VerificationTimeSeries).where(VerificationTimeSeries.monitor_trace_id == mtv_id)
     ).all()
     
+    # Determine initial is_depth_only settings
+    # 1. Default to Monitor setting
+    is_depth_only = monitor.is_depth_only
+    depth_only_comment = None
+    
+    # 2. Check for persistence (previous FINAL run for same monitor + event)
+    try:
+        ts = session.get(TraceSet, mtv.trace_set_id)
+        if ts:
+            # Find most recent finalized run for this monitor & event (excluding this MTV if possible)
+            # We want to carry forward settings from a PREVIOUS trace set
+            statement = (
+                select(VerificationRun)
+                .join(MonitorTraceVersion)
+                .join(TraceSet)
+                .where(MonitorTraceVersion.monitor_id == monitor.id)
+                .where(TraceSet.event_id == ts.event_id)
+                .where(VerificationRun.status == 'FINAL')
+                .order_by(VerificationRun.finalized_at.desc())
+            )
+            inputs = session.exec(statement).first()
+            if inputs:
+                is_depth_only = inputs.is_depth_only
+                depth_only_comment = inputs.depth_only_comment
+    except Exception as e:
+        print(f"Error checking persistence: {e}")
+
     # Create run record
     run = VerificationRun(
         monitor_trace_id=mtv_id,
         status="DRAFT",
         is_final_for_monitor_event=False,
+        is_depth_only=is_depth_only,
+        depth_only_comment=depth_only_comment,
         created_at=datetime.now()
     )
     session.add(run)
@@ -659,20 +712,37 @@ def create_verification_run(
         pred_depth_ts = next((ts for ts in time_series if ts.series_type == 'pred_depth'), None)
         
         if obs_flow_ts and pred_flow_ts:
+            import numpy as np
             obs_flow_df = pd.read_parquet(obs_flow_ts.parquet_path)
             pred_flow_df = pd.read_parquet(pred_flow_ts.parquet_path)
             
+            # Ensure sorting
+            obs_flow_df = obs_flow_df.sort_values('time')
+            pred_flow_df = pred_flow_df.sort_values('time')
+            
             timestamps = obs_flow_df['time'].tolist()
             obs_flow = obs_flow_df['value'].tolist()
-            pred_flow = pred_flow_df['value'].tolist()
+            
+            # Align Pred Flow to Obs timestamps using interpolation
+            obs_times_num = obs_flow_df['time'].astype('int64') // 10**9
+            pred_times_num = pred_flow_df['time'].astype('int64') // 10**9
+            
+            pred_flow = np.interp(obs_times_num, pred_times_num, pred_flow_df['value'].values).tolist()
             
             obs_depth = []
             pred_depth = []
             if obs_depth_ts and pred_depth_ts:
-                obs_depth_df = pd.read_parquet(obs_depth_ts.parquet_path)
-                pred_depth_df = pd.read_parquet(pred_depth_ts.parquet_path)
-                obs_depth = obs_depth_df['value'].tolist()
-                pred_depth = pred_depth_df['value'].tolist()
+                obs_depth_df = pd.read_parquet(obs_depth_ts.parquet_path).sort_values('time')
+                pred_depth_df = pd.read_parquet(pred_depth_ts.parquet_path).sort_values('time')
+                
+                # Align Depth series to Flow timestamps (master time base)
+                # Obs depth
+                obs_depth_times = obs_depth_df['time'].astype('int64') // 10**9
+                obs_depth = np.interp(obs_times_num, obs_depth_times, obs_depth_df['value'].values).tolist()
+                
+                # Pred depth
+                pred_depth_times = pred_depth_df['time'].astype('int64') // 10**9
+                pred_depth = np.interp(obs_times_num, pred_depth_times, pred_depth_df['value'].values).tolist()
             
             # Calculate metrics
             metrics = calculate_verification_metrics(
@@ -685,9 +755,10 @@ def create_verification_run(
             # Score metrics
             scores = score_verification_results(
                 metrics['flow'],
-                metrics['depth'],
+                depth_metrics_obj if depth_metrics else None,
                 is_critical=monitor.is_critical if monitor else False,
-                is_surcharged=monitor.is_surcharged if monitor else False
+                is_surcharged=monitor.is_surcharged if monitor else False,
+                is_depth_only=run.is_depth_only
             )
             
             # Update run with summary scores
@@ -747,19 +818,19 @@ def update_verification_run(
     current_user: User = Depends(get_current_active_user)
 ):
     """Update a verification run (e.g., to finalize it)."""
-    run = session.get(VerificationRun, run_id)
-    if not run:
+    db_run = session.get(VerificationRun, run_id)
+    if not db_run:
         raise HTTPException(status_code=404, detail="VerificationRun not found")
     
     update_data = update.model_dump(exclude_unset=True)
     
     # Handle finalization
     if update_data.get('status') == 'FINAL':
-        run.finalized_at = datetime.now()
-        run.is_final_for_monitor_event = True
+        db_run.finalized_at = datetime.now()
+        db_run.is_final_for_monitor_event = True
         
         # Supersede other runs for same monitor/event
-        mtv = session.get(MonitorTraceVersion, run.monitor_trace_id)
+        mtv = session.get(MonitorTraceVersion, db_run.monitor_trace_id)
         if mtv:
             other_runs = session.exec(
                 select(VerificationRun)
@@ -772,13 +843,101 @@ def update_verification_run(
                 other.is_final_for_monitor_event = False
                 session.add(other)
     
-    for key, value in update_data.items():
-        setattr(run, key, value)
+    # Check if is_depth_only changed
+    is_depth_only_changed = 'is_depth_only' in update_data and update_data['is_depth_only'] != db_run.is_depth_only
     
-    session.add(run)
+    for key, value in update_data.items():
+        if hasattr(db_run, key):
+            setattr(db_run, key, value)
+    
+    if is_depth_only_changed:
+        # Re-calculate scores
+        # We need to load existing metrics
+        from domain.verification_models import VerificationMetric
+        from services.peak_detector import VerificationMetrics
+        from services.tolerance_scorer import ToleranceScorer, ToleranceConfig, ParameterScore
+        
+        metrics = session.exec(
+            select(VerificationMetric).where(VerificationMetric.run_id == run_id)
+        ).all()
+        
+        # Helper to map list to dict
+        metric_map = {m.metric_name: m for m in metrics}
+        
+        # Get Monitor for config
+        monitor = db_run.monitor_trace.monitor
+        if monitor.is_critical:
+            config = ToleranceConfig.for_critical()
+        else:
+            config = ToleranceConfig.for_general(monitor.is_surcharged)
+        
+        scorer = ToleranceScorer(config)
+        
+        # Calculate Depth Score (Reuse existing metrics, just sum points)
+        depth_metrics_db = [m for m in metrics if m.parameter == 'DEPTH']
+        depth_points = sum(m.score_points for m in depth_metrics_db)
+        depth_max = len(depth_metrics_db) * 3
+        depth_score = ParameterScore(
+            parameter='DEPTH',
+            metrics={}, # Not needed for simple sum
+            total_points=depth_points,
+            max_points=depth_max,
+            score_fraction=depth_points / depth_max if depth_max > 0 else 0.0
+        )
+        
+        if db_run.is_depth_only:
+            # Zero out flow scores
+            flow_score = ParameterScore(
+                parameter='FLOW',
+                metrics={},
+                total_points=0,
+                max_points=0,
+                score_fraction=0.0
+            )
+            # Update DB records for Flow
+            for m in metrics:
+                if m.parameter == 'FLOW':
+                    m.score_points = 0
+                    m.score_band = 'NA'
+                    session.add(m)
+        else:
+            # Re-score Flow
+            # Reconstruct VerificationMetrics for Flow
+            # Note: We use 0/None for fields we don't have or don't use for scoring
+            flow_vm = VerificationMetrics(
+                parameter='FLOW',
+                nse=next((m.value for m in metrics if m.metric_name == 'nse'), -99999.0),
+                peak_time_diff_hrs=next((m.value for m in metrics if m.metric_name == 'peak_time_diff_hrs'), -99999.0),
+                peak_diff_pct=next((m.value for m in metrics if m.metric_name == 'peak_flow_diff_pcnt'), -99999.0),
+                volume_diff_pct=next((m.value for m in metrics if m.metric_name == 'volume_diff_pcnt'), None),
+                peak_diff_abs=0.0, # Unused for flow
+                kge=0.0, cv_obs=0.0, obs_peaks=[], pred_peaks=[] # Unused
+            )
+            
+            flow_score = scorer.score_flow_metrics(flow_vm)
+            
+            # Update DB records for Flow
+            for m in metrics:
+                if m.parameter == 'FLOW':
+                    # Find new score for this metric
+                    # Map DB metric name to scorer metric name if needed
+                    # Scorer uses: nse, peak_time_diff_hrs, peak_flow_diff_pcnt, volume_diff_pcnt
+                    # These match the DB names (mostly)
+                    new_metric_score = flow_score.metrics.get(m.metric_name)
+                    if new_metric_score:
+                        m.score_points = new_metric_score.score_points
+                        m.score_band = new_metric_score.score_band
+                        session.add(m)
+        
+        # Update Run aggregates
+        db_run.overall_flow_score = flow_score.score_fraction
+        db_run.overall_depth_score = depth_score.score_fraction
+        db_run.overall_status = scorer.get_overall_status(flow_score, depth_score)
+    
+    session.add(db_run)
     session.commit()
-    session.refresh(run)
-    return run
+    session.refresh(db_run)
+    return db_run
 
 
 @router.get("/verification/runs/{run_id}/metrics")
@@ -900,6 +1059,7 @@ def run_verification_for_event(
         VerificationRun, VerificationMetric, VerificationTimeSeries
     )
     import pandas as pd
+    import numpy as np
     
     event = session.get(VerificationEvent, event_id)
     if not event:
@@ -938,6 +1098,34 @@ def run_verification_for_event(
             
             print(f"[DEBUG] Processing MTV {mtv.id} for monitor {monitor.name}")
             
+            # Determine is_depth_only settings (persistence)
+            # 1. Default to Monitor
+            is_depth_only = monitor.is_depth_only
+            depth_only_comment = None
+            
+            # 2. Check for persistence (previous FINAL run)
+            try:
+                # Find most recent finalized run for this monitor & event
+                # Note: 'ts' is the current TraceSet loaded at loop start
+                persist_stmt = (
+                    select(VerificationRun)
+                    .join(MonitorTraceVersion)
+                    .join(TraceSet)
+                    .where(MonitorTraceVersion.monitor_id == monitor.id)
+                    .where(TraceSet.event_id == ts.event_id)
+                    .where(VerificationRun.status == 'FINAL')
+                    .order_by(VerificationRun.finalized_at.desc())
+                )
+                prev_run = session.exec(persist_stmt).first()
+                if prev_run:
+                    is_depth_only = prev_run.is_depth_only
+                    depth_only_comment = prev_run.depth_only_comment
+                    # Preserve manual settings (peaks)
+                    if prev_run.analysis_settings:
+                        settings.update(prev_run.analysis_settings)
+            except Exception as e:
+                print(f"Error checking persistence in bulk run: {e}")
+            
             # Check if there's already a final run for this MTV
             existing_final = session.exec(
                 select(VerificationRun)
@@ -946,13 +1134,12 @@ def run_verification_for_event(
             ).first()
             
             if existing_final:
-                # Skip if already finalized
-                results.append({
-                    "monitor": monitor.name,
-                    "status": "skipped",
-                    "reason": "Already has final run"
-                })
-                continue
+                # Supersede existing final run
+                existing_final.is_final_for_monitor_event = False
+                existing_final.status = 'SUPERSEDED'
+                session.add(existing_final)
+                # Continue to create new run
+                print(f"[DEBUG] Superseding existing run {existing_final.id}")
             
             # Load time series data from parquet files
             time_series = session.exec(
@@ -992,17 +1179,31 @@ def run_verification_for_event(
             
             # Run peak detection and metrics calculation
             try:
+                # Ensure sorting
+                obs_flow = obs_flow.sort_values('time')
+                pred_flow = pred_flow.sort_values('time')
+                
+                # Align Pred Flow to Obs timestamps using interpolation
+                obs_times_num = obs_flow['time'].astype('int64') // 10**9
+                pred_times_num = pred_flow['time'].astype('int64') // 10**9
+                
+                pred_flow_values = np.interp(obs_times_num, pred_times_num, pred_flow['value'].values).tolist()
+                obs_flow_values = obs_flow['value'].tolist()
+                
                 # Get timestamps as datetime objects
                 timestamps = pd.to_datetime(obs_flow['time']).tolist()
                 timestep_minutes = mtv.timestep_minutes or 5  # default 5 min
                 
                 flow_metrics_obj = peak_detector.calculate_all_metrics(
-                    obs_series=obs_flow['value'].tolist(),
-                    pred_series=pred_flow['value'].tolist(),
+                    obs_series=obs_flow_values,
+                    pred_series=pred_flow_values,
                     timestamps=timestamps,
                     parameter="FLOW",
                     timestep_minutes=timestep_minutes
                 )
+                
+                # Calculate KGE components
+                kge_components = peak_detector.calculate_kge_components(obs_flow_values, pred_flow_values)
                 
                 # Convert VerificationMetrics dataclass to dict
                 flow_metrics = {
@@ -1011,15 +1212,30 @@ def run_verification_for_event(
                     "cv_obs": flow_metrics_obj.cv_obs,
                     "peak_time_diff_hrs": flow_metrics_obj.peak_time_diff_hrs,
                     "peak_diff_pct": flow_metrics_obj.peak_diff_pct,
-                    "volume_diff_pct": flow_metrics_obj.volume_diff_pct
+                    "volume_diff_pct": flow_metrics_obj.volume_diff_pct,
+                    "kge_components": kge_components
                 }
                 
                 depth_metrics = None
                 if obs_depth is not None and pred_depth is not None:
+                    obs_depth = obs_depth.sort_values('time')
+                    pred_depth = pred_depth.sort_values('time')
+                    
                     depth_timestamps = pd.to_datetime(obs_depth['time']).tolist()
+                    
+                    # Align Depth
+                    obs_depth_times = obs_depth['time'].astype('int64') // 10**9
+                    pred_depth_times = pred_depth['time'].astype('int64') // 10**9
+                    
+                    # Use Flow timestamps as master? Or Obs Depth timestamps?
+                    # Generally Obs Depth timestamps match Obs Flow timestamps.
+                    # But safer to align Pred Depth to Obs Depth timestamps.
+                    pred_depth_values = np.interp(obs_depth_times, pred_depth_times, pred_depth['value'].values).tolist()
+                    obs_depth_values = obs_depth['value'].tolist()
+
                     depth_metrics_obj = peak_detector.calculate_all_metrics(
-                        obs_series=obs_depth['value'].tolist(),
-                        pred_series=pred_depth['value'].tolist(),
+                        obs_series=obs_depth_values,
+                        pred_series=pred_depth_values,
                         timestamps=depth_timestamps,
                         parameter="DEPTH",
                         timestep_minutes=timestep_minutes
@@ -1038,7 +1254,8 @@ def run_verification_for_event(
                     flow_metrics=flow_metrics_obj,
                     depth_metrics=depth_metrics_obj if depth_metrics else None,
                     is_critical=monitor.is_critical,
-                    is_surcharged=monitor.is_surcharged
+                    is_surcharged=monitor.is_surcharged,
+                    is_depth_only=is_depth_only
                 )
                 
                 # Extract score fractions for storage
@@ -1051,6 +1268,8 @@ def run_verification_for_event(
                     monitor_trace_id=mtv.id,
                     status="COMPLETE",
                     is_final_for_monitor_event=True,
+                    is_depth_only=is_depth_only,
+                    depth_only_comment=depth_only_comment,
                     nse=flow_metrics_obj.nse,
                     kge=flow_metrics_obj.kge,
                     cv_obs=flow_metrics_obj.cv_obs,
@@ -1302,7 +1521,8 @@ def update_analysis_settings(
         flow_metrics=flow_metrics_obj,
         depth_metrics=depth_metrics_obj,
         is_critical=monitor.is_critical if monitor else False,
-        is_surcharged=monitor.is_surcharged if monitor else False
+        is_surcharged=monitor.is_surcharged if monitor else False,
+        is_depth_only=run.is_depth_only if run.is_depth_only is not None else False
     )
     
     # Update run with new metrics
@@ -1428,14 +1648,21 @@ def get_run_workspace(
         # Initialize detector
         peak_detector = PeakDetector()
         
-        # If parameters are provided (non-default), we define this as a preview calculation
-        # OR if stored settings exist and differ from raw defaults
-        has_custom_params = (
-            eff_smoothing_obs > 0 or 
-            eff_smoothing_pred > 0 or 
-            eff_max_peaks is not None or 
-            peak_mode == 'manual'
+        # Determine if we need to calculate on the fly (Preview Mode)
+        # Only if effective parameters differ from what is saved in the run settings
+        saved_smoothing_obs = settings.get('smoothing_obs', 0.0)
+        saved_smoothing_pred = settings.get('smoothing_pred', 0.0)
+        saved_max_peaks = settings.get('max_peaks', 1)
+        
+        # Check against effective values
+        # Use epsilon for float comparison
+        differs = (
+            abs(eff_smoothing_obs - saved_smoothing_obs) > 1e-6 or
+            abs(eff_smoothing_pred - saved_smoothing_pred) > 1e-6 or
+            eff_max_peaks != saved_max_peaks
         )
+        
+        has_custom_params = differs
         
         flow_metrics_list = []
         depth_metrics_list = []
@@ -1470,7 +1697,7 @@ def get_run_workspace(
                 return [], []
 
             obs_flow, time_flow = get_series("obs_flow")
-            pred_flow, _ = get_series("pred_flow")
+            pred_flow, time_pred = get_series("pred_flow")
             
             # Apply smoothing manually so we can verify Smoothed vs Smoothed
             if eff_smoothing_obs > 0 and len(obs_flow) > 0:
@@ -1483,17 +1710,37 @@ def get_run_workspace(
             
             flow_metrics_obj = None
             if len(obs_flow) > 0 and len(pred_flow) > 0:
+                # Align predicted data to observed timestamps for metrics comparison
+                # We interpret observed timestamps as the ground truth "evaluation points"
+                obs_ts = np.array([t.timestamp() for t in time_flow])
+                pred_ts = np.array([t.timestamp() for t in time_pred])
+                
+                # Interpolate predicted values to observed timestamps
+                # pred_flow is already smoothed if enabled above
+                aligned_pred_flow = np.interp(obs_ts, pred_ts, pred_flow, left=np.nan, right=np.nan).tolist()
+                
+                # Filter out NaNs (where observed time is outside predicted range) for clean metric calc
+                # But we must keep the indices aligned with time_flow for peak reporting
+                # The peak_detector handles NaN values gracefully or we pass the aligned array
+                
                 flow_metrics_obj = peak_detector.calculate_all_metrics(
                     obs_series=obs_flow,
-                    pred_series=pred_flow,
+                    pred_series=aligned_pred_flow,
                     timestamps=time_flow,
                     parameter="FLOW",
                     timestep_minutes=timestep
                 )
                 
                 # DEBUG: Log flow metrics for F01
-                if monitor and monitor.name == "F01":
-                    print("\n=== DEBUG F01: PeakDetector Flow Metrics ===")
+                # DEBUG: Log flow metrics for ALL monitors
+                if True: # monitor and monitor.name == "F01":
+                    print(f"\n=== DEBUG {monitor.name if monitor else 'Unknown'}: PeakDetector Flow Metrics ===")
+                    print(f"  Obs Len: {len(obs_flow)}, Pred Len: {len(pred_flow)}")
+                    print(f"  Aligned Pred Len: {len(aligned_pred_flow)}")
+                    if len(time_flow) > 0:
+                        print(f"  Obs TS: {time_flow[0]} to {time_flow[-1]}")
+                    if len(time_pred) > 0:
+                        print(f"  Pred TS: {time_pred[0]} to {time_pred[-1]}")
                     print(f"  NSE: {flow_metrics_obj.nse}")
                     print(f"  KGE: {flow_metrics_obj.kge}")
                     print(f"  CV_OBS: {flow_metrics_obj.cv_obs}")
@@ -1548,7 +1795,7 @@ def get_run_workspace(
                     if eff_max_peaks is not None:
                          filtered_obs = peak_detector.detect_peaks(obs_flow, time_flow, smoothing_frac=0, n_peaks=eff_max_peaks)
                          flow_metrics_obj.obs_peaks = filtered_obs
-                         filtered_pred = peak_detector.detect_peaks(pred_flow, time_flow, smoothing_frac=0, n_peaks=eff_max_peaks)
+                         filtered_pred = peak_detector.detect_peaks(aligned_pred_flow, time_flow, smoothing_frac=0, n_peaks=eff_max_peaks)
                          flow_metrics_obj.pred_peaks = filtered_pred
                 
                 # Update run stats
@@ -1561,14 +1808,15 @@ def get_run_workspace(
                 peaks_data["pred_flow"] = [{"index": p.index, "time": p.timestamp.strftime('%Y-%m-%dT%H:%M:%S'), "value": p.value} for p in flow_metrics_obj.pred_peaks]
                 
                 # Calculate KGE components for bar chart (use raw data, not smoothed)
+                # Calculate KGE components for bar chart (use raw data, not smoothed)
                 raw_obs_flow = series_data.get("obs_flow", {}).get("values", [])
-                raw_pred_flow = series_data.get("pred_flow", {}).get("values", [])
-                if len(raw_obs_flow) > 0 and len(raw_pred_flow) > 0:
-                    kge_components = peak_detector.calculate_kge_components(raw_obs_flow, raw_pred_flow)
+                # Use aligned predicted flow to match observed length
+                if len(raw_obs_flow) > 0 and 'aligned_pred_flow' in locals():
+                    kge_components = peak_detector.calculate_kge_components(raw_obs_flow, aligned_pred_flow)
 
             # Depth
             obs_depth, time_depth = get_series("obs_depth")
-            pred_depth, _ = get_series("pred_depth")
+            pred_depth, time_pred_depth = get_series("pred_depth")
             
             if eff_smoothing_obs > 0 and len(obs_depth) > 0:
                 obs_depth = peak_detector.smooth_series(obs_depth, eff_smoothing_obs).tolist()
@@ -1580,9 +1828,16 @@ def get_run_workspace(
 
             depth_metrics_obj = None
             if len(obs_depth) > 0 and len(pred_depth) > 0:
+                # Align predicted data to observed timestamps for metrics comparison
+                obs_ts_depth = np.array([t.timestamp() for t in time_depth])
+                pred_ts_depth = np.array([t.timestamp() for t in time_pred_depth])
+                
+                # Interpolate predicted values to observed timestamps
+                aligned_pred_depth = np.interp(obs_ts_depth, pred_ts_depth, pred_depth, left=np.nan, right=np.nan).tolist()
+                
                 depth_metrics_obj = peak_detector.calculate_all_metrics(
                     obs_series=obs_depth,
-                    pred_series=pred_depth,
+                    pred_series=aligned_pred_depth,
                     timestamps=time_depth,
                     parameter="DEPTH",
                     timestep_minutes=timestep
@@ -1623,7 +1878,7 @@ def get_run_workspace(
                 else:
                     if eff_max_peaks is not None:
                          depth_metrics_obj.obs_peaks = peak_detector.detect_peaks(obs_depth, time_depth, smoothing_frac=0, n_peaks=eff_max_peaks)
-                         depth_metrics_obj.pred_peaks = peak_detector.detect_peaks(pred_depth, time_depth, smoothing_frac=0, n_peaks=eff_max_peaks)
+                         depth_metrics_obj.pred_peaks = peak_detector.detect_peaks(aligned_pred_depth, time_depth, smoothing_frac=0, n_peaks=eff_max_peaks)
                 
                 peaks_data["obs_depth"] = [{"index": p.index, "time": p.timestamp.strftime('%Y-%m-%dT%H:%M:%S'), "value": p.value} for p in depth_metrics_obj.obs_peaks]
                 peaks_data["pred_depth"] = [{"index": p.index, "time": p.timestamp.strftime('%Y-%m-%dT%H:%M:%S'), "value": p.value} for p in depth_metrics_obj.pred_peaks]
@@ -1633,7 +1888,8 @@ def get_run_workspace(
                 flow_metrics=flow_metrics_obj,
                 depth_metrics=depth_metrics_obj,
                 is_critical=monitor.is_critical if monitor else False,
-                is_surcharged=monitor.is_surcharged if monitor else False
+                is_surcharged=monitor.is_surcharged if monitor else False,
+                is_depth_only=run.is_depth_only
             )
             
             # DEBUG: Log scorer output for F01
@@ -1688,25 +1944,60 @@ def get_run_workspace(
             flow_metrics_list = list(flow_map.values())
             depth_metrics_list = list(depth_map.values())
                              
-            # Default peaks detection (raw)
-            for series_type in ["obs_flow", "pred_flow", "obs_depth", "pred_depth"]:
-                if series_type in series_data:
-                    timestamps = pd.to_datetime(series_data[series_type]["time"]).tolist()
-                    values = series_data[series_type]["values"]
-                    try:
-                        detected_peaks = peak_detector.detect_peaks(values, timestamps)
-                        peaks_data[series_type] = [
-                            {"index": p.index, "time": p.timestamp.strftime('%Y-%m-%dT%H:%M:%S'), "value": p.value}
-                            for p in detected_peaks
-                        ]
-                    except Exception as e:
-                        peaks_data[series_type] = []
+            # Peak generation (Standard Load)
+            if peak_mode == 'manual':
+                 # Restore manual peaks for visualization
+                 for series_type in ["obs_flow", "pred_flow", "obs_depth", "pred_depth"]:
+                      raw_peaks = manual_peaks.get(series_type, [])
+                      # Manual peaks are already in a format suitable for peaks_data (time string + value)
+                      # We might need to ensure 'index' is present or default to -1 if not stored
+                      # The frontend expects {index, time, value}
+                      peaks_data[series_type] = []
+                      for p in raw_peaks:
+                          peaks_data[series_type].append({
+                              "index": p.get("index", -1), 
+                              "time": p["time"], 
+                              "value": p["value"]
+                          })
+            else:
+                # Default peaks detection (Auto)
+                for series_type in ["obs_flow", "pred_flow", "obs_depth", "pred_depth"]:
+                    if series_type in series_data:
+                        timestamps = pd.to_datetime(series_data[series_type]["time"]).tolist()
+                        values = series_data[series_type]["values"]
+                        try:
+                            detected_peaks = peak_detector.detect_peaks(values, timestamps, n_peaks=saved_max_peaks)
+                            if True:
+                                 print(f"DEBUG STD LOAD {series_type}: Len {len(values)}, Peaks {len(detected_peaks)}")
+                                 if len(detected_peaks) > 0:
+                                     print(f"  First Peak TS: {detected_peaks[0].timestamp} Index: {detected_peaks[0].index}")
+                            peaks_data[series_type] = [
+                                {"index": p.index, "time": p.timestamp.strftime('%Y-%m-%dT%H:%M:%S'), "value": p.value}
+                                for p in detected_peaks
+                            ]
+                        except Exception as e:
+                            peaks_data[series_type] = []
             
             # Calculate KGE components for non-custom params case
+            # Calculate KGE components for non-custom params case
             raw_obs_flow = series_data.get("obs_flow", {}).get("values", [])
+            obs_time_str = series_data.get("obs_flow", {}).get("time", [])
+            
             raw_pred_flow = series_data.get("pred_flow", {}).get("values", [])
+            pred_time_str = series_data.get("pred_flow", {}).get("time", [])
+            
             if len(raw_obs_flow) > 0 and len(raw_pred_flow) > 0:
-                kge_components = peak_detector.calculate_kge_components(raw_obs_flow, raw_pred_flow)
+                try:
+                    # Align predicted data to observed timestamps
+                    obs_ts = pd.to_datetime(obs_time_str).astype('int64') // 10**9
+                    pred_ts = pd.to_datetime(pred_time_str).astype('int64') // 10**9
+                    
+                    aligned_pred_flow = np.interp(obs_ts, pred_ts, raw_pred_flow, left=np.nan, right=np.nan).tolist()
+                    kge_components = peak_detector.calculate_kge_components(raw_obs_flow, aligned_pred_flow)
+                except Exception as e:
+                    print(f"Error calculating KGE components in std load: {e}")
+                    # keep kge_components as None or default error values
+                    pass
 
         return {
             "run": run_data,
@@ -1714,7 +2005,8 @@ def get_run_workspace(
                 "id": monitor.id if monitor else None,
                 "name": monitor.name if monitor else "Unknown",
                 "is_critical": monitor.is_critical if monitor else False,
-                "is_surcharged": monitor.is_surcharged if monitor else False
+                "is_surcharged": monitor.is_surcharged if monitor else False,
+                "is_depth_only": monitor.is_depth_only if monitor else False
             },
             "event": {
                 "id": event.id if event else None,

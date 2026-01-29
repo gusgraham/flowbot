@@ -33,6 +33,11 @@ interface CaptureEventModalProps {
     }) => Promise<void>;
     sourceEvent?: EventResult | null;
     sourceDryDay?: DryDayResult | null;
+    histogramCapture?: {
+        type: 'storm' | 'dryDay';
+        startTime: Date;
+        endTime: Date;
+    } | null;
     projectId: number;
 }
 
@@ -42,6 +47,7 @@ const CaptureEventModal: React.FC<CaptureEventModalProps> = ({
     onSave,
     sourceEvent,
     sourceDryDay,
+    histogramCapture,
     projectId
 }) => {
     const [eventName, setEventName] = useState('');
@@ -69,6 +75,13 @@ const CaptureEventModal: React.FC<CaptureEventModalProps> = ({
                 dayEnd.setHours(23, 59, 59);
                 setStartTime(format(dayStart, "yyyy-MM-dd'T'HH:mm"));
                 setEndTime(format(dayEnd, "yyyy-MM-dd'T'HH:mm"));
+            } else if (histogramCapture) {
+                // Capturing from histogram click
+                const isStorm = histogramCapture.type === 'storm';
+                setEventName(isStorm ? 'Storm Event' : 'Dry Day');
+                setEventType(isStorm ? 'Storm Event' : 'Dry Day');
+                setStartTime(format(histogramCapture.startTime, "yyyy-MM-dd'T'HH:mm"));
+                setEndTime(format(histogramCapture.endTime, "yyyy-MM-dd'T'HH:mm"));
             } else {
                 // Manual event creation
                 setEventName('');
@@ -78,7 +91,7 @@ const CaptureEventModal: React.FC<CaptureEventModalProps> = ({
             }
             setError(null);
         }
-    }, [isOpen, sourceEvent, sourceDryDay]);
+    }, [isOpen, sourceEvent, sourceDryDay, histogramCapture]);
 
     const handleSave = async () => {
         // Validation
