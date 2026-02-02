@@ -26,10 +26,10 @@ def parse_format_token(token):
                 width = int(m2.group(1))
                 return ('int', width, rep)
         elif rest.startswith('F'):
-            m2 = re.match(r'^F(\d+)\.(\d+)$', rest)
+            m2 = re.match(r'^F(\d+)(?:\.(\d+))?$', rest)
             if m2:
                 width = int(m2.group(1))
-                decimals = int(m2.group(2))
+                decimals = int(m2.group(2) or 0)
                 return ('float', width, decimals, rep)
         elif rest.startswith('A'):
             m2 = re.match(r'^A(\d+)$', rest)

@@ -769,11 +769,17 @@ def delete_survey_event(
     session: Session = Depends(get_session)
 ):
     """Delete a captured event"""
-    from domain.fsa import SurveyEvent
+    from domain.fsa import SurveyEvent, FsaMonitorExcludedDryDay
     
     event = session.get(SurveyEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Delete any exclusion records referencing this event first
+    stmt = select(FsaMonitorExcludedDryDay).where(FsaMonitorExcludedDryDay.event_id == event_id)
+    exclusions = session.exec(stmt).all()
+    for exclusion in exclusions:
+        session.delete(exclusion)
     
     session.delete(event)
     session.commit()

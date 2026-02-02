@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from alembic import context
 
 # Import your models here
-from domain import auth, fsa, fsm, verification, wq, ssd, interim
+from domain import auth, fsa, fsm, verification, wq, ssd, interim, admin
 
 # Load environment variables
 load_dotenv()

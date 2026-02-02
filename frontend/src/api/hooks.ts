@@ -3169,3 +3169,136 @@ export const useCreateStorageSnapshot = () => {
     });
 };
 
+// DWF Analysis Hooks
+export interface DryDayStatus {
+    id: number;
+    name: string;
+    start_time: string;
+    end_time: string;
+    event_type: string;
+    enabled: boolean;
+}
+
+export interface DWFAnalysisResult {
+    profile: any[];
+    traces: any[];
+    stats: any;
+}
+
+export const useDWFDryDays = (datasetId: number) => {
+    return useQuery({
+        queryKey: ['dwf_dry_days', datasetId],
+        queryFn: async () => {
+            const { data } = await api.get<DryDayStatus[]>(`/fsa/dwf/datasets/${datasetId}/dry-days`);
+            return data;
+        },
+        enabled: !!datasetId,
+    });
+};
+
+// SG Filter Settings Hooks
+export interface SGSettings {
+    dataset_id: number;
+    sg_enabled: boolean;
+    sg_window: number;
+    sg_order: number;
+}
+
+export const useDWFSGSettings = (datasetId: number) => {
+    return useQuery({
+        queryKey: ['dwf_sg_settings', datasetId],
+        queryFn: async () => {
+            const { data } = await api.get<SGSettings>(`/fsa/dwf/datasets/${datasetId}/sg-settings`);
+            return data;
+        },
+        enabled: !!datasetId,
+    });
+};
+
+export const useUpdateDWFSGSettings = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ datasetId, sgEnabled, sgWindow, sgOrder }: {
+            datasetId: number;
+            sgEnabled: boolean;
+            sgWindow: number;
+            sgOrder: number;
+        }) => {
+            const { data } = await api.put<SGSettings>(`/fsa/dwf/datasets/${datasetId}/sg-settings`, {
+                sg_enabled: sgEnabled,
+                sg_window: sgWindow,
+                sg_order: sgOrder
+            });
+            return data;
+        },
+        onSuccess: (_, { datasetId }) => {
+            queryClient.invalidateQueries({ queryKey: ['dwf_sg_settings', datasetId] });
+            queryClient.invalidateQueries({ queryKey: ['dwf_analysis', datasetId] });
+        },
+    });
+};
+
+export const useToggleDWFDryDay = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ datasetId, eventId, exclude }: { datasetId: number; eventId: number; exclude: boolean }) => {
+            if (exclude) {
+                await api.put(`/fsa/dwf/datasets/${datasetId}/dry-days/${eventId}/exclude`);
+            } else {
+                await api.delete(`/fsa/dwf/datasets/${datasetId}/dry-days/${eventId}/exclude`);
+            }
+        },
+        onSuccess: (_, { datasetId }) => {
+            queryClient.invalidateQueries({ queryKey: ['dwf_dry_days', datasetId] });
+            // Use predicate to match all dwf_analysis queries for this dataset (regardless of other params)
+            queryClient.invalidateQueries({
+                predicate: (query) =>
+                    query.queryKey[0] === 'dwf_analysis' && query.queryKey[1] === datasetId
+            });
+        },
+    });
+};
+
+export const useDWFAnalysis = (datasetId: number, candidateEventIds?: number[], sgParams?: { enabled: boolean; window: number; order: number }) => {
+    return useQuery({
+        queryKey: ['dwf_analysis', datasetId, candidateEventIds, sgParams],
+        queryFn: async () => {
+            const payload = {
+                ...(candidateEventIds ? { candidate_event_ids: candidateEventIds } : {}),
+                ...(sgParams?.enabled ? {
+                    sg_enabled: true,
+                    sg_window: sgParams.window,
+                    sg_order: sgParams.order
+                } : {})
+            };
+            const { data } = await api.post<DWFAnalysisResult>(`/fsa/dwf/datasets/${datasetId}/compute`, payload);
+            return data;
+        },
+        enabled: !!datasetId,
+    });
+};
+
+export const useExportDWF = () => {
+    return useMutation({
+        mutationFn: async ({ projectId, datasetIds, startDate, variable, profileLine, format }: {
+            projectId: number;
+            datasetIds: number[];
+            startDate: string;
+            variable: string;
+            profileLine?: string;
+            format?: string;
+        }) => {
+            const response = await api.post(`/fsa/dwf/projects/${projectId}/export`, {
+                dataset_ids: datasetIds,
+                start_date: startDate,
+                variable,
+                profile_line: profileLine || 'mean',
+                format: format || 'infoworks'
+            }, {
+                responseType: 'blob',
+            });
+            return response.data;
+        },
+    });
+};
+

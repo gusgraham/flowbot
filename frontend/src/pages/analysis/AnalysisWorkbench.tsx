@@ -9,6 +9,8 @@ import DataEditor from './DataEditor';
 import ScatterChart from './ScatterChart';
 import { CumulativeDepthChart } from './CumulativeDepthChart';
 import RainfallEventsAnalysis from './RainfallEventsAnalysis';
+import DWFAnalysis from './DWFAnalysis';
+import DWFExportModal from './DWFExportModal';
 
 // const RainfallTab = ({ datasetId }: { datasetId: number }) => {
 //     const { data: events, isLoading } = useRainfallEvents(datasetId);
@@ -55,11 +57,7 @@ import RainfallEventsAnalysis from './RainfallEventsAnalysis';
 //     );
 // };
 
-const DWFTab = ({ datasetId: _datasetId }: { datasetId: number }) => (
-    <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-        <p className="text-gray-500">Dry Weather Flow Analysis Coming Soon</p>
-    </div>
-);
+
 
 interface AnalysisWorkbenchProps {
     projectId?: number;
@@ -83,6 +81,8 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
     const [rainfallExpanded, setRainfallExpanded] = useState(true);
     const [flowExpanded, setFlowExpanded] = useState(true);
     const [eventsExpanded, setEventsExpanded] = useState(true);
+    const [selectedEventIds, setSelectedEventIds] = useState<number[]>([]);
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
     // Group datasets by type and sort alphabetically
     const rainfallDatasets = (datasets?.filter(d => d.variable === 'Rainfall') || [])
@@ -100,6 +100,26 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
             }
         }
     }, [datasets]);
+
+    // Initialize selected events when savedEvents loads
+    React.useEffect(() => {
+        if (savedEvents && savedEvents.length > 0) {
+            // Auto select all events by default
+            if (selectedEventIds.length === 0) {
+                setSelectedEventIds(savedEvents.map(e => e.id));
+            }
+        }
+    }, [savedEvents]);
+
+    const toggleEventSelection = (eventId: number) => {
+        setSelectedEventIds(prev => {
+            if (prev.includes(eventId)) {
+                return prev.filter(id => id !== eventId);
+            } else {
+                return [...prev, eventId];
+            }
+        });
+    };
 
     // Poll for status updates if any dataset is processing
     React.useEffect(() => {
@@ -481,6 +501,17 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                                     key={event.id}
                                                     className="text-left p-3 rounded-lg border bg-white border-transparent hover:bg-gray-50 hover:border-gray-200 transition-all flex items-start gap-3 group"
                                                 >
+                                                    <div className="pt-1">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedEventIds.includes(event.id)}
+                                                            onChange={(e) => {
+                                                                e.stopPropagation();
+                                                                toggleEventSelection(event.id);
+                                                            }}
+                                                            className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded cursor-pointer"
+                                                        />
+                                                    </div>
                                                     <div className="p-2 rounded-md flex-shrink-0 bg-purple-100 text-purple-600">
                                                         <Calendar size={16} />
                                                     </div>
@@ -688,7 +719,12 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                                     />
                                 )}
                                 {activeTab === 'dwf' && (
-                                    <DWFTab datasetId={selectedDatasetIds[0]} />
+                                    <DWFAnalysis
+                                        datasetId={selectedDatasetIds[0]}
+                                        projectId={id}
+                                        candidateEventIds={selectedEventIds}
+                                        onExport={() => setIsExportModalOpen(true)}
+                                    />
                                 )}
                             </div>
                         </>
@@ -701,6 +737,12 @@ const AnalysisWorkbench: React.FC<AnalysisWorkbenchProps> = ({ projectId: propPr
                 isOpen={isUploadModalOpen}
                 onClose={() => setIsUploadModalOpen(false)}
                 projectId={id}
+            />
+            <DWFExportModal
+                isOpen={isExportModalOpen}
+                onClose={() => setIsExportModalOpen(false)}
+                projectId={id}
+                datasets={flowDatasets}
             />
         </div >
     );

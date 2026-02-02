@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 
-from api import fsm, verification, wq, auth, fsa, users, ssd, dry_day, admin
+from api import fsm, verification, wq, auth, fsa, users, ssd, dry_day, admin, fsa_dwf
 from database import get_session, create_db_and_tables
 from domain.auth import User, UserCreate
 from services.auth import AuthService
@@ -34,6 +34,7 @@ app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(fsm.router, prefix="/api", tags=["fsm"])
 app.include_router(fsa.router, prefix="/api")
+app.include_router(fsa_dwf.router, prefix="/api") # DWF endpoints
 app.include_router(verification.router, prefix="/api", tags=["verification"])
 app.include_router(dry_day.router, prefix="/api")  # Dry Day Analysis endpoints
 app.include_router(wq.router, prefix="/api", tags=["wq"])

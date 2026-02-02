@@ -204,6 +204,27 @@ class SurveyEventCreate(SurveyEventBase):
 class SurveyEventRead(SurveyEventBase):
     id: int
 
+class FsaMonitorExcludedDryDay(SQLModel, table=True):
+    __tablename__ = "fsa_monitor_excluded_dry_days"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    dataset_id: int = Field(foreign_key="fsa_dataset.id")
+    event_id: int = Field(foreign_key="fsa_surveyevent.id")
+    
+    # Ensure unique combination of dataset and event
+    # Note: UniqueConstraint handling might differ in older SQLModel versions, usually done via __table_args__
+    # but for simplicity we'll handle uniqueness via application logic or raw SQL if needed.
+
+
+class FsaDWFMonitorSettings(SQLModel, table=True):
+    """Per-monitor SG filter settings for DWF analysis."""
+    __tablename__ = "fsa_dwf_monitor_settings"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    dataset_id: int = Field(foreign_key="fsa_dataset.id", unique=True, index=True)
+    sg_enabled: bool = Field(default=False)
+    sg_window: int = Field(default=21)
+    sg_order: int = Field(default=3)
+
+
 # ==========================================
 # TIMESERIES DATA
 # ==========================================
