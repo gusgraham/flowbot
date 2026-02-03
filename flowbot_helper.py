@@ -43,7 +43,7 @@ except NameError:
 
 strMajorRelease = "4"
 strMinorRelease = "2"
-strUpdate = "5"
+strUpdate = "6"
 strOther = ""
 # strOther = " (Beta)"
 strVersion = f'{strMajorRelease}.{strMinorRelease}.{strUpdate}{strOther}'
@@ -978,124 +978,124 @@ def parse_payload(payload_lines, record_format, record_length, field_names):
 #         'identifier': identifier
 #     }
 
-def parse_file(filename):
-    with open(filename, 'r') as f:
-        lines = f.readlines()
+# def parse_file(filename):
+#     with open(filename, 'r') as f:
+#         lines = f.readlines()
     
-    header_lines = []
-    data_blocks = []  # list of (constants_lines, payload_lines)
-    current_constants = []
-    current_payload = []
+#     header_lines = []
+#     data_blocks = []  # list of (constants_lines, payload_lines)
+#     current_constants = []
+#     current_payload = []
 
-    in_header = True
-    in_constants = False
-    in_payload = False
+#     in_header = True
+#     in_constants = False
+#     in_payload = False
 
-    for line in lines:
-        if line.startswith('*CSTART'):
-            in_constants = True
-            in_payload = False
-            current_constants = []
-            continue
-        elif line.startswith('*CEND'):
-            in_constants = False
-            in_payload = True
-            current_payload = []
-            continue
-        elif line.startswith('*$') or line.startswith('*END'):
-            in_payload = False
-            if current_constants and current_payload:
-                data_blocks.append((current_constants, current_payload))
-            current_constants = []
-            current_payload = []
-            continue
-        elif in_constants:
-            current_constants.append(line)
-        elif in_payload:
-            current_payload.append(line)
-        elif in_header:
-            header_lines.append(line)
+#     for line in lines:
+#         if line.startswith('*CSTART'):
+#             in_constants = True
+#             in_payload = False
+#             current_constants = []
+#             continue
+#         elif line.startswith('*CEND'):
+#             in_constants = False
+#             in_payload = True
+#             current_payload = []
+#             continue
+#         elif line.startswith('*$') or line.startswith('*END'):
+#             in_payload = False
+#             if current_constants and current_payload:
+#                 data_blocks.append((current_constants, current_payload))
+#             current_constants = []
+#             current_payload = []
+#             continue
+#         elif in_constants:
+#             current_constants.append(line)
+#         elif in_payload:
+#             current_payload.append(line)
+#         elif in_header:
+#             header_lines.append(line)
 
-    # Don't forget the last block (if *END without *$)
-    if current_constants and current_payload:
-        data_blocks.append((current_constants, current_payload))
+#     # Don't forget the last block (if *END without *$)
+#     if current_constants and current_payload:
+#         data_blocks.append((current_constants, current_payload))
 
-    header = parse_header(header_lines)
+#     header = parse_header(header_lines)
 
-    # Extract header fields.    
-    data_format = header.get('DATA_FORMAT', '')
-    identifier = header.get('IDENTIFIER', '')
+#     # Extract header fields.    
+#     data_format = header.get('DATA_FORMAT', '')
+#     identifier = header.get('IDENTIFIER', '')
 
-    # Process FIELD and UNITS.
-    field_line = header.get('FIELD', '')
-    field_tokens = [tok.strip() for tok in field_line.split(',') if tok.strip()]
-    if field_tokens and field_tokens[0].isdigit():
-        field_names = ",".join(field_tokens[1:])
-    else:
-        field_names = ",".join(field_tokens)
+#     # Process FIELD and UNITS.
+#     field_line = header.get('FIELD', '')
+#     field_tokens = [tok.strip() for tok in field_line.split(',') if tok.strip()]
+#     if field_tokens and field_tokens[0].isdigit():
+#         field_names = ",".join(field_tokens[1:])
+#     else:
+#         field_names = ",".join(field_tokens)
 
-    record_length = None
-    record_line = header.get('RECORD_LENGTH', '')
-    if record_line:
-        parts = [p.strip() for p in record_line.split(',')]
-        if len(parts) >= 2:
-            record_length = int(parts[1])
+#     record_length = None
+#     record_line = header.get('RECORD_LENGTH', '')
+#     if record_line:
+#         parts = [p.strip() for p in record_line.split(',')]
+#         if len(parts) >= 2:
+#             record_length = int(parts[1])
 
-    # FORMAT for the payload record.
-    record_format = header.get('FORMAT', '')
+#     # FORMAT for the payload record.
+#     record_format = header.get('FORMAT', '')
 
-    # CONSTANTS names.
-    constants_line = header.get('CONSTANTS', '')
-    constants_tokens = [tok.strip() for tok in constants_line.split(',') if tok.strip()]
-    if constants_tokens and constants_tokens[0].isdigit():
-        constants_names = ",".join(constants_tokens[1:])
-    else:
-        constants_names = ",".join(constants_tokens)
+#     # CONSTANTS names.
+#     constants_line = header.get('CONSTANTS', '')
+#     constants_tokens = [tok.strip() for tok in constants_line.split(',') if tok.strip()]
+#     if constants_tokens and constants_tokens[0].isdigit():
+#         constants_names = ",".join(constants_tokens[1:])
+#     else:
+#         constants_names = ",".join(constants_tokens)
 
-    # C_FORMAT for the constants block.
-    c_format = header.get('C_FORMAT', '')
+#     # C_FORMAT for the constants block.
+#     c_format = header.get('C_FORMAT', '')
 
-    full_payload = []
-    constants = {}
-    blocks = []
+#     full_payload = []
+#     constants = {}
+#     blocks = []
 
-    for idx, (const_lines, payload_lines) in enumerate(data_blocks):
-        parsed_constants = parse_constants(const_lines, c_format, constants_names)
-        parsed_payload = parse_payload(payload_lines, record_format, record_length, field_names)
+#     for idx, (const_lines, payload_lines) in enumerate(data_blocks):
+#         parsed_constants = parse_constants(const_lines, c_format, constants_names)
+#         parsed_payload = parse_payload(payload_lines, record_format, record_length, field_names)
 
-        duration_mins = (parse_date(parsed_constants["END"]) - parse_date(parsed_constants["START"])).total_seconds() / 60
-        interval_minutes = int(parsed_constants["INTERVAL"])
-        no_of_records = int(duration_mins / interval_minutes) + 1
-        payload_length = sum(len(nested_list) for nested_list in parsed_payload)
+#         duration_mins = (parse_date(parsed_constants["END"]) - parse_date(parsed_constants["START"])).total_seconds() / 60
+#         interval_minutes = int(parsed_constants["INTERVAL"])
+#         no_of_records = int(duration_mins / interval_minutes) + 1
+#         payload_length = sum(len(nested_list) for nested_list in parsed_payload)
 
-        if payload_length != no_of_records:
-            raise ValueError("Error in flowbot_helper::parse_file: Payload length does not match no of records inferred by dates")
+#         if payload_length != no_of_records:
+#             raise ValueError("Error in flowbot_helper::parse_file: Payload length does not match no of records inferred by dates")
                 
-        blocks.append({'constants': parsed_constants, 'payload': parsed_payload})
-        full_payload.extend(parsed_payload)
-        if idx == 0:
-            constants = parsed_constants
+#         blocks.append({'constants': parsed_constants, 'payload': parsed_payload})
+#         full_payload.extend(parsed_payload)
+#         if idx == 0:
+#             constants = parsed_constants
 
-# Replace 'END' in constants with the one from the last block (if available)
-    if blocks:
-        last_constants = blocks[-1]['constants']
-        if 'END' in last_constants:
-            constants['END'] = last_constants['END']
+# # Replace 'END' in constants with the one from the last block (if available)
+#     if blocks:
+#         last_constants = blocks[-1]['constants']
+#         if 'END' in last_constants:
+#             constants['END'] = last_constants['END']
 
-    return {
-        'header': header,
-        'constants': constants,
-        'payload': full_payload,
-        'blocks': blocks,
-        'data_format': data_format,
-        'identifier': identifier
-    }
-    # return {
-    #     'header': header,
-    #     'blocks': parsed_blocks,
-    #     'data_format': data_format,
-    #     'identifier': identifier
-    # }
+#     return {
+#         'header': header,
+#         'constants': constants,
+#         'payload': full_payload,
+#         'blocks': blocks,
+#         'data_format': data_format,
+#         'identifier': identifier
+#     }
+#     # return {
+#     #     'header': header,
+#     #     'blocks': parsed_blocks,
+#     #     'data_format': data_format,
+#     #     'identifier': identifier
+#     # }
 
 
 def parse_file(filename):
@@ -2204,34 +2204,129 @@ def bytes_to_text(data, encoding='utf-8'):
         decoded_text = data.decode('ansi').rstrip('\x00')
         return decoded_text
 
-class customQgsMapCanvas(QgsMapCanvas):
+# class customQgsMapCanvas(QgsMapCanvas):
 
+#     def __init__(self, parent=None):
+#         super().__init__(parent)
+#         self.setAcceptDrops(True)  # Enable drop events
+#         self.overlayLabel = QLabel("Full Period", self)
+#         self.overlayLabel.setStyleSheet("background-color: rgba(0, 0, 0, 127); color: white; padding: 5px;")
+#         self.overlayLabel.setFixedSize(250, 30)  # Set a fixed size
+#         self.updateOverlayLabel()
+
+#     def updateOverlayLabel(self):
+#         """ Position the overlay label in the bottom-left corner """
+#         margin = 20  # Padding from the edge
+#         self.overlayLabel.move(int(margin / 2), self.height() - self.overlayLabel.height() - margin)
+
+#     def resizeEvent(self, event):
+#         """ Update label position when the view is resized """
+#         super().resizeEvent(event)
+#         self.updateOverlayLabel()        
+
+#     def dragEnterEvent(self, e):
+#         e.acceptProposedAction()
+
+#     def dropEvent(self, e):
+#         e.acceptProposedAction()
+
+#     def dragMoveEvent(self, e):
+#         e.acceptProposedAction()
+
+from qgis.core import (
+    QgsRectangle, QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform, QgsProject
+)
+from qgis.PyQt import QtCore
+from qgis.gui import QgsMapCanvas
+
+class customQgsMapCanvas(QgsMapCanvas):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAcceptDrops(True)  # Enable drop events
+        self.setAcceptDrops(True)
         self.overlayLabel = QLabel("Full Period", self)
         self.overlayLabel.setStyleSheet("background-color: rgba(0, 0, 0, 127); color: white; padding: 5px;")
-        self.overlayLabel.setFixedSize(250, 30)  # Set a fixed size
+        self.overlayLabel.setFixedSize(250, 30)
         self.updateOverlayLabel()
 
+        # --- Max extent support ---
+        self._maxExtent = None          # QgsRectangle in *project CRS*
+        self._clamping = False          # recursion guard
+        self.extentsChanged.connect(self._enforceMaxExtent)
+        # If project CRS changes, recompute any geog-based max extent
+        QgsProject.instance().crsChanged.connect(self._onProjectCrsChanged)
+
+    # ---------- UI bits you already had ----------
     def updateOverlayLabel(self):
-        """ Position the overlay label in the bottom-left corner """
-        margin = 20  # Padding from the edge
+        margin = 20
         self.overlayLabel.move(int(margin / 2), self.height() - self.overlayLabel.height() - margin)
 
     def resizeEvent(self, event):
-        """ Update label position when the view is resized """
         super().resizeEvent(event)
-        self.updateOverlayLabel()        
+        self.updateOverlayLabel()
 
-    def dragEnterEvent(self, e):
-        e.acceptProposedAction()
+    def dragEnterEvent(self, e): e.acceptProposedAction()
+    def dropEvent(self, e): e.acceptProposedAction()
+    def dragMoveEvent(self, e): e.acceptProposedAction()
 
-    def dropEvent(self, e):
-        e.acceptProposedAction()
+    # ---------- Max extent API ----------
+    def setMaxExtentRect(self, rect_proj: QgsRectangle | None):
+        """Set/clear the max-allowed canvas extent (project CRS)."""
+        self._maxExtent = QgsRectangle(rect_proj) if rect_proj else None
+        if self._maxExtent:
+            self._enforceMaxExtent()  # snap immediately
 
-    def dragMoveEvent(self, e):
-        e.acceptProposedAction()
+    def setMaxExtentUK(self):
+        """Convenience: clamp to UK bounds (approx)."""
+        # UK bounds in WGS84
+        uk_wgs84 = QgsRectangle(-11.0, 49.5, 2.0, 60.9)
+        src = QgsCoordinateReferenceSystem("EPSG:4326")
+        dest = QgsProject.instance().crs()
+        xform = QgsCoordinateTransform(src, dest, QgsProject.instance())
+        uk_proj = xform.transform(uk_wgs84)
+        self.setMaxExtentRect(uk_proj)
+
+    def clearMaxExtent(self):
+        self._maxExtent = None
+
+    # ---------- Internals ----------
+    def _onProjectCrsChanged(self):
+        """If you set UK max via setMaxExtentUK, call it again on CRS change."""
+        # Simple approach: if we have any max extent, recompute UK again.
+        # If you set custom rectangles in project CRS manually, you can skip this.
+        if self._maxExtent is not None:
+            self.setMaxExtentUK()
+
+    def _enforceMaxExtent(self):
+        """Clamp current extent inside max extent without fighting user."""
+        if self._clamping or not self._maxExtent:
+            return
+        cur = self.extent()
+        allowed = self._maxExtent
+
+        # If view is larger than allowed, cap to allowed
+        if cur.width() > allowed.width() or cur.height() > allowed.height():
+            new_rect = QgsRectangle(allowed)
+        else:
+            # Slide the current rect back inside the allowed rect
+            w, h = cur.width(), cur.height()
+            xmin = min(max(cur.xMinimum(), allowed.xMinimum()), allowed.xMaximum() - w)
+            ymin = min(max(cur.yMinimum(), allowed.yMinimum()), allowed.yMaximum() - h)
+            xmax = xmin + w
+            ymax = ymin + h
+            new_rect = QgsRectangle(xmin, ymin, xmax, ymax)
+
+        # Only apply if something changed (avoid feedback loops)
+        if (abs(new_rect.xMinimum() - cur.xMinimum()) > 0 or
+            abs(new_rect.yMinimum() - cur.yMinimum()) > 0 or
+            abs(new_rect.xMaximum() - cur.xMaximum()) > 0 or
+            abs(new_rect.yMaximum() - cur.yMaximum()) > 0):
+            self._clamping = True
+            try:
+                self.setExtent(new_rect)
+                self.refresh()
+            finally:
+                self._clamping = False
 
 class customQgsLayerTreeView(QgsLayerTreeView):
 

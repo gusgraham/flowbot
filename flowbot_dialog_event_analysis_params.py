@@ -20,8 +20,9 @@ class flowbot_dialog_event_analysis_params(QtWidgets.QDialog, Ui_Dialog):
 
         self.aRainfallAnalysis = aRA
 
-        self.edtRainfallDepthTolerance.setValidator(
-            QtGui.QIntValidator(0, 1000))
+        # self.edtRainfallDepthTolerance.setValidator(
+        #     QtGui.QIntValidator(0, 1000))
+        self.edtRainfallDepthTolerance.setValidator(QtGui.QDoubleValidator(0, 1000, 1))
         self.edtPrecedingDryDays.setValidator(QtGui.QIntValidator(0, 1000))
         self.edtConsecZeros.setValidator(QtGui.QIntValidator(0, 1000))
         self.edtReqDepth.setValidator(QtGui.QIntValidator(0, 1000))
@@ -48,7 +49,7 @@ class flowbot_dialog_event_analysis_params(QtWidgets.QDialog, Ui_Dialog):
 
     def onAccept(self):
 
-        self.aRainfallAnalysis.rainfallDepthTolerance = int(
+        self.aRainfallAnalysis.rainfallDepthTolerance = float(
             self.edtRainfallDepthTolerance.text())
         self.aRainfallAnalysis.precedingDryDays = int(
             self.edtPrecedingDryDays.text())
@@ -78,7 +79,7 @@ class flowbot_dialog_event_analysis_params(QtWidgets.QDialog, Ui_Dialog):
 
     def matchDefaultParams(self):
 
-        if (graphRainfallAnalysis.rainfallDepthTolerance == int(self.edtRainfallDepthTolerance.text()) and
+        if (graphRainfallAnalysis.rainfallDepthTolerance == float(self.edtRainfallDepthTolerance.text()) and
             graphRainfallAnalysis.precedingDryDays == int(self.edtPrecedingDryDays.text()) and
             graphRainfallAnalysis.consecZero == int(self.edtConsecZeros.text()) and
             graphRainfallAnalysis.requiredDepth == int(self.edtReqDepth.text()) and

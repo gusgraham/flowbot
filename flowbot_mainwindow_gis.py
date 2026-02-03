@@ -59,7 +59,7 @@ from PyQt5.QtWidgets import (QProgressBar, QMessageBox, QDialog, QInputDialog, Q
 # , QScrollArea)
 from PyQt5.QtGui import (
     QStandardItemModel, QStandardItem, QCursor, QBrush, QColor)
-from PyQt5.QtCore import (Qt, QModelIndex, QPointF, QDateTime)
+from PyQt5.QtCore import (Qt, QModelIndex, QPointF, QDateTime, QTimer)
 
 from qgis.core import (QgsCoordinateReferenceSystem, QgsLayerTreeModel,
                        QgsProject, QgsRasterLayer, QgsVectorLayer, QgsLayerTreeNode,
@@ -67,6 +67,7 @@ from qgis.core import (QgsCoordinateReferenceSystem, QgsLayerTreeModel,
 from qgis.gui import (QgsLayerTreeMapCanvasBridge, QgsMapToolPan, QgsMapToolZoom, QgsMapMouseEvent,
                       QgsMapToolEmitPoint)
 # QgsLayerTreeView, 
+from qgis.PyQt import sip
 from flowbot_helper import (resource_path, PlotWidget,
                             serialize_list, deserialize_list, strVersion, bytes_to_text)
 from flowbot_graphing import (GraphFDV, graph_fsm_classification,
@@ -4292,6 +4293,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.mainMapCanvas.enableAntiAliasing(True)
         self.mainMapCanvas.setDestinationCrs(self.thisQgsProject.crs())
         self.mainMapCanvas.xyCoordinates.connect(self.updateCoordinates)
+        self.mainMapCanvas.setMaxExtentUK()
 
         #Set up tools for the toolbar
 
@@ -4560,12 +4562,15 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         self.trw_RainfallAnalysis.viewport().installEventFilter(self)
         self.btnRainfallAnalysisRefresh.clicked.connect(self.update_plot)
 
-        self.trw_DataClassification.setVisible(False)
-        self.trw_DataClassification.customContextMenuRequested.connect(
-            self.openPlotTreeViewContextMenu)
-        self.trw_DataClassification.viewport().installEventFilter(self)
-        self.btnExportDCToExcel.clicked.connect(self.exportDataClassification)
-        self.btnRefreshDC.clicked.connect(self.refreshDataClassification)
+        # index = self.tbxGraphs.indexOf(self.pageDataClassification)
+        # if index != -1:
+        #     self.tbxGraphs.removeItem(index)
+        # self.pageDataClassification.hide()
+        # self.trw_DataClassification.customContextMenuRequested.connect(
+        #     self.openPlotTreeViewContextMenu)
+        # self.trw_DataClassification.viewport().installEventFilter(self)
+        # self.btnExportDCToExcel.clicked.connect(self.exportDataClassification)
+        # self.btnRefreshDC.clicked.connect(self.refreshDataClassification)
 
         self.trw_DWF_Analysis.customContextMenuRequested.connect(
             self.openPlotTreeViewContextMenu)
@@ -4763,82 +4768,226 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
     def refresh(self):
         self.mainMapCanvas.refresh()
 
+    # def mapToggleWorld_Imagery(self):
+    #     try:
+    #         if self.worldImageryLayer is None:
+    #             myUrl = "url='https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer' layer='0'"
+    #             self.worldImageryLayer = QgsRasterLayer(myUrl, "World Imagery", providerType="arcgismapserver")
+
+    #             # Set CRS and log it
+    #             self.worldImageryLayer.setCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
+
+    #             if not self.worldImageryLayer.isValid():
+    #                 pass
+    #             else:
+    #                 layertree_layer = self.grp_basemaps.insertLayer(0, self.worldImageryLayer)
+    #                 layertree_layer.setItemVisibilityChecked(True)
+    #         else:
+    #             self.thisQgsProject.removeMapLayer(self.worldImageryLayer)
+    #             self.worldImageryLayer = None
+
+    #         self.refresh()
+    #     except Exception as e:
+    #         pass
+
     def mapToggleWorld_Imagery(self):
         try:
-            # logger.debug("Toggling World Imagery Layer")
-            if self.worldImageryLayer is None:
-                # logger.debug("World Imagery Layer is None, attempting to create it.")
-                myUrl = "url='https://server.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer' layer='0'"
-                self.worldImageryLayer = QgsRasterLayer(myUrl, "World Imagery", providerType="arcgismapserver")
-                # logger.debug(f"Created World Imagery Layer with URL: {myUrl}")
+            # ---------- TOGGLE OFF (only if we currently have a valid layer) ----------
+            if self.worldImageryLayer and not sip.isdeleted(self.worldImageryLayer):
+                lid = self.worldImageryLayer.id()
 
-                # Set CRS and log it
-                self.worldImageryLayer.setCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
-                # logger.debug("CRS set to EPSG:3857")
+                # Remove from layer tree group if present
+                try:
+                    if self.grp_basemaps:
+                        node = self.grp_basemaps.findLayer(lid)
+                        if node:
+                            self.grp_basemaps.removeChildNode(node)
+                except Exception:
+                    pass  # don't block project removal
 
-                if not self.worldImageryLayer.isValid():
-                    pass
-                    # logger.error("World Imagery Layer failed to load!")
-                else:
-                    layertree_layer = self.grp_basemaps.insertLayer(0, self.worldImageryLayer)
-                    layertree_layer.setItemVisibilityChecked(True)
-                    # self.thisQgsProject.addMapLayer(self.worldImageryLayer)
-                    # layertree_layer  = self.thisQgsProject.layerTreeRoot().findLayer(self.worldImageryLayer.id())
-                    # self.grp_basemaps.insertChildNode(0, layertree_layer)
-                    # layertree_layer.setItemVisibilityChecked(True)
-                    # self.thisQgsLayerTree
+                # Remove from project
+                if QgsProject.instance().mapLayer(lid):
+                    QgsProject.instance().removeMapLayer(lid)
 
-                    
-                    # self.thisQgsLayerTree.moveLayer(self.worldImageryLayer, len(self.thisQgsLayerTree.children()))
-                    # logger.debug("Layer visibility set to True")
-            else:
-                # logger.debug("World Imagery Layer exists, removing it.")
-                self.thisQgsProject.removeMapLayer(self.worldImageryLayer)
                 self.worldImageryLayer = None
-                # logger.debug("World Imagery Layer removed.")
+                self.refresh()
+                return  # <-- only return when we actually toggled OFF
 
+            # If we reach here, there is no valid current layer -> TOGGLE ON
+            # ---------- TOGGLE ON ----------
+            uri = (
+                "type=xyz&url="
+                "https://services.arcgisonline.com/ArcGIS/rest/services/"
+                "World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                # optional limits:
+                # "&zmin=0&zmax=19"
+            )
+            name = "World Imagery"
+
+            # XYZ tiles use the WMS/WMTS provider key in PyQGIS
+            rlayer = QgsRasterLayer(uri, name, "wms")
+            if not rlayer.isValid():
+                raise RuntimeError("Failed to create World Imagery layer (invalid).")
+
+            rlayer.setAttribution("© Esri, Maxar, Earthstar Geographics, and the GIS User Community")
+
+            # Add to project without auto-legend placement; we control the group insert
+            self.thisQgsProject.addMapLayer(rlayer, addToLegend=False)
+
+            if self.grp_basemaps:
+                lt = self.grp_basemaps.insertLayer(0, rlayer)
+                lt.setItemVisibilityChecked(True)
+            else:
+                QgsProject.instance().layerTreeRoot().addLayer(rlayer)
+
+            self.worldImageryLayer = rlayer
             self.refresh()
-            # logger.debug("Map canvas refreshed.")
+
         except Exception as e:
-            pass
-            # logger.error('Exception occurred', exc_info=True)
+            logger.error(f"World_Imagery toggle error: {e}")
+
+    # def mapToggleWorld_Imagery(self):
+        
+    #     try:
+
+    #         if self.worldImageryLayer and not sip.isdeleted(self.worldImageryLayer):
+    #             # Cache the id *first*, while the wrapper is still valid
+    #             lid = self.worldImageryLayer.id()
+    #         else:
+    #             lid = None
+
+    #         # Remove from the layer tree (legend) if present
+    #         try:
+    #             if lid and self.grp_basemaps:
+    #                 node = self.grp_basemaps.findLayer(lid)
+    #                 if node:
+    #                     self.grp_basemaps.removeChildNode(node)
+    #         except Exception:
+    #             pass  # don't block project cleanup if tree op fails
+
+    #         # Now remove from the project by ID (safe even if the Python wrapper is gone)
+    #         if lid and QgsProject.instance().mapLayer(lid):
+    #             QgsProject.instance().removeMapLayer(lid)
+
+    #         # Clear your handle and refresh
+    #         self.worldImageryLayer = None
+    #         self.refresh()
+    #         return
+
+    #         # Toggle ON
+    #         # Prefer XYZ tiles for ESRI World Imagery
+    #         uri = (
+    #             "type=xyz&url="
+    #             "https://services.arcgisonline.com/ArcGIS/rest/services/"
+    #             "World_Imagery/MapServer/tile/{z}/{y}/{x}"
+    #         )
+    #         layer_name = "World Imagery"
+    #         rlayer = QgsRasterLayer(uri, layer_name, "wms")  # XYZ uses 'wms' provider key
+
+    #         if not rlayer.isValid():
+    #             raise RuntimeError("Failed to create World Imagery layer (invalid).")
+
+    #         # Optional: set attribution (shows in layer properties / maps)
+    #         rlayer.setAttribution("© Esri, Maxar, Earthstar Geographics, and the GIS User Community")
+
+    #         # Add to project FIRST (so it has an ID), then insert into your basemaps group at index 0
+    #         self.thisQgsProject.addMapLayer(rlayer, addToLegend=False)  # we'll place it ourselves
+
+    #         if self.grp_basemaps:
+    #             layertree_layer = self.grp_basemaps.insertLayer(0, rlayer)
+    #             layertree_layer.setItemVisibilityChecked(True)
+    #         else:
+    #             # Fallback if group doesn't exist
+    #             QgsProject.instance().layerTreeRoot().addLayer(rlayer)
+
+    #         self.worldImageryLayer = rlayer
+    #         self.refresh()
+
+    #         # Optional: ensure project is set to a sane display CRS
+    #         # (QGIS will reproject on the fly, but many basemaps are 3857)
+    #         # proj = self.thisQgsProject
+    #         # if proj.crs().authid() != "EPSG:3857":
+    #         #     proj.setCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
+
+    #     except Exception as e:
+    #         logger.error(f"World_Imagery toggle error: {e}")
 
     def mapToggleStreet_Map(self):
         try:
-            # logger.debug("Toggling World Street Map Layer")
-            if self.worldStreetMapLayer is None:
-                # logger.debug("World Street Map Layer is None, attempting to create it.")
-                myUrl = "url='https://server.arcgisonline.com/arcgis/rest/services/World_Street_Map/MapServer' layer='0'"
-                self.worldStreetMapLayer = QgsRasterLayer(
-                    myUrl, "World Street Map", providerType="arcgismapserver")
-                # logger.debug(f"Created World Street Map Layer with URL: {myUrl}")
+            # ---------- TOGGLE OFF (only if we currently have a valid layer) ----------
+            if getattr(self, "worldStreetMapLayer", None) and not sip.isdeleted(self.worldStreetMapLayer):
+                lid = self.worldStreetMapLayer.id()
 
-                # Set CRS and log it
-                self.worldStreetMapLayer.setCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
-                # logger.debug("CRS set to EPSG:3857")
+                # Remove from layer tree group if present
+                try:
+                    if self.grp_basemaps:
+                        node = self.grp_basemaps.findLayer(lid)
+                        if node:
+                            self.grp_basemaps.removeChildNode(node)
+                except Exception:
+                    pass  # don't block project removal
 
-                if not self.worldStreetMapLayer.isValid():
-                    # logger.error("World Street Map Layer failed to load!")
-                    pass
-                else:
-                    # self.thisQgsProject.addMapLayer(self.worldStreetMapLayer)
-                    # # logger.debug("World Street Map Layer added to project")
-                    # self.thisQgsProject.layerTreeRoot().findLayer(self.worldStreetMapLayer.id()).setItemVisibilityChecked(True)
-                    # self.thisQgsLayerTree.moveLayer(self.worldStreetMapLayer, len(self.thisQgsLayerTree.children()))
-                    # # logger.debug("Layer visibility set to True")
-                    layertree_layer = self.grp_basemaps.insertLayer(0, self.worldStreetMapLayer)
-                    layertree_layer.setItemVisibilityChecked(True)                    
-            else:
-                # logger.debug("World Street Map Layer exists, removing it.")
-                self.thisQgsProject.removeMapLayer(self.worldStreetMapLayer)
+                # Remove from project
+                if QgsProject.instance().mapLayer(lid):
+                    QgsProject.instance().removeMapLayer(lid)
+
                 self.worldStreetMapLayer = None
-                # logger.debug("World Street Map Layer removed.")
+                self.refresh()
+                return  # only return when we actually toggled OFF
 
+            # ---------- TOGGLE ON ----------
+            uri = (
+                "type=xyz&url="
+                "https://services.arcgisonline.com/ArcGIS/rest/services/"
+                "World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+                # "&zmin=0&zmax=19"  # optional bounds
+            )
+            name = "World Street Map"
+
+            # XYZ tiles use the WMS/WMTS provider key in PyQGIS
+            rlayer = QgsRasterLayer(uri, name, "wms")
+            if not rlayer.isValid():
+                raise RuntimeError("Failed to create World Street Map layer (invalid).")
+
+            rlayer.setAttribution("© Esri, HERE, Garmin, (and contributors)")
+
+            # Add to project without auto-legend placement; we control the group insert
+            self.thisQgsProject.addMapLayer(rlayer, addToLegend=False)
+
+            if self.grp_basemaps:
+                lt = self.grp_basemaps.insertLayer(0, rlayer)
+                lt.setItemVisibilityChecked(True)
+            else:
+                QgsProject.instance().layerTreeRoot().addLayer(rlayer)
+
+            self.worldStreetMapLayer = rlayer
             self.refresh()
-            # logger.debug("Map canvas refreshed.")
+
         except Exception as e:
-            # logger.error('Exception occurred', exc_info=True)
-            pass
+            logger.error(f"World_Street_Map toggle error: {e}")
+
+    # def mapToggleStreet_Map(self):
+    #     try:
+    #         if self.worldStreetMapLayer is None:
+    #             myUrl = "url='https://server.arcgisonline.com/arcgis/rest/services/World_Street_Map/MapServer' layer='0'"
+    #             self.worldStreetMapLayer = QgsRasterLayer(
+    #                 myUrl, "World Street Map", providerType="arcgismapserver")
+
+    #             # Set CRS and log it
+    #             self.worldStreetMapLayer.setCrs(QgsCoordinateReferenceSystem("EPSG:3857"))
+
+    #             if not self.worldStreetMapLayer.isValid():
+    #                 pass
+    #             else:
+    #                 layertree_layer = self.grp_basemaps.insertLayer(0, self.worldStreetMapLayer)
+    #                 layertree_layer.setItemVisibilityChecked(True)                    
+    #         else:
+    #             self.thisQgsProject.removeMapLayer(self.worldStreetMapLayer)
+    #             self.worldStreetMapLayer = None
+
+    #         self.refresh()
+    #     except Exception as e:
+    #         pass
 
     # def mapToggleWorld_Imagery(self):
     #     try:
@@ -6114,7 +6263,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 (o == self.trw_Scattergraph.viewport()) or
                 (o == self.trw_CumDepth.viewport()) or
                 (o == self.trw_RainfallAnalysis.viewport()) or
-                (o == self.trw_DataClassification.viewport()) or
+                # (o == self.trw_DataClassification.viewport()) or
                 (o == self.trw_DWF_Analysis.viewport()) or
                 (o == self.trw_Merge_Data.viewport())):
                 self.tbxGraphs_drop_action(e)
@@ -6532,33 +6681,33 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 else:
                     print("dropped from IDK?")
 
-        if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
-            if self.aDataClassification is not None:
-                if e.source() == self.lst_FlowMonitors:
+        # if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
+        #     if self.aDataClassification is not None:
+        #         if e.source() == self.lst_FlowMonitors:
 
-                    source_item = QStandardItemModel()
-                    source_item.dropMimeData(
-                        e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+        #             source_item = QStandardItemModel()
+        #             source_item.dropMimeData(
+        #                 e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
 
-                    for i in range(source_item.rowCount()):
-                        if (self.aDataClassification.classifiedFMs.addFM(self.openFlowMonitors.getFlowMonitor(
-                                source_item.item(i, 0).text()))):
-                            addedToPlot = True
-                            self.aDataClassification.classificationNeedsRefreshed = True
-                    self.aDataClassification.classifiedFMs.updateClassifiedFMsMinMaxValues()
-                elif e.source() == self.trwEvents:
+        #             for i in range(source_item.rowCount()):
+        #                 if (self.aDataClassification.classifiedFMs.addFM(self.openFlowMonitors.getFlowMonitor(
+        #                         source_item.item(i, 0).text()))):
+        #                     addedToPlot = True
+        #                     self.aDataClassification.classificationNeedsRefreshed = True
+        #             self.aDataClassification.classifiedFMs.updateClassifiedFMsMinMaxValues()
+        #         elif e.source() == self.trwEvents:
 
-                    source_item = QStandardItemModel()
-                    source_item.dropMimeData(
-                        e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
+        #             source_item = QStandardItemModel()
+        #             source_item.dropMimeData(
+        #                 e.mimeData(), Qt.CopyAction, 0, 0, QModelIndex())
 
-                    for i in range(source_item.rowCount()):
-                        if (self.aDataClassification.plottedEvents.addSurveyEvent(self.identifiedSurveyEvents.getSurveyEvent(
-                                source_item.item(i, 0).text()))):
-                            addedToPlot = True
-                    self.aDataClassification.plottedEvents.updateMinMaxValues()
-                else:
-                    print("dropped from IDK?")
+        #             for i in range(source_item.rowCount()):
+        #                 if (self.aDataClassification.plottedEvents.addSurveyEvent(self.identifiedSurveyEvents.getSurveyEvent(
+        #                         source_item.item(i, 0).text()))):
+        #                     addedToPlot = True
+        #             self.aDataClassification.plottedEvents.updateMinMaxValues()
+        #         else:
+        #             print("dropped from IDK?")
 
         if self.tbxGraphs.currentWidget().objectName() == "pageDryWeatherFlow":
             if self.a_dwf_graph is not None:
@@ -8441,16 +8590,16 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                     self.aRainfallAnalysis.analysisNeedsRefreshed = True
                     self.aRainfallAnalysis.plotted_rgs.removeRG(item.text(0))
 
-        if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
-            if self.aDataClassification is not None:
-                item = self.trw_DataClassification.selectedItems()[0]
-                if item.parent().text(0) == "Flow Monitors":
-                    self.aDataClassification.classifiedFMs.removeFM(
-                        item.text(0))
-                    self.aDataClassification.classificationNeedsRefreshed = True
-                elif item.parent().text(0) == "Events":
-                    self.aDataClassification.plottedEvents.removeSurveyEvent(
-                        item.text(0))
+        # if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
+        #     if self.aDataClassification is not None:
+        #         item = self.trw_DataClassification.selectedItems()[0]
+        #         if item.parent().text(0) == "Flow Monitors":
+        #             self.aDataClassification.classifiedFMs.removeFM(
+        #                 item.text(0))
+        #             self.aDataClassification.classificationNeedsRefreshed = True
+        #         elif item.parent().text(0) == "Events":
+        #             self.aDataClassification.plottedEvents.removeSurveyEvent(
+        #                 item.text(0))
 
         elif self.tbxGraphs.currentWidget().objectName() == "pageDryWeatherFlow":
             if self.a_dwf_graph is not None:
@@ -8506,14 +8655,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                     self.aRainfallAnalysis.plotted_rgs = plottedRainGauges()
                     self.aRainfallAnalysis.analysisNeedsRefreshed = True
 
-        if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
-            if self.aDataClassification is not None:
-                item = self.trw_DataClassification.currentItem()
-                if item.text(0) == "Flow Monitors":
-                    self.aDataClassification.classifiedFMs = classifiedFlowMonitors()
-                    self.aDataClassification.classificationNeedsRefreshed = True
-                elif item.text(0) == "Events":
-                    self.aDataClassification.plottedEvents = plottedSurveyEvents()
+        # if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
+        #     if self.aDataClassification is not None:
+        #         item = self.trw_DataClassification.currentItem()
+        #         if item.text(0) == "Flow Monitors":
+        #             self.aDataClassification.classifiedFMs = classifiedFlowMonitors()
+        #             self.aDataClassification.classificationNeedsRefreshed = True
+        #         elif item.text(0) == "Events":
+        #             self.aDataClassification.plottedEvents = plottedSurveyEvents()
 
         if self.tbxGraphs.currentWidget().objectName() == "pageDryWeatherFlow":
             if self.a_dwf_graph is not None:
@@ -8710,8 +8859,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             treeWidget = self.trw_CumDepth
         if self.tbxGraphs.currentWidget().objectName() == "pageRainfallAnalysis":
             treeWidget = self.trw_RainfallAnalysis
-        if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
-            treeWidget = self.trw_DataClassification
+        # if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
+        #     treeWidget = self.trw_DataClassification
         if self.tbxGraphs.currentWidget().objectName() == "pageDryWeatherFlow":
             treeWidget = self.trw_DWF_Analysis
         if self.tbxGraphs.currentWidget().objectName() == "pageMergeData":
@@ -8730,14 +8879,14 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                                 remCallback.triggered.connect(
                                     self.removeTreeItems)
                                 menu.addAction(remCallback)
-                    elif treeWidget.objectName() == "trw_DataClassification":
-                        if not treeWidget.itemAt(position).text(0) == "Parameters":
-                            if treeWidget.itemAt(position).childCount() > 0:
-                                remCallback = QtWidgets.QAction(
-                                    "Remove All", menu)
-                                remCallback.triggered.connect(
-                                    self.removeTreeItems)
-                                menu.addAction(remCallback)
+                    # elif treeWidget.objectName() == "trw_DataClassification":
+                    #     if not treeWidget.itemAt(position).text(0) == "Parameters":
+                    #         if treeWidget.itemAt(position).childCount() > 0:
+                    #             remCallback = QtWidgets.QAction(
+                    #                 "Remove All", menu)
+                    #             remCallback.triggered.connect(
+                    #                 self.removeTreeItems)
+                    #             menu.addAction(remCallback)
                     else:
                         if treeWidget.itemAt(position).childCount() > 0:
                             remCallback = QtWidgets.QAction("Remove All", menu)
@@ -8756,17 +8905,17 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         remCallback = QtWidgets.QAction("Remove", menu)
                         remCallback.triggered.connect(self.removeTreeItem)
                         menu.addAction(remCallback)
-                elif treeWidget.objectName() == "trw_DataClassification":
-                    if treeWidget.itemFromIndex(treeWidget.selectedIndexes()[0].parent()).text(0) == "Parameters":
-                        remCallback = QtWidgets.QAction(
-                            "Edit Parameters", menu)
-                        remCallback.triggered.connect(
-                            self.editDataClassificationParams)
-                        menu.addAction(remCallback)
-                    else:
-                        remCallback = QtWidgets.QAction("Remove", menu)
-                        remCallback.triggered.connect(self.removeTreeItem)
-                        menu.addAction(remCallback)
+                # elif treeWidget.objectName() == "trw_DataClassification":
+                #     if treeWidget.itemFromIndex(treeWidget.selectedIndexes()[0].parent()).text(0) == "Parameters":
+                #         remCallback = QtWidgets.QAction(
+                #             "Edit Parameters", menu)
+                #         remCallback.triggered.connect(
+                #             self.editDataClassificationParams)
+                #         menu.addAction(remCallback)
+                #     else:
+                #         remCallback = QtWidgets.QAction("Remove", menu)
+                #         remCallback.triggered.connect(self.removeTreeItem)
+                #         menu.addAction(remCallback)
                 elif treeWidget.objectName() == "trw_DWF_Analysis":
                     if treeWidget.itemFromIndex(treeWidget.selectedIndexes()[0].parent()).text(0) == "Flow Monitor":
                         remCallback = QtWidgets.QAction("Copy to Clipboard", menu)
@@ -8852,7 +9001,13 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
         level = self.getTreeViewLevel(self.trwEvents)
         menu = QMenu()
         if level == 0:
-            return
+            if self.trwEvents.itemAt(position).childCount() > 0:
+                remCallback = QtWidgets.QAction("Remove All", menu)
+                remCallback.triggered.connect(lambda: self.removeAllSurveyEvents(self.trwEvents.itemAt(position).text(0)))
+                menu.addAction(remCallback)
+            else:
+                return
+
         elif level == 1:
             remCallback = QtWidgets.QAction("Edit Event", menu)
             remCallback.triggered.connect(self.editSurveyEvent)
@@ -9556,6 +9711,64 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             if self.tbxGraphs.currentWidget().objectName() == "pageScattergraphs":
                 self.update_plot()
 
+    # def importICMModelData(self):
+
+    #     try:
+    #         fileSpec, _ = QtWidgets.QFileDialog.getOpenFileNames(
+    #             self, 'Please locate the model data CSV file', self.lastOpenDialogPath, 'CSV Files (*.CSV)')
+    #         if not fileSpec:
+    #             return
+    #         else:
+    #             self.lastOpenDialogPath = os.path.dirname(fileSpec[0])
+
+    #             self.importedICMData = {
+    #                 "Pipe ID": [],
+    #                 "Length": [],
+    #                 "Width": [],
+    #                 "Roughness": [],
+    #                 "US Invert": [],
+    #                 "DS Invert": [],
+    #                 "Shape": [],
+    #                 "Height": [],
+    #                 "System": []
+    #             }
+
+    #             with open(fileSpec[0]) as csvfile:
+    #                 reader = csv.DictReader(csvfile)
+
+    #                 # r = 1
+    #                 for row in reader:
+
+    #                     # if r % 2 == 0:
+    #                     #     tag = 'even'
+    #                     # else:
+    #                     #     tag = 'odd'
+
+    #                     self.importedICMData["Pipe ID"].append(
+    #                         row['US node ID']+'.'+row['Link suffix'])
+    #                     self.importedICMData["Length"].append(
+    #                         row['Length (m)'])
+    #                     self.importedICMData["Width"].append(row['Width (mm)'])
+    #                     self.importedICMData["Roughness"].append(
+    #                         row['Bottom roughness Colebrook-White (mm)'])
+    #                     self.importedICMData["US Invert"].append(
+    #                         row['US invert level (m AD)'])
+    #                     self.importedICMData["DS Invert"].append(
+    #                         row['DS invert level (m AD)'])
+    #                     self.importedICMData["Shape"].append(row['Shape ID'])
+    #                     self.importedICMData["Height"].append(
+    #                         row['Height (mm)'])
+    #                     self.importedICMData["System"].append(
+    #                         row['System type'])
+
+    #             msg = QMessageBox(self)
+    #             msg.setWindowIcon(self.myIcon)
+    #             msg.information(self, 'Information', 'Import Complete')
+    #     except Exception as e:
+    #         msg = QMessageBox(self)
+    #         msg.setWindowIcon(self.myIcon)
+    #         msg.critical(self, 'Error', f'Import Abandoned: {str(e)}')
+
     def importICMModelData(self):
 
         try:
@@ -9566,45 +9779,23 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             else:
                 self.lastOpenDialogPath = os.path.dirname(fileSpec[0])
 
-                self.importedICMData = {
-                    "Pipe ID": [],
-                    "Length": [],
-                    "Width": [],
-                    "Roughness": [],
-                    "US Invert": [],
-                    "DS Invert": [],
-                    "Shape": [],
-                    "Height": [],
-                    "System": []
-                }
+                # Use a list of dictionaries
+                self.importedICMData = []
 
                 with open(fileSpec[0]) as csvfile:
                     reader = csv.DictReader(csvfile)
-
-                    r = 1
                     for row in reader:
-
-                        if r % 2 == 0:
-                            tag = 'even'
-                        else:
-                            tag = 'odd'
-
-                        self.importedICMData["Pipe ID"].append(
-                            row['US node ID']+'.'+row['Link suffix'])
-                        self.importedICMData["Length"].append(
-                            row['Length (m)'])
-                        self.importedICMData["Width"].append(row['Width (mm)'])
-                        self.importedICMData["Roughness"].append(
-                            row['Bottom roughness Colebrook-White (mm)'])
-                        self.importedICMData["US Invert"].append(
-                            row['US invert level (m AD)'])
-                        self.importedICMData["DS Invert"].append(
-                            row['DS invert level (m AD)'])
-                        self.importedICMData["Shape"].append(row['Shape ID'])
-                        self.importedICMData["Height"].append(
-                            row['Height (mm)'])
-                        self.importedICMData["System"].append(
-                            row['System type'])
+                        self.importedICMData.append({
+                            "Pipe ID": row['US node ID'] + '.' + row['Link suffix'],
+                            "Length": row['Length (m)'],
+                            "Width": row['Width (mm)'],
+                            "Height": row['Height (mm)'],                            
+                            "Roughness": row['Bottom roughness Colebrook-White (mm)'],
+                            "US Invert": row['US invert level (m AD)'],
+                            "DS Invert": row['DS invert level (m AD)'],
+                            "Shape": row['Shape ID'],
+                            "System": row['System type']
+                        })
 
                 msg = QMessageBox(self)
                 msg.setWindowIcon(self.myIcon)
@@ -9676,6 +9867,17 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             aNewEvent.eventEnd = dlgNewEvent.dteEventEnd.dateTime().toPyDateTime()
             self.identifiedSurveyEvents.addSurvEvent(aNewEvent)
             self.updateEventTreeView()
+
+    def removeAllSurveyEvents(self, eventType: Optional[str] = None):
+
+        item = self.trwEvents.selectedItems()[0]
+        if self.aFDVGraph.has_plot_event():
+            pe = self.aFDVGraph.getPlotEvent()
+            if pe.eventName == item.text(0):
+                self.aFDVGraph.set_plot_event(None)
+                self.update_plot()
+        self.identifiedSurveyEvents.removeSurveyEvent(item.text(0))
+        self.updateEventTreeView()    
 
     def removeSurveyEvent(self):
 
@@ -9901,70 +10103,70 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         else:
                             root.removeChild(item)
 
-            elif self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
-                if self.aDataClassification is not None:
-                    root = self.trw_DataClassification.invisibleRootItem()
-                    child_count = root.childCount()
+            # elif self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
+            #     if self.aDataClassification is not None:
+            #         root = self.trw_DataClassification.invisibleRootItem()
+            #         child_count = root.childCount()
 
-                    for i in range(child_count):
-                        item = root.child(i)
+            #         for i in range(child_count):
+            #             item = root.child(i)
 
-                        if item.text(0) == 'Flow Monitors':
-                            for i in range(item.childCount()):
-                                item.removeChild(item.child(0))
+            #             if item.text(0) == 'Flow Monitors':
+            #                 for i in range(item.childCount()):
+            #                     item.removeChild(item.child(0))
 
-                            for fm in self.aDataClassification.classifiedFMs.classFMs:
-                                it = QtWidgets.QTreeWidgetItem()
-                                it.setText(0, fm)
-                                item.addChild(it)
+            #                 for fm in self.aDataClassification.classifiedFMs.classFMs:
+            #                     it = QtWidgets.QTreeWidgetItem()
+            #                     it.setText(0, fm)
+            #                     item.addChild(it)
 
-                            if item.childCount() > 0:
-                                item.setExpanded(True)
+            #                 if item.childCount() > 0:
+            #                     item.setExpanded(True)
 
-                        elif item.text(0) == 'Events':
-                            for i in range(item.childCount()):
-                                item.removeChild(item.child(0))
+            #             elif item.text(0) == 'Events':
+            #                 for i in range(item.childCount()):
+            #                     item.removeChild(item.child(0))
 
-                            for se in self.aDataClassification.plottedEvents.plotEvents:
-                                it = QtWidgets.QTreeWidgetItem()
-                                it.setText(0, se)
-                                item.addChild(it)
+            #                 for se in self.aDataClassification.plottedEvents.plotEvents:
+            #                     it = QtWidgets.QTreeWidgetItem()
+            #                     it.setText(0, se)
+            #                     item.addChild(it)
 
-                            if item.childCount() > 0:
-                                item.setExpanded(True)
+            #                 if item.childCount() > 0:
+            #                     item.setExpanded(True)
 
-                        elif item.text(0) == 'Parameters':
-                            for i in range(item.childCount()):
-                                item.removeChild(item.child(0))
+            #             elif item.text(0) == 'Parameters':
+            #                 for i in range(item.childCount()):
+            #                     item.removeChild(item.child(0))
 
-                            it = QtWidgets.QTreeWidgetItem()
-                            if self.aDataClassification.useDefaultParams:
-                                it.setText(0, "Default")
-                            else:
-                                it.setText(0, "User Specified")
-                            item.addChild(it)
+            #                 it = QtWidgets.QTreeWidgetItem()
+            #                 if self.aDataClassification.useDefaultParams:
+            #                     it.setText(0, "Default")
+            #                 else:
+            #                     it.setText(0, "User Specified")
+            #                 item.addChild(it)
 
-                            if item.childCount() > 0:
-                                item.setExpanded(True)
+            #                 if item.childCount() > 0:
+            #                     item.setExpanded(True)
 
-                        else:
-                            root.removeChild(item)
+            #             else:
+            #                 root.removeChild(item)
 
-                if len(self.aDataClassification.classifiedFMs.classFMs) == 0:
-                    self.btnRefreshDC.setEnabled(False)
-                else:
-                    if self.aDataClassification.classificationNeedsRefreshed:
-                        self.btnRefreshDC.setEnabled(True)
-                    else:
-                        self.btnRefreshDC.setEnabled(False)
+            #     if len(self.aDataClassification.classifiedFMs.classFMs) == 0:
+            #         self.btnRefreshDC.setEnabled(False)
+            #     else:
+            #         if self.aDataClassification.classificationNeedsRefreshed:
+            #             self.btnRefreshDC.setEnabled(True)
+            #         else:
+            #             self.btnRefreshDC.setEnabled(False)
 
-                if self.aDataClassification.join_df is None:
-                    self.btnExportDCToExcel.setEnabled(False)
-                else:
-                    if not self.aDataClassification.classificationNeedsRefreshed:
-                        self.btnExportDCToExcel.setEnabled(True)
-                    else:
-                        self.btnExportDCToExcel.setEnabled(False)
+            #     if self.aDataClassification.join_df is None:
+            #         self.btnExportDCToExcel.setEnabled(False)
+            #     else:
+            #         if not self.aDataClassification.classificationNeedsRefreshed:
+            #             self.btnExportDCToExcel.setEnabled(True)
+            #         else:
+            #             self.btnExportDCToExcel.setEnabled(False)
 
             elif self.tbxGraphs.currentWidget().objectName() == "pageDryWeatherFlow":
                 if self.a_dwf_graph is not None:
@@ -10039,7 +10241,7 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         else:
                             root.removeChild(item)                            
 
-        elif self.mainToolBox.currentWidget().objectName() == 'pageFlowSurveyAnalysis':
+        elif self.mainToolBox.currentWidget().objectName() == 'pageVerificationAnalysis':
             if self.tbxVerification.currentWidget().objectName() == "pageVerificationPlots":
 
                 if self.aTraceGraph is not None:
@@ -10278,14 +10480,15 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                         self.aRainfallAnalysis.plotted_rgs.plotEarliestStart)
                     self.dteRainfallAnalysisStart.setMaximumDateTime(
                         self.aRainfallAnalysis.plotted_rgs.plotLatestEnd)
-                    self.aRainfallAnalysis.startDate = self.dteRainfallAnalysisStart.dateTime()
+                    # self.aRainfallAnalysis.startDate = self.dteRainfallAnalysisStart.dateTime()
+                    self.aRainfallAnalysis.startDate = self.dteRainfallAnalysisStart.dateTime().toPyDateTime()
                     self.aRainfallAnalysis.update_plot()
                     self.active_plot_class = self.aRainfallAnalysis
 
-            if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
-                if self.aDataClassification is not None:
-                    self.aDataClassification.updatePlot()
-                    self.active_plot_class = self.aDataClassification
+            # if self.tbxGraphs.currentWidget().objectName() == "pageDataClassification":
+            #     if self.aDataClassification is not None:
+            #         self.aDataClassification.updatePlot()
+            #         self.active_plot_class = self.aDataClassification
 
             if self.tbxGraphs.currentWidget().objectName() == "pageDryWeatherFlow":
                 if self.a_dwf_graph is not None:
@@ -10347,7 +10550,13 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.plotCanvasMain.resized.connect(self.active_plot_class.on_resize)
 
         self.update_plottedTreeView()
-        self.dodgyForceUpdate()
+        # Replace dodgyForceUpdate() with a proper scheduled redraw:
+        # choose the actual canvas object (your plotCanvasMain is likely already a FigureCanvas)
+        canvas = getattr(self.plotCanvasMain, "canvas", self.plotCanvasMain)
+        # schedule a non-blocking redraw on the GUI event loop
+        QTimer.singleShot(0, getattr(canvas, "draw_idle", canvas.draw))
+
+        # self.dodgyForceUpdate()
 
     def addSurveyEvent(self):
         self.createNewSurveyEvent()
@@ -10934,7 +11143,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
 
         if not selected_items:
             # self.mainMapCanvas.unsetMapTool()
-            self.mainMapCanvas.setMapTool(self.toolDefaultPointer)
+            # self.mainMapCanvas.setMapTool(self.toolDefaultPointer)
+            self.mainMapCanvas.setMapTool(self.toolPan)
             return  # Nothing selected, exit early
         
         for item in selected_items:
@@ -10947,7 +11157,8 @@ class FlowbotMainWindowGis(QtWidgets.QMainWindow, Ui_MainWindow):
             else:
                 self.mappedFlowMonitors.addMappedFlowMonitor(fm)
             self.refresh()
-            self.mainMapCanvas.setMapTool(self.toolDefaultPointer)
+            self.mainMapCanvas.setMapTool(self.toolPan)
+            # self.mainMapCanvas.setMapTool(self.toolDefaultPointer)
             break
 
     # def update_fm_coordinates(self, x: float, y: float):

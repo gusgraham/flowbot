@@ -22,18 +22,24 @@ class flowbot_dialog_fmdataentry(QtWidgets.QDialog, Ui_Dialog):
         self.edtUSInvert.setValidator(QtGui.QDoubleValidator())
         self.edtDSInvert.setValidator(QtGui.QDoubleValidator())
         self.edtPipeLength.setValidator(QtGui.QDoubleValidator())
-        self.edtWidth.setValidator(QtGui.QDoubleValidator())
-        self.edtHeight.setValidator(QtGui.QDoubleValidator())
+        self.edtWidth.setValidator(QtGui.QIntValidator())
+        self.edtHeight.setValidator(QtGui.QIntValidator())
         self.edtRoughness.setValidator(QtGui.QDoubleValidator())
 
         self.editFM = fm
         self.importedICMData = icmData
 
         # if len(self.importedICMData) > 0 and len(self.importedICMData["Pipe ID"]) > 0:
+        # if self.importedICMData is not None:
+        #     lstSorted = self.importedICMData["Pipe ID"]
+        #     lstSorted.sort()
+        #     self.cboPipeID.addItems(lstSorted)
+        #     self.cboPipeID.insertSeparator(0)
+        # self.cboPipeID.insertItem(0, "Manual Entry")
+
         if self.importedICMData is not None:
-            lstSorted = self.importedICMData["Pipe ID"]
-            lstSorted.sort()
-            self.cboPipeID.addItems(lstSorted)
+            pipe_ids = sorted([row["Pipe ID"] for row in self.importedICMData])
+            self.cboPipeID.addItems(pipe_ids)
             self.cboPipeID.insertSeparator(0)
         self.cboPipeID.insertItem(0, "Manual Entry")
 
@@ -87,28 +93,49 @@ class flowbot_dialog_fmdataentry(QtWidgets.QDialog, Ui_Dialog):
             self.edtPipeLength.setEnabled(True)
             self.edtSystemType.setEnabled(True)
 
+    # def pipeIDChanged(self):
+
+    #     if self.isInitialised:  
+    #         if not self.cboPipeID.currentText() == "Manual Entry":
+    #             if self.importedICMData is not None:
+    #                 index = self.importedICMData["Pipe ID"].index(
+    #                     self.cboPipeID.currentText())
+    #                 self.edtRG.setText("")
+    #                 self.edtPipeLength.setText(
+    #                     self.importedICMData["Length"][index])
+    #                 self.edtWidth.setText(self.importedICMData["Width"][index])
+    #                 self.edtRoughness.setText(
+    #                     self.importedICMData["Roughness"][index])
+    #                 self.edtUSInvert.setText(
+    #                     self.importedICMData["US Invert"][index])
+    #                 self.edtDSInvert.setText(
+    #                     self.importedICMData["DS Invert"][index])
+    #                 self.edtPipeShape.setText(
+    #                     self.importedICMData["Shape"][index])
+    #                 self.edtHeight.setText(
+    #                     self.importedICMData["Height"][index])
+    #                 self.edtSystemType.setText(
+    #                     self.importedICMData["System"][index])
+
+    #         self.enableButtons()
+
     def pipeIDChanged(self):
-
         if self.isInitialised:
-            if not self.cboPipeID.currentText() == "Manual Entry":
+            if self.cboPipeID.currentText() != "Manual Entry":
                 if self.importedICMData is not None:
-                    index = self.importedICMData["Pipe ID"].index(
-                        self.cboPipeID.currentText())
-                    self.edtRG.setText("")
-                    self.edtPipeLength.setText(
-                        self.importedICMData["Length"][index])
-                    self.edtWidth.setText(self.importedICMData["Width"][index])
-                    self.edtRoughness.setText(
-                        self.importedICMData["Roughness"][index])
-                    self.edtUSInvert.setText(
-                        self.importedICMData["US Invert"][index])
-                    self.edtDSInvert.setText(
-                        self.importedICMData["DS Invert"][index])
-                    self.edtPipeShape.setText(
-                        self.importedICMData["Shape"][index])
-                    self.edtHeight.setText(
-                        self.importedICMData["Height"][index])
-                    self.edtSystemType.setText(
-                        self.importedICMData["System"][index])
-
-            self.enableButtons()
+                    # Find the dict for the selected Pipe ID
+                    row = next(
+                        (row for row in self.importedICMData if row["Pipe ID"] == self.cboPipeID.currentText()),
+                        None
+                    )
+                    if row:
+                        self.edtRG.setText("")
+                        self.edtPipeLength.setText(row["Length"])
+                        self.edtWidth.setText(row["Width"])
+                        self.edtRoughness.setText(row["Roughness"])
+                        self.edtUSInvert.setText(row["US Invert"])
+                        self.edtDSInvert.setText(row["DS Invert"])
+                        self.edtPipeShape.setText(row["Shape"])
+                        self.edtHeight.setText(row["Height"])
+                        self.edtSystemType.setText(row["System"])
+            self.enableButtons()    

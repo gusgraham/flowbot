@@ -24,6 +24,14 @@
 		"python.analysis.extraPaths": [
 			"./flowbot_qgis_bundle_env/Library/python",
 			"./flowbot_qgis_bundle_env/Lib/site-packages"
-		]
+		],
+		"python.defaultInterpreterPath": "D:\\vscode\\_qgis_bundled_apps\\flowbot_qgis_bundle_env\\python.exe",
+		"python.analysis.autoImportCompletions": true,
+		"python.analysis.useLibraryCodeForTypes": true,
+		"terminal.integrated.env.windows": {
+			"CONDA_DEFAULT_ENV": "flowbot_qgis_bundle_env",
+			"CONDA_PREFIX": "D:\\vscode\\_qgis_bundled_apps\\flowbot_qgis_bundle_env",
+			"PATH": "D:\\vscode\\_qgis_bundled_apps\\flowbot_qgis_bundle_env\\Scripts;${env:PATH}"
+		}
 	},
 }

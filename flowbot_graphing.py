@@ -2,15 +2,17 @@ import matplotlib.patches as mpl_patches
 import matplotlib.dates as mpl_dates
 import matplotlib.gridspec as mpl_gridspec
 from matplotlib import pyplot as plt
-from matplotlib import axes, lines, text
-from matplotlib.backend_bases import MouseButton
+from matplotlib import axes, lines, text, collections
+# from matplotlib.backend_bases import MouseButton
 from collections import Counter
 # from matplotlib.dates import DateFormatter
 import matplotlib.ticker as ticker
 from matplotlib.ticker import MaxNLocator, FuncFormatter
-from matplotlib.dates import DateFormatter, HourLocator, DayLocator, MonthLocator, YearLocator, ConciseDateFormatter, AutoDateLocator
+# from matplotlib.dates import (DateFormatter, HourLocator, DayLocator, MonthLocator, 
+#                               YearLocator, ConciseDateFormatter, AutoDateLocator)
+from matplotlib.dates import DateFormatter, ConciseDateFormatter, AutoDateLocator
 from matplotlib.widgets import SpanSelector
-from typing import Callable, Optional, Dict, Tuple, List, Any, Union
+from typing import Optional, Dict, Tuple, List, Union
 from dataclasses import dataclass, field
 from itertools import cycle
 from flowbot_helper import (
@@ -49,12 +51,11 @@ import matplotlib.colors as mcolors
 import scipy.stats as st
 from scipy.signal import savgol_filter
 # from matplotlib.widgets import Button
-from matplotlib.backend_bases import PickEvent
+# from matplotlib.backend_bases import PickEvent
 # from matplotlib.figure import Figure
 # from matplotlib.patches import Rectangle
 from PyQt5.QtWidgets import QApplication
-import traceback
-
+# import traceback
 
 class GraphFDV:
     """Class to create and modify the Flow, Depth, Velocity Plots"""
@@ -77,12 +78,18 @@ class GraphFDV:
         self.plot_velocity_stats_box: Optional[text.Text] = None
         self.plot_rainfall_stats_box: Optional[text.Text] = None
         self.__plot_event: Optional[surveyEvent] = None
-        self.c_flow_lines: Optional[list[lines.Line2D]] = None
-        self.c_depth_lines: Optional[list[lines.Line2D]] = None
-        self.c_vel_lines: Optional[list[lines.Line2D]] = None
-        self.c_flow_legend_lines: Optional[list[lines.Line2D]] = None
-        self.c_depth_legend_lines: Optional[list[lines.Line2D]] = None
-        self.c_vel_legend_lines: Optional[list[lines.Line2D]] = None
+        # self.c_flow_lines: Optional[list[lines.Line2D]] = None
+        # self.c_depth_lines: Optional[list[lines.Line2D]] = None
+        # self.c_vel_lines: Optional[list[lines.Line2D]] = None
+        # self.c_flow_legend_lines: Optional[list[lines.Line2D]] = None
+        # self.c_depth_legend_lines: Optional[list[lines.Line2D]] = None
+        # self.c_vel_legend_lines: Optional[list[lines.Line2D]] = None
+        self.c_flow_lines: Optional[dict[lines.Line2D, lines.Line2D]] = None
+        self.c_depth_lines: Optional[dict[lines.Line2D, lines.Line2D]] = None
+        self.c_vel_lines: Optional[dict[lines.Line2D, lines.Line2D]] = None
+        self.c_flow_legend_lines: Optional[dict[lines.Line2D, lines.Line2D]] = None
+        self.c_depth_legend_lines: Optional[dict[lines.Line2D, lines.Line2D]] = None
+        self.c_vel_legend_lines: Optional[dict[lines.Line2D, lines.Line2D]] = None
 
     def set_plot_event(self, se: surveyEvent):
 
@@ -125,16 +132,16 @@ class GraphFDV:
             self.updateCanvas()
             return
 
-        (
-            self.plot_axis_rg,
-            self.plot_axis_depth,
-            self.plot_axis_flow,
-            self.plot_axis_velocity,
-        ) = self.main_window_plot_widget.figure.subplots(
-            nrows=4, sharex=True, gridspec_kw={"height_ratios": [1, 1, 1, 1]}
+        axes = self.main_window_plot_widget.figure.subplots(
+            nrows=4, sharex=True, gridspec_kw={"height_ratios": [1, 1, 1, 1]}, squeeze=False
         )
+        axes = [ax for row in axes for ax in row]
+        self.plot_axis_rg = axes[0]
+        self.plot_axis_depth = axes[1]
+        self.plot_axis_flow = axes[2]
+        self.plot_axis_velocity = axes[3]
 
-        major_tick_format = DateFormatter("%d/%m/%Y %H:%M")
+        # major_tick_format = DateFormatter("%d/%m/%Y %H:%M")
 
         fm_title = "No FM Plotted"
         colors = cycle(
@@ -156,9 +163,12 @@ class GraphFDV:
                 "red",
             ]
         )
-        self.c_flow_lines = []
-        self.c_depth_lines = []
-        self.c_vel_lines = []
+        # self.c_flow_lines = []
+        # self.c_depth_lines = []
+        # self.c_vel_lines = []
+        self.c_flow_lines = {}
+        self.c_depth_lines = {}
+        self.c_vel_lines = {}
 
         for fm in self.plotted_fms.plotFMs.values():
 
@@ -201,9 +211,12 @@ class GraphFDV:
                 color=velocityColour,
             )
 
-            self.c_flow_lines.append(multi_flow)
-            self.c_depth_lines.append(multi_depth)
-            self.c_vel_lines.append(multi_velocity)
+            # self.c_flow_lines.append(multi_flow)
+            # self.c_depth_lines.append(multi_depth)
+            # self.c_vel_lines.append(multi_velocity)
+            self.c_flow_lines[multi_flow] = multi_flow
+            self.c_depth_lines[multi_depth] = multi_depth
+            self.c_vel_lines[multi_velocity] = multi_velocity
 
         rg_count = 0
         rg_title = "No RG Plotted"
@@ -264,12 +277,23 @@ class GraphFDV:
         self.plot_axis_rg.set_ylabel("Rainfall mm/hr", fontsize=8)
         self.plot_axis_rg.tick_params(axis="y", which="major", labelsize=8)
 
-        if self.has_plot_event():
+        # if self.has_plot_event():
+        #     self.plot_axis_rg.set_xlim(
+        #         self.get_plot_event().eventStart,
+        #         self.get_plot_event().eventEnd
+        #     )
+
+        event = self.get_plot_event()
+        if event is not None:
             self.plot_axis_rg.set_xlim(
-                self.get_plot_event().eventStart, self.get_plot_event().eventEnd
+                mpl_dates.date2num(event.eventStart),
+                mpl_dates.date2num(event.eventEnd)
             )
 
-        xmin, xmax = mpl_dates.num2date(self.plot_axis_rg.get_xlim())
+        # xmin, xmax = mpl_dates.num2date(self.plot_axis_rg.get_xlim())
+        xmin, xmax = self.plot_axis_rg.get_xlim()
+        xmin = mpl_dates.num2date(xmin)
+        xmax = mpl_dates.num2date(xmax)
 
         a_props = dict(boxstyle="round", facecolor="teal", alpha=0.5)
 
@@ -338,47 +362,60 @@ class GraphFDV:
 
         self.main_window_plot_widget.figure.autofmt_xdate()
         self.main_window_plot_widget.figure.subplots_adjust(left=0.06, right=0.97, bottom=0.07, top=0.95)
-        self.plot_axis_velocity.callbacks.connect("xlim_changed", self.onPlotXlimsChange)
+        self.plot_axis_velocity.callbacks.connect("xlim_changed", self.onPlotXlimsChange)  # type: ignore
 
         self.isBlank = False
+
         self.updateCanvas()
 
     def updateCanvas(self):
-        self.main_window_plot_widget.event_connections.append(self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self.onPick))
+        self.main_window_plot_widget.event_connections.append(
+            self.main_window_plot_widget.figure.canvas.mpl_connect(
+                "pick_event", self.onPick
+                )
+            )
         self.main_window_plot_widget.pan_finished.connect(self.on_pan_finished)
         self.main_window_plot_widget.showToolbar(not self.isBlank)
-        self.main_window_plot_widget.toolbar.lockNavigation(self.has_plot_event())
+        if self.main_window_plot_widget.toolbar is not None:
+            self.main_window_plot_widget.toolbar.lockNavigation(self.has_plot_event())
 
     def on_pan_finished(self, event_ax):
         if event_ax:  # Ensure axes are provided
-            xmin, xmax = mpl_dates.num2date(event_ax.get_xlim())
+            xmin, xmax = event_ax.get_xlim()
+            xmin = mpl_dates.num2date(xmin)
+            xmax = mpl_dates.num2date(xmax)
             self.update_plotStats(xmin, xmax)
 
     def onPlotXlimsChange(self, event_ax):
         if not self.main_window_plot_widget._dragging:
-            xmin, xmax = mpl_dates.num2date(event_ax.get_xlim())
+            xmin, xmax = event_ax.get_xlim()
+            xmin = mpl_dates.num2date(xmin)
+            xmax = mpl_dates.num2date(xmax)
             self.update_plotStats(xmin, xmax)
 
     def onPick(self, event):
 
         legline = event.artist
+        vis = None
 
-        origline = self.c_flow_legend_lines[legline]
-        vis = not origline.get_visible()
-        origline.set_visible(vis)
+        if self.c_flow_legend_lines is not None:
+            origline = self.c_flow_legend_lines[legline]
+            vis = not origline.get_visible()
+            origline.set_visible(vis)
+        
+        if self.c_depth_legend_lines is not None:
+            origline = self.c_depth_legend_lines[legline]
+            vis = not origline.get_visible()
+            origline.set_visible(vis)
 
-        origline = self.c_depth_legend_lines[legline]
-        vis = not origline.get_visible()
-        origline.set_visible(vis)
+        if self.c_vel_legend_lines is not None:
+            origline = self.c_vel_legend_lines[legline]
+            vis = not origline.get_visible()
+            origline.set_visible(vis)
 
-        origline = self.c_vel_legend_lines[legline]
-        vis = not origline.get_visible()
-        origline.set_visible(vis)
         # Change the alpha on the line in the legend so we can see what lines have been toggled
-        if vis:
-            legline.set_alpha(1.0)
-        else:
-            legline.set_alpha(0.2)
+        if vis is not None:
+            legline.set_alpha(1.0 if vis else 0.2)
 
         self.main_window_plot_widget.figure.canvas.draw()
 
@@ -387,8 +424,8 @@ class GraphFDV:
         # xmin_python_datetime = dt.fromordinal(int(xMin)) + timedelta(days=xMin%1)
         # xmax_python_datetime = dt.fromordinal(int(xMax)) + timedelta(days=xMax%1)
         # _____________________________________________
-        # This section rounds the xmin & xmax times to the nearest 2 mins so that they can be searched for in the date time range
-
+        # This section rounds the xmin & xmax times to the nearest 2 mins
+        # so that they can be searched for in the date time range
         # rounded_xmax_python_datetime = xmax_python_datetime
         rounded_xmax_python_datetime = xMax
         rounded_xmax_python_datetime += timedelta(minutes=0.5)
@@ -414,60 +451,61 @@ class GraphFDV:
             rounded_xmin_python_datetime, rounded_xmax_python_datetime
         )
 
-        self.plot_axis_rg.set_ylim(
-            [
-                self.plotted_rgs.plotMinIntensity - (1),
-                self.plotted_rgs.plotMaxIntensity
-                + (self.plotted_rgs.plotMaxIntensity * 0.1),
-            ]
-        )
-        self.plot_axis_flow.set_ylim(
-            [
-                self.plotted_fms.plotMinFlow - (1),
-                self.plotted_fms.plotMaxFlow + (self.plotted_fms.plotMaxFlow * 0.1),
-            ]
-        )
-        self.plot_axis_depth.set_ylim(
-            [
-                self.plotted_fms.plotMinDepth - (5),
-                self.plotted_fms.plotMaxDepth + (self.plotted_fms.plotMaxDepth * 0.1),
-            ]
-        )
-        self.plot_axis_velocity.set_ylim(
-            [
-                self.plotted_fms.plotMinVelocity - (0.2),
-                self.plotted_fms.plotMaxVelocity
-                + (self.plotted_fms.plotMaxVelocity * 0.5),
-            ]
-        )
+        if self.plot_axis_rg is not None:
+            self.plot_axis_rg.set_ylim(self.plotted_rgs.plotMinIntensity - (1.0),
+                                       self.plotted_rgs.plotMaxIntensity +
+                                       (self.plotted_rgs.plotMaxIntensity * 0.1)
+                                       )
+
+        if self.plot_axis_flow is not None:
+            self.plot_axis_flow.set_ylim(self.plotted_fms.plotMinFlow - (1),
+                                         self.plotted_fms.plotMaxFlow +
+                                         (self.plotted_fms.plotMaxFlow * 0.1)
+                                         )
+
+        if self.plot_axis_depth is not None:    
+            self.plot_axis_depth.set_ylim(self.plotted_fms.plotMinDepth - (5),
+                                          self.plotted_fms.plotMaxDepth +
+                                          (self.plotted_fms.plotMaxDepth * 0.1)
+                                          )
+
+        if self.plot_axis_velocity is not None:
+            self.plot_axis_velocity.set_ylim(self.plotted_fms.plotMinVelocity - (0.2),
+                                             self.plotted_fms.plotMaxVelocity +
+                                             (self.plotted_fms.plotMaxVelocity * 0.5)
+                                             )
 
         if len(self.plotted_fms.plotFMs) > 0:
             if len(self.plotted_fms.plotFMs) == 1:
-                flow_textstr = f"Max Flow(m\u00B3/s) = {(self.plotted_fms.plotMaxFlow/1000):.3f}\nMin Flow(m\u00B3/s) = {(self.plotted_fms.plotMinFlow/1000):.3f}\nMean Flow(m\u00B3/s) = {(self.plotted_fms.plotAvgFlow/1000):.4f}\nVolume (m\u00B3) = {(self.plotted_fms.plotTotalVolume):.1f}"
+                flow_textstr = (f"Max Flow(m\u00B3/s) = {(self.plotted_fms.plotMaxFlow/1000):.3f}\n"
+                                f"Min Flow(m\u00B3/s) = {(self.plotted_fms.plotMinFlow/1000):.3f}\n"
+                                f"Mean Flow(m\u00B3/s) = {(self.plotted_fms.plotAvgFlow/1000):.4f}\n"
+                                f"Volume (m\u00B3) = {(self.plotted_fms.plotTotalVolume):.1f}")
             else:
                 multi_volume_string = ""
-                for aLine in self.plot_axis_flow.lines:
+                if self.plot_axis_flow is not None:
+                    for aLine in self.plot_axis_flow.lines:
 
-                    fm = self.plotted_fms.plotFMs[aLine.get_label()]
-                    if fm is not None:
-                        myVol = fm.getFlowVolumeBetweenDates(
-                            rounded_xmin_python_datetime, rounded_xmax_python_datetime
-                        )
-                        if len(multi_volume_string) == 0:
-                            multi_volume_string = (
-                                "Volume(m\u00B3): "
-                                + fm.monitorName
-                                + " = "
-                                + str(myVol)
+                        fm = self.plotted_fms.plotFMs[aLine.get_label()]
+                        if fm is not None:
+                            myVol = fm.getFlowVolumeBetweenDates(
+                                rounded_xmin_python_datetime, rounded_xmax_python_datetime
                             )
-                        else:
-                            multi_volume_string = (
-                                multi_volume_string
-                                + ", "
-                                + fm.monitorName
-                                + " = "
-                                + str(myVol)
-                            )
+                            if len(multi_volume_string) == 0:
+                                multi_volume_string = (
+                                    "Volume(m\u00B3): "
+                                    + fm.monitorName
+                                    + " = "
+                                    + str(myVol)
+                                )
+                            else:
+                                multi_volume_string = (
+                                    multi_volume_string
+                                    + ", "
+                                    + fm.monitorName
+                                    + " = "
+                                    + str(myVol)
+                                )
 
                 flow_textstr = multi_volume_string
 
@@ -508,762 +546,6 @@ class GraphFDV:
                 )
                 self.plot_rainfall_stats_box.set_text(rainfall_textstr)
 
-# class graphScatter:
-#     def __init__(self, mw_pw: PlotWidget = None):
-#         self.main_window_plot_widget: PlotWidget = mw_pw
-#         # self.plot_widget = plot_widget
-#         self.config = scatterGraphConfig()
-#         self._initialize_attributes()
-#         self._initialize_plot_options()
-#         getBlankFigure(self.main_window_plot_widget)
-
-#     def _initialize_attributes(self):
-#         """Initialize all class attributes with default values"""
-#         self.is_blank = True
-#         self.plot_velocity_scattergraph = True
-#         self.plotted_events = plottedSurveyEvents()
-#         self._plot_flow_monitor: flowMonitor = None
-
-#         # Plot axes
-#         self.plot_axis_scatter = None
-#         self.plot_axis_cbw = None
-#         self.plot_axis_isoq = None
-#         self.plot_axis_pipe_profile = None
-
-#         # Data storage
-#         self.cbw_data = {"depth": [], "flow": [], "velocity": []}
-#         # self.pipe_profile = {"x": [], "y": [], "depth_prop": []}
-
-#         # Axis limits
-#         self.axis_limits = {
-#             "x_min": 0, "x_max": 0,
-#             "y_min": 0, "y_max": 0,
-#             "plot_x_min": 0, "plot_x_max": 0
-#         }
-
-#         # Pipe stations
-#         self.pipe_stations = {"in": 0, "out": 0}
-#         self.axis_ratio = 1
-#         self.pipe_exag = 0.1
-
-#         # Legend
-#         self.scatter_legend_lines = None
-#         self.scatter_lines = None
-
-#     def _initialize_plot_options(self):
-#         """Initialize plotting options with default values"""
-#         self.plot_options = {
-#             "plot_fp_data": True,
-#             "ignore_data_above_soffit": False,
-#             "ignore_zeros": False,
-#             "label_on_hover": False,
-#             "plot_model_data": False,
-#             "show_pipe_profile": True,
-#             "plot_cbw_line": True,
-#             "plot_iso_q_lines": True,
-#             "iso_q_lines_count": 2,
-#             "iso_q_lower_bound": 1,
-#             "iso_q_upper_bound": 10
-#         }
-
-#     @property
-#     def flow_monitor(self) -> flowMonitor:
-#         return self._plot_flow_monitor
-
-#     @flow_monitor.setter
-#     def flow_monitor(self, fm: flowMonitor):
-#         self._plot_flow_monitor = fm
-#         if fm and self.plot_options["plot_model_data"]:
-#             self.plot_options["plot_model_data"] = fm.hasModelData
-
-#     def _calculate_gradient(self) -> float:
-#         """Calculate pipe gradient from model data"""
-#         if (self.flow_monitor.modelDataPipeUSInvert > 0 and
-#             self.flow_monitor.modelDataPipeDSInvert > 0):
-#             gradient = ((self.flow_monitor.modelDataPipeUSInvert -
-#                         self.flow_monitor.modelDataPipeDSInvert) /
-#                        self.flow_monitor.modelDataPipeLength)
-#             return max(gradient, 0.00001)
-#         return 0.00001
-
-#     def _clear_figure(self):
-#         self.main_window_plot_widget.figure.clear()
-
-#         if self.plot_axis_scatter is not None:
-#             self.plot_axis_scatter.clear()
-#             self.plot_axis_scatter = None
-#         if self.plot_axis_cbw is not None:
-#             self.plot_axis_cbw.clear()
-#             self.plot_axis_cbw = None
-#         if self.plot_axis_isoq is not None:
-#             self.plot_axis_isoq.clear()
-#             self.plot_axis_isoq = None
-#         if self.plot_axis_pipe_profile is not None:
-#             self.plot_axis_pipe_profile.clear()
-#             self.plot_axis_pipe_profile = None
-
-
-#     # def _compute_cbw_values_alt(self) -> Dict[str, List[float]]:
-#     #     # Convert diameter from mm to meters
-#     #     diameter_m = self.flow_monitor.modelDataPipeDia / 1000.0
-#     #     roughness_m = self.flow_monitor.modelDataPipeRoughness / 1000.0
-#     #     gravity = 9.81  # m/s²
-#     #     gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert - self._plot_flow_monitor.modelDataPipeDSInvert) / self._plot_flow_monitor.modelDataPipeLength if self._plot_flow_monitor.modelDataPipeUSInvert > 0 and self._plot_flow_monitor.modelDataPipeDSInvert > 0 else 0)
-#     #     gradient = max(gradient, 0.00001)
-
-
-#     #     # Initialize result dictionary
-#     #     self.cbw_data = {"depth": [], "flow": [], "velocity": []}
-
-#     #     for proportion in self.config.depth_proportions:
-#     #         # Calculate depth for the current proportion
-#     #         depth = proportion * diameter_m
-#     #         if depth <= 0:
-#     #             self.cbw_data["depth"].append(0)
-#     #             self.cbw_data["flow"].append(0)
-#     #             self.cbw_data["velocity"].append(0)
-#     #             continue
-
-#     #         # Calculate hydraulic radius and area
-#     #         wetted_perimeter = diameter_m * math.pi * proportion
-#     #         wetted_area = (diameter_m**2 / 4) * math.acos(1 - 2 * proportion) - (
-#     #             (diameter_m / 2) * math.sqrt(2 * depth * diameter_m - depth**2)
-#     #         )
-#     #         hydraulic_radius = wetted_area / wetted_perimeter
-
-#     #         # Solve for friction factor using the Colebrook-White equation
-#     #         def colebrook_white(f: float, re: float, k: float, d: float) -> float:
-#     #             return -2 * math.log10(k / (3.7 * d) + 2.51 / (re * math.sqrt(f))) - 1 / math.sqrt(f)
-
-#     #         # Iterative solution for the friction factor
-#     #         velocity = 1.0  # Initial velocity guess
-#     #         tolerance = 1e-6
-#     #         max_iterations = 50
-#     #         friction_factor = 0.02  # Initial guess
-#     #         iteration = 0
-#     #         while iteration < max_iterations:
-#     #             reynolds_number = (velocity * hydraulic_radius * 4) / (1e-6)  # Assume kinematic viscosity ~1e-6 m²/s
-#     #             f_new = colebrook_white(friction_factor, reynolds_number, roughness_m, diameter_m)
-#     #             if abs(f_new - friction_factor) < tolerance:
-#     #                 break
-#     #             friction_factor = f_new
-#     #             iteration += 1
-
-#     #         # Calculate flow and velocity
-#     #         slope_term = math.sqrt(friction_factor * gradient)
-#     #         velocity = (hydraulic_radius ** (2 / 3)) * slope_term
-#     #         flow = velocity * wetted_area
-
-#     #         # Append values to the result dictionary
-#     #         self.cbw_data["depth"].append(depth)
-#     #         self.cbw_data["flow"].append(flow)
-#     #         self.cbw_data["velocity"].append(velocity)
-
-#     #     return True
-
-#     # def _compute_cbw_values_alt(self) -> Dict[str, List[float]]:
-#     #     # Convert diameter from mm to meters
-#     #     diameter_m = self.flow_monitor.modelDataPipeDia / 1000.0
-#     #     roughness_m = self.flow_monitor.modelDataPipeRoughness / 1000.0
-#     #     gravity = 9.81  # m/s²
-#     #     gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert - self._plot_flow_monitor.modelDataPipeDSInvert) / self._plot_flow_monitor.modelDataPipeLength
-#     #                 if self._plot_flow_monitor.modelDataPipeUSInvert > 0 and self._plot_flow_monitor.modelDataPipeDSInvert > 0 else 0)
-#     #     gradient = max(gradient, 0.00001)  # Ensure gradient is positive
-
-#     #     # Initialize result dictionary
-#     #     self.cbw_data = {"depth": [], "flow": [], "velocity": []}
-
-#     #     for proportion in self.config.depth_proportions:
-#     #         # Calculate depth for the current proportion
-#     #         depth = proportion * diameter_m
-#     #         if depth <= 0:
-#     #             self.cbw_data["depth"].append(0)
-#     #             self.cbw_data["flow"].append(0)
-#     #             self.cbw_data["velocity"].append(0)
-#     #             continue
-
-#     #         # Calculate hydraulic radius and wetted area
-#     #         wetted_perimeter = diameter_m * math.pi * proportion
-#     #         wetted_area = (diameter_m**2 / 4) * math.acos(1 - 2 * proportion) - (
-#     #             (diameter_m / 2) * math.sqrt(2 * depth * diameter_m - depth**2)
-#     #         )
-#     #         hydraulic_radius = wetted_area / wetted_perimeter
-
-#     #         # Solve for friction factor using the Colebrook-White equation
-#     #         def colebrook_white(f: float, re: float, k: float, d: float) -> float:
-#     #             if f <= 0:
-#     #                 raise ValueError("Friction factor f must be positive.")
-#     #             if re <= 0 or d <= 0 or k < 0:
-#     #                 raise ValueError("Reynolds number, diameter, and roughness must be positive.")
-#     #             try:
-#     #                 return -2 * math.log10(k / (3.7 * d) + 2.51 / (re * math.sqrt(f))) - 1 / math.sqrt(f)
-#     #             except ValueError as e:
-#     #                 raise ValueError(f"Math domain error in Colebrook-White equation: {e}")
-
-#     #         # Iterative solver for friction factor
-#     #         def solve_friction_factor(re: float, k: float, d: float, initial_guess=0.02, tolerance=1e-6, max_iterations=50) -> float:
-#     #             f = initial_guess
-#     #             for i in range(max_iterations):
-#     #                 try:
-#     #                     f_new = colebrook_white(f, re, k, d)
-#     #                     if abs(f_new - f) < tolerance:  # Convergence check
-#     #                         return f_new
-#     #                     f = f_new
-#     #                 except ValueError:
-#     #                     raise ValueError("Invalid input caused divergence in Colebrook-White solution.")
-#     #             raise RuntimeError("Colebrook-White equation did not converge within the maximum number of iterations.")
-
-#     #         # Calculate Reynolds number and friction factor
-#     #         velocity = 1.0  # Initial velocity guess
-#     #         reynolds_number = max((velocity * hydraulic_radius * 4) / (1e-6), 0)  # Ensure Re > 0
-#     #         try:
-#     #             friction_factor = solve_friction_factor(reynolds_number, roughness_m, diameter_m)
-#     #         except ValueError as e:
-#     #             # Handle failure to solve for friction factor
-#     #             self.cbw_data["depth"].append(depth)
-#     #             self.cbw_data["flow"].append(0)
-#     #             self.cbw_data["velocity"].append(0)
-#     #             continue
-
-#     #         # Calculate flow and velocity
-#     #         slope_term = math.sqrt(friction_factor * gradient)
-#     #         velocity = (hydraulic_radius ** (2 / 3)) * slope_term
-#     #         flow = velocity * wetted_area
-
-#     #         # Append values to the result dictionary
-#     #         self.cbw_data["depth"].append(depth)
-#     #         self.cbw_data["flow"].append(flow)
-#     #         self.cbw_data["velocity"].append(velocity)
-
-#     #     return True
-
-
-#     def _compute_cbw_values(self) -> bool:
-#         self.cbw_data = {"depth": [], "flow": [], "velocity": []}
-#         if (
-#             self.flow_monitor.modelDataPipeLength <= 0
-#             or self.flow_monitor.modelDataPipeDia <= 0
-#             or self.flow_monitor.modelDataPipeRoughness <= 0
-#             or self.flow_monitor.modelDataPipeShape == ""
-#             or self.flow_monitor.modelDataPipeHeight <= 0
-#         ):
-#             return False
-
-#         # gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert - self._plot_flow_monitor.modelDataPipeDSInvert) / self._plot_flow_monitor.modelDataPipeLength if self._plot_flow_monitor.modelDataPipeUSInvert > 0 and self._plot_flow_monitor.modelDataPipeDSInvert > 0 else 0)
-#         # gradient = max(gradient, 0.00001)
-#         gradient = self._calculate_gradient()
-
-#         # Constants
-#         pipe_diameter_m = self.flow_monitor.modelDataPipeDia / 1000  # Convert mm to meters
-#         roughness_m = self.flow_monitor.modelDataPipeRoughness / 1000  # Convert mm to meters
-#         g = 9.807  # Gravitational acceleration (m/s²)
-
-#         # Initialize outputs
-#         self.cbw_data['depth'] = [0]  # Start with zero depth
-#         self.cbw_data['flow'] = [0]   # Start with zero flow
-#         self.cbw_data['velocity'] = [0]  # Start with zero velocity
-
-#         # Loop through depth proportions
-#         for depth_ratio in self.config.depth_proportions:
-#             # 1. Calculate flow area (A) and wetted perimeter (P)
-#             depth = pipe_diameter_m * depth_ratio
-#             theta = 2 * math.acos(1 - 2 * depth_ratio)  # Angle subtended by the flow
-#             flow_area = (theta - math.sin(theta)) / 8 * math.pi * pipe_diameter_m**2
-#             wetted_perimeter = pipe_diameter_m * theta / (2 * math.pi)
-
-#             # 2. Calculate hydraulic radius (R)
-#             hydraulic_radius = flow_area / wetted_perimeter
-
-#             # 3. Calculate friction factor using the Swamee-Jain approximation
-#             reynolds_number = (4 * flow_area * math.sqrt(gradient * hydraulic_radius * g)) / (1.002e-3)  # Kinematic viscosity of water
-#             if reynolds_number > 4000:  # Turbulent flow
-#                 friction_factor = 0.25 / (math.log10((roughness_m / (3.7 * pipe_diameter_m)) + (5.74 / reynolds_number**0.9)))**2
-#             else:  # Laminar flow (fallback)
-#                 friction_factor = 64 / reynolds_number if reynolds_number > 0 else 0
-
-#             # 4. Calculate velocity and flow
-#             velocity = math.sqrt(gradient * hydraulic_radius * g / friction_factor)
-#             flow = flow_area * velocity
-
-#             # Append results
-#             self.cbw_data['depth'].append(depth * 1000)  # Convert to mm
-#             self.cbw_data['flow'].append(flow * 1000)  # Convert to L/s
-#             self.cbw_data['velocity'].append(velocity)
-
-#         return True
-
-#     # def _compute_cbw_values(self) -> Dict[str, List[float]]:
-#     #     """Compute Colebrook-White equation values"""
-#     #     self.cbw_data = {"depth": [], "flow": [], "velocity": []}
-#     #     pipe_dia = self.flow_monitor.modelDataPipeDia
-#     #     roughness = self.flow_monitor.modelDataPipeRoughness / 1000
-#     #     gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert - self._plot_flow_monitor.modelDataPipeDSInvert) / self._plot_flow_monitor.modelDataPipeLength if self._plot_flow_monitor.modelDataPipeUSInvert > 0 and self._plot_flow_monitor.modelDataPipeDSInvert > 0 else 0)
-#     #     gradient = max(gradient, 0.00001)
-
-#     #     for depth_prop in self.config.depth_proportions:
-#     #         depth = depth_prop * pipe_dia
-
-#     #         # Calculate hydraulic parameters
-#     #         theta = math.acos(1 - 2 * depth_prop) * pipe_dia / 1000
-#     #         flow_area = ((math.acos(1 - 2 * depth_prop) / 4 -
-#     #                      (0.5 - depth_prop) *
-#     #                      (depth_prop - depth_prop ** 2) ** 0.5) *
-#     #                     (pipe_dia / 1000) ** 2)
-#     #         hydraulic_radius = flow_area / theta
-
-#     #         # Calculate flow using Colebrook-White equation
-#     #         velocity_term = (32 * hydraulic_radius * 9.807 * gradient) ** 0.5
-#     #         roughness_term = roughness / (14.8 * hydraulic_radius)
-#     #         reynolds_term = 1.255 * 0.00000135 / (hydraulic_radius * velocity_term)
-
-#     #         friction_factor = -2 * math.log10(roughness_term + reynolds_term)
-#     #         velocity = -velocity_term * friction_factor
-#     #         flow = flow_area * velocity * 1000  # Convert to l/s
-
-#     #         self.cbw_data["depth"].append(depth)
-#     #         self.cbw_data["flow"].append(flow)
-#     #         self.cbw_data["velocity"].append(velocity)
-
-#     #     # Add zero point
-#     #     self.cbw_data["depth"].insert(0, 0)
-#     #     self.cbw_data["flow"].insert(0, 0)
-#     #     self.cbw_data["velocity"].insert(0, 0)
-
-#     #     return True
-
-#     def _calculate_axis_limits(self, x_values: np.ndarray, y_values: np.ndarray):
-#         """Calculate axis limits with buffer"""
-#         x_range = np.ptp(x_values)
-#         y_range = np.ptp(y_values)
-
-#         self.axis_limits.update({
-#             "x_min": np.min(x_values) - (x_range * (self.config.x_buffer_factor - 1) / 2),
-#             "x_max": np.max(x_values) + (x_range * (self.config.x_buffer_factor - 1) / 2),
-#             "y_min": np.min(y_values) - (y_range * (self.config.y_buffer_factor - 1) / 2),
-#             "y_max": np.max(y_values) + (y_range * (self.config.y_buffer_factor - 1) / 2)
-#         })
-
-#     def _update_scatter_graph(self):
-#         """Update the scatter graph with current data"""
-#         self.scatter_lines = []
-#         colors = cycle(self.config.plot_colors)
-
-#         # Get data
-#         dates = np.array(self.flow_monitor.dateRange)
-#         depth = np.array(self.flow_monitor.depthDataRange)
-#         x_values = (np.array(self.flow_monitor.velocityDataRange) if self.plot_velocity_scattergraph else np.array(self.flow_monitor.flowDataRange))
-#         # Filter data
-#         mask = np.ones(len(depth), dtype=bool)
-#         if self.plot_options["ignore_data_above_soffit"] and self.flow_monitor.hasModelData:
-#             mask &= depth <= self.flow_monitor.modelDataPipeDia
-#         if self.plot_options["ignore_zeros"]:
-#             mask &= x_values != 0
-
-#         dates = dates[mask]
-#         depth = depth[mask]
-#         x_values = x_values[mask]
-
-#         # Create scatter plot
-#         self.plot_axis_scatter = self.main_window_plot_widget.figure.subplots(1)
-
-#         if self.plot_options["plot_fp_data"]:
-#             line = self.plot_axis_scatter.scatter(
-#                 x_values, depth, s=5, label="Full Period", color="gray"
-#             )
-#             self.scatter_lines.append(line)
-
-#         # Plot events
-#         for event in self.plotted_events.plotEvents.values():
-#             event_mask = (dates >= event.eventStart) & (dates <= event.eventEnd)
-#             event_x = x_values[event_mask]
-#             event_depth = depth[event_mask]
-
-#             line = self.plot_axis_scatter.scatter(
-#                 event_x, event_depth, s=5,
-#                 label=event.eventName, color=next(colors)
-#             )
-#             self.scatter_lines.append(line)
-
-#         # Set axis limits and labels
-#         self._calculate_axis_limits(x_values, depth)
-#         self._set_axis_properties()
-#         self._create_legend()
-
-#     def _set_axis_properties(self):
-#         """Set axis properties including labels and grid"""
-#         self.plot_axis_scatter.set_xlim(self.axis_limits["x_min"], self.axis_limits["x_max"])
-#         self.plot_axis_scatter.set_ylim(self.axis_limits["y_min"], self.axis_limits["y_max"])
-
-#         self.plot_axis_scatter.set_ylabel("Depth (mm)", fontsize=8)
-#         xlabel = "Velocity (m/s)" if self.plot_velocity_scattergraph else "Flow (l/s)"
-#         self.plot_axis_scatter.set_xlabel(xlabel, fontsize=8)
-
-#         if self.flow_monitor:
-#             self.plot_axis_scatter.set_title(
-#                 self.flow_monitor.monitorName, color="grey", fontsize=15
-#             )
-#         self.plot_axis_scatter.grid(True)
-
-#     def _create_legend(self):
-#         """Create and configure the plot legend"""
-#         legend = self.plot_axis_scatter.legend(loc="best")
-#         self.scatter_legend_lines = {}
-
-#         for leg_line, orig_line in zip(legend.legend_handles, self.scatter_lines):
-#             leg_line.set_picker(5)
-#             self.scatter_legend_lines[leg_line] = orig_line
-
-#     def _update_cbw_line(self):
-#         """Update the Colebrook-White line"""
-#         if not (self.plot_options["plot_model_data"] and
-#                 self.plot_options["plot_cbw_line"]):
-#             return
-
-#         if self.plot_axis_cbw is not None:
-#             self.plot_axis_cbw.remove()
-#             self.plot_axis_cbw = None
-
-#         # self._compute_cbw_values_alt()
-#         # test = self.cbw_data.copy()
-#         if self._compute_cbw_values() and self.flow_monitor.modelDataPipeShape == "CIRC":
-#             self.plot_axis_cbw = self.plot_axis_scatter.twinx()
-#             x_values = (self.cbw_data["velocity"] if self.plot_velocity_scattergraph
-#                        else self.cbw_data["flow"])
-
-#             self.plot_axis_cbw.plot(
-#                 x_values,
-#                 self.cbw_data["depth"],
-#                 linewidth=0.75,
-#                 linestyle="dotted",
-#                 color="black",
-#                 label="CBW"
-#             )
-
-#             self._calculate_axis_limits(x_values, self.cbw_data["depth"])
-#             # self._update_axis_limits_with_cbw(y_values)
-#             self._set_axis_properties()
-
-#     def _update_pipe_profile_lines(self):
-
-#         if self.plot_axis_pipe_profile is not None:
-#             self.plot_axis_pipe_profile.remove()
-#             self.plot_axis_pipe_profile = None
-
-#         if self.plot_options["plot_model_data"] and self.plot_options["show_pipe_profile"]:
-
-#             self.plot_axis_pipe_profile = self.plot_axis_scatter.twinx()
-#             self.plot_axis_pipe_profile.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
-#             self.plot_axis_pipe_profile.axes.yaxis.set_visible(False)
-
-#             pipe_station_in = self.axis_limits['x_min']
-#             pipe_station_out= self.axis_limits['x_max']
-#             pipe_profile_depth_prop = [i / 24 for i in range(25)]
-
-#             pipe_profile_x = []
-#             pipe_profile_y = []
-
-#             # Pipe profile calculations
-#             pipe_profile_x, pipe_profile_y = self.calculate_pipe_profile(pipe_profile_depth_prop, pipe_station_out, invert=True)
-#             x_part, y_part = self.calculate_pipe_profile(reversed(pipe_profile_depth_prop), pipe_station_in, invert=True)
-#             pipe_profile_x += x_part
-#             pipe_profile_y += y_part
-#             pipe_profile_x.append(pipe_station_out)
-#             pipe_profile_y.append(0)
-
-#             self.plot_pipe_profile(pipe_profile_x, pipe_profile_y)
-
-#             # Half-pipe calculations (left and right arcs)
-#             for station, invert in [
-#                 (pipe_station_out, False),
-#                 (pipe_station_in, False),
-#             ]:
-#                 half_profile_x, half_profile_y = self.calculate_pipe_profile(pipe_profile_depth_prop[: len(pipe_profile_depth_prop) // 2 + 1], station, invert=invert,)
-#                 self.plot_pipe_profile(half_profile_x, half_profile_y)
-
-#             # Bottom arc calculations
-#             bottom_arc_x, bottom_arc_y = [], []
-#             for depth in pipe_profile_depth_prop:
-#                 angle = math.radians((depth * 180) + 180)
-#                 bottom_arc_x.append((((self.flow_monitor.modelDataPipeDia / 2) / self.axis_ratio) * math.sin(angle)) + pipe_station_in)
-#                 bottom_arc_y.append((self.flow_monitor.modelDataPipeDia / 2) + ((self.flow_monitor.modelDataPipeDia / 2) * math.cos(angle)))
-#             self.plot_pipe_profile(bottom_arc_x, bottom_arc_y)
-
-#     def plot_pipe_profile(self, profile_x, profile_y):
-#         self.plot_axis_pipe_profile.plot(profile_x, profile_y, linewidth=1.5, color="black", label="Pipe Profile")
-
-#     def calculate_pipe_profile(self, depth_props, station, invert=False):
-#         profile_x, profile_y = [], []
-#         for depth in depth_props:
-#             angle = math.radians((depth * 360) + (180 if invert else 0))
-#             profile_x.append((math.sin(angle) * ((self.flow_monitor.modelDataPipeDia / 2) / self.axis_ratio) * self.pipe_exag) + station)
-#             profile_y.append(depth * self.flow_monitor.modelDataPipeDia)
-#         return profile_x, profile_y
-
-#     # def _update_pipe_profile(self):
-#     #     """Update the pipe profile visualization"""
-#     #     if not (self.plot_options["plot_model_data"] and
-#     #             self.plot_options["show_pipe_profile"]):
-#     #         return
-
-#     #     if self.plot_axis_pipe_profile is not None:
-#     #         self.plot_axis_pipe_profile.remove()
-#     #         self.plot_axis_pipe_profile = None
-
-#     #     self.plot_axis_pipe_profile = self.plot_axis_scatter.twinx()
-#     #     self._calculate_pipe_profile()
-#     #     self._plot_pipe_profile()
-
-#     # def _calculate_pipe_profile(self):
-#     #     """Calculate pipe profile coordinates"""
-#     #     pipe_dia = self.flow_monitor.modelDataPipeDia
-#     #     proportions = np.linspace(0, 1, 25)
-
-#     #     # Calculate profile points
-#     #     theta = np.radians(proportions * 360 + 180)
-#     #     radius = pipe_dia / 2 / self.axis_ratio
-
-#     #     x_out = np.sin(theta) * radius * self.config.pipe_exaggeration + self.pipe_stations["out"]
-#     #     x_in = np.sin(theta) * radius * self.config.pipe_exaggeration + self.pipe_stations["in"]
-#     #     y = proportions * pipe_dia
-
-#     #     self.pipe_profile["x"] = np.concatenate([x_out, x_in[::-1], [x_out[0]]])
-#     #     self.pipe_profile["y"] = np.concatenate([y, y[::-1], [y[0]]])
-
-#     # def _plot_pipe_profile(self):
-#     #     """Plot the pipe profile"""
-#     #     self.plot_axis_pipe_profile.plot(
-#     #         self.pipe_profile["x"],
-#     #         self.pipe_profile["y"],
-#     #         linewidth=1.5,
-#     #         color="black",
-#     #         label="Pipe Profile"
-#     #     )
-#     #     self.plot_axis_pipe_profile.set_ylim(
-#     #         self.axis_limits["y_min"],
-#     #         self.axis_limits["y_max"]
-#     #     )
-#     #     self.plot_axis_pipe_profile.axes.yaxis.set_visible(False)
-
-#     def _update_iso_lines(self):
-#         """Update iso-Q lines on the plot"""
-#         if not (self.plot_options["plot_model_data"] and
-#                 self.plot_options["plot_iso_q_lines"]):
-#             return
-
-#         if self.plot_axis_isoq is not None:
-#             self.plot_axis_isoq.remove()
-#             self.plot_axis_isoq = None
-
-#         self.plot_axis_isoq = self.plot_axis_scatter.twinx()
-#         self._calculate_and_plot_iso_lines()
-
-#     def _calculate_and_plot_iso_lines(self):
-#         """Calculate and plot iso-Q lines"""
-#         range_values = (self.plot_options["iso_q_upper_bound"] - self.plot_options["iso_q_lower_bound"])
-#         step_value = range_values / (self.plot_options["iso_q_lines_count"] - 1)
-
-#         for i in range(self.plot_options["iso_q_lines_count"]):
-#             value = self.plot_options["iso_q_lower_bound"] + (i * step_value)
-#             self._plot_single_iso_line(value, i)
-
-#     def _plot_single_iso_line(self, value: float, index: int):
-#         """Plot a single iso-Q line with the given value"""
-#         iso_values = []
-#         iso_depths = []
-#         pipe_dia = self.flow_monitor.modelDataPipeDia
-
-#         for depth_prop in self.config.depth_proportions:
-#             depth = pipe_dia * depth_prop
-
-#             if self.plot_velocity_scattergraph:
-#                 # Calculate velocity for given flow rate
-#                 flow_area = self._calculate_flow_area(pipe_dia, depth)
-#                 velocity = (value / 1000) / flow_area
-
-#                 if velocity <= self.pipe_stations["out"]:
-#                     iso_depths.append(depth)
-#                     iso_values.append(velocity)
-#             else:
-#                 # Calculate flow for given velocity
-#                 flow_area = self._calculate_flow_area(pipe_dia, depth)
-#                 flow = value * flow_area * 1000  # Convert to l/s
-
-#                 if flow <= self.pipe_stations["out"]:
-#                     iso_depths.append(depth)
-#                     iso_values.append(flow)
-
-#         if not iso_values:
-#             return
-
-#         # Add point at maximum velocity/flow if plotting velocity
-#         if self.plot_velocity_scattergraph:
-#             iso_values.insert(0, self.axis_limits["x_max"])
-#             iso_depths.insert(0, self._calculate_flow_depth(
-#                 pipe_dia, (value / 1000) / self.axis_limits["x_max"]
-#             ))
-
-#         # Plot the line
-#         self.plot_axis_isoq.plot(
-#             iso_values,
-#             iso_depths,
-#             linewidth=1,
-#             linestyle="dashdot",
-#             color="forestgreen",
-#             label=f"{value:.3g} {'l/s' if self.plot_velocity_scattergraph else 'm/s'}"
-#         )
-
-#         # Add label to the line
-#         self._add_iso_line_label(iso_values, iso_depths, index)
-
-#     def _add_iso_line_label(self, values: List[float], depths: List[float], index: int):
-#         """Add a label to an iso-Q line"""
-#         label_props = dict(boxstyle="round", facecolor="white", alpha=0.5)
-
-#         # Calculate label position
-#         x_pos = min(values) + (max(values) - min(values)) * (
-#             0.1 + (index * (0.225 / (self.plot_options["iso_q_lines_count"] - 1)))
-#         )
-
-#         # Find closest point on line to desired x position
-#         closest_idx = min(range(len(values)),
-#                          key=lambda i: abs(values[i] - x_pos))
-
-#         if values[closest_idx] is not None and depths[closest_idx] is not None:
-#             self.plot_axis_isoq.text(
-#                 values[closest_idx],
-#                 depths[closest_idx],
-#                 self.plot_axis_isoq.axes.lines[-1].get_label(),
-#                 bbox=label_props
-#             )
-
-#     def _calculate_flow_area(self, pipe_dia: float, depth: float) -> float:
-#         """Calculate flow area for circular pipe"""
-#         radius = pipe_dia / 2000  # Convert to meters
-#         depth_m = depth / 1000    # Convert to meters
-
-#         if depth_m >= 2 * radius:  # Full pipe
-#             return math.pi * radius ** 2
-
-#         theta = 2 * math.acos((radius - depth_m) / radius)
-#         return (radius ** 2 * (theta - math.sin(theta))) / 2
-
-#     def _calculate_flow_depth(self, pipe_dia: float, flow_area: float) -> float:
-#         """Calculate flow depth from area using binary search"""
-#         target_area = flow_area
-#         tolerance = 0.0001
-#         min_depth = 0
-#         max_depth = pipe_dia
-
-#         while max_depth - min_depth > tolerance:
-#             depth = (min_depth + max_depth) / 2
-#             area = self._calculate_flow_area(pipe_dia, depth)
-
-#             if abs(area - target_area) < tolerance:
-#                 return depth
-#             elif area < target_area:
-#                 min_depth = depth
-#             else:
-#                 max_depth = depth
-
-#         return (min_depth + max_depth) / 2
-
-#     def update_plot(self):
-#         """Main method to update the entire plot"""
-#         self._clear_figure()
-
-#         if not self.flow_monitor:
-#             getBlankFigure(self.main_window_plot_widget)
-#             return
-
-#         self._update_scatter_graph()
-#         self._update_cbw_line()
-#         self._update_pipe_profile_lines()
-#         # self._update_pipe_profile()
-#         self._update_iso_lines()
-#         self._adjust_plot_layout()
-#         self._update_canvas()
-
-#     def _adjust_plot_layout(self):
-#         """Adjust the plot layout and margins"""
-#         self.main_window_plot_widget.figure.subplots_adjust(
-#             left=0.05, right=0.95, bottom=0.05, top=0.95
-#         )
-#         self.main_window_plot_widget.figure.tight_layout()
-#         self.is_blank = False
-
-#     def _update_canvas(self):
-#         """Update the plot canvas and connect events"""
-#         self.main_window_plot_widget.event_connections.append(
-#             self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self._on_pick)
-#         )
-#         self.main_window_plot_widget.showToolbar(not self.is_blank)
-#         self.main_window_plot_widget.toolbar.lockNavigation(False)
-
-#     def _on_pick(self, event: PickEvent):
-#         """Handle pick events on the legend"""
-#         legline = event.artist
-#         origline = self.scatter_legend_lines[legline]
-#         vis = not origline.get_visible()
-
-#         origline.set_visible(vis)
-#         legline.set_alpha(1.0 if vis else 0.2)
-
-#         self.main_window_plot_widget.figure.canvas.draw()
-
-# @dataclass
-# class scatterGraphConfig:
-#     depth_proportions: List[float] = field(default_factory=lambda: [
-#         0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 
-#         0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 
-#         0.75, 0.8, 0.85, 0.9, 0.95, 0.96, 0.97, 0.98, 0.99, 1
-#     ])
-#     pipe_profile_depth_prop = [i / 24 for i in range(25)]
-#     x_buffer_factor: float = 1.25
-#     y_buffer_factor: float = 1.5
-#     pipe_exaggeration: float = 0.1
-#     # plot_colors: List[str] = field(default_factory=lambda: [
-#     #     "aqua", "red", "lime", "fuchsia", "green", "teal", 
-#     #     "black", "navy", "olive", "purple", "maroon", "silver", 
-#     #     "blue", "yellow", "Gold", "crimson"
-#     # ])
-#     # Define the colors as a property that returns a cycle
-#     @property
-#     def plot_colors(self):
-#         return cycle([
-#             "mediumseagreen",
-#             "indianred",
-#             "steelblue",
-#             "goldenrod",
-#             "deepskyblue",
-#             "lime",
-#             "black",
-#             "purple",
-#             "navy",
-#             "olive",
-#             "fuchsia",
-#             "grey",
-#             "silver",
-#             "teal",
-#             "red",
-#         ])
-
-
-# @dataclass
-# class scatterGraphConfig:
-#     depth_proportions: List[float] = field(default_factory=lambda: [
-#         0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.15, 0.2, 0.25, 
-#         0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 
-#         0.75, 0.8, 0.85, 0.9, 0.95, 0.96, 0.97, 0.98, 0.99, 1
-#     ])
-#     pipe_profile_depth_prop: List[float] = field(default_factory=lambda: [i / 24 for i in range(25)])
-#     x_buffer_factor: float = 1.25
-#     y_buffer_factor: float = 1.5
-#     pipe_exaggeration: float = 0.1
-#     plot_colors: any = field(default_factory=lambda: cycle([
-#         "aqua", "red", "lime", "fuchsia", "green", "teal", 
-#         "black", "navy", "olive", "purple", "maroon", "silver", 
-#         "blue", "yellow", "Gold", "crimson"
-#     ]))
 
 @dataclass
 class scatterGraphConfig:
@@ -1288,111 +570,2827 @@ class scatterGraphConfig:
     def reset_colors(self):
         self.plot_colors = cycle(self._base_colors)
 
-class graphScatter:
+# #Original Scattergraph Class before adding support for RECT pipes
+# class graphScatter:
+#     xBufferFactor: float = 1.25
+#     yBufferFactor: float = 1.5
+#     pipeExag: float = 0.1
 
-    # depthProportion = [
-    #     0.01,
-    #     0.02,
-    #     0.03,
-    #     0.04,
-    #     0.05,
-    #     0.1,
-    #     0.15,
-    #     0.2,
-    #     0.25,
-    #     0.3,
-    #     0.35,
-    #     0.4,
-    #     0.45,
-    #     0.5,
-    #     0.55,
-    #     0.6,
-    #     0.65,
-    #     0.7,
-    #     0.75,
-    #     0.8,
-    #     0.85,
-    #     0.9,
-    #     0.95,
-    #     1,
-    # ]
+#     def __init__(self, mw_pw: Optional[PlotWidget] = None):
+
+#         self.main_window_plot_widget: PlotWidget = mw_pw
+#         self.config = scatterGraphConfig()
+#         self._initialize_attributes()
+#         self._initialize_plot_options()
+#         getBlankFigure(self.main_window_plot_widget)
+#         self.isBlank: bool = True
+
+#         self.CBW_depth: list[float] = []
+#         self.CBW_flow: list[float] = []
+#         self.CBW_velocity: list[float] = []
+#         self.pipeOutStation: float = 0
+#         self.axisRatio: float = 1
+
+#         self.cScatterLegendLines: Optional[list[lines.Line2D]] = None
+#         self.cScatterLines: Optional[list[Union[lines.Line2D, collections.PathCollection]]] = None
+
+#     def _initialize_attributes(self):
+#         """Initialize all class attributes with default values"""
+#         self.is_blank = True
+#         # self.plot_velocity_scattergraph = True
+#         self.plotted_events = plottedSurveyEvents()
+#         self.plotVelocityScattergraph: bool = True
+#         # self.plottedEvents = plottedSurveyEvents()
+#         self._plot_flow_monitor: Optional[flowMonitor] = None
+
+#         # Plot axes
+#         self.plot_axis_scatter: Optional[axes.Axes] = None
+#         self.plot_axis_cbw: Optional[axes.Axes] = None
+#         self.plot_axis_isoq: Optional[axes.Axes] = None
+#         self.plot_axis_pipe_profile: Optional[axes.Axes] = None
+
+#         # Data storage
+#         self.cbw_data = {"depth": [], "flow": [], "velocity": []}
+#         # self.pipe_profile = {"x": [], "y": [], "depth_prop": []}
+
+#         # Axis limits
+#         self.axis_limits = {
+#             "x_min": 0.0, "x_max": 0.0, 
+#             "y_min": 0.0, "y_max": 0.0,
+#             "plot_x_min": 0.0, "plot_x_max": 0.0
+#         }
+
+#         # Pipe stations
+#         self.pipe_stations = {"in": 0, "out": 0}
+#         self.axis_ratio = 1
+#         self.pipe_exag = 0.1
+
+#         # Legend
+#         self.scatter_legend_lines = None
+#         self.scatter_lines = None
+
+#         self.useOriginal = True
+
+# # ADD for hover support (start)
+#         self._hover_cid = None
+#         self._hover_annot = None        
+# # ADD for hover support (end)
+
+#     def _initialize_plot_options(self):
+#         """Initialize plotting options with default values"""
+#         self.plotFPData: bool = True
+#         self.ignoreDataAboveSoffit: bool = False
+#         self.ignoreZeros: bool = False
+#         self.labelOnHover: bool = False
+#         self.plotModelData: bool = False
+#         self.showPipeProfile: bool = True
+#         self.plotCBWLine: bool = True
+#         self.plotIsoQLines: bool = True
+#         self.noOfIsoQLines: float = 2
+#         self.isoQLBound: float = 1
+#         self.isoQUBound: float = 10
+
+#     @property
+#     def plot_flow_monitor(self) -> Optional[flowMonitor]:
+#         return self._plot_flow_monitor
+
+#     @plot_flow_monitor.setter
+#     def plot_flow_monitor(self, fm: flowMonitor):
+#         self._plot_flow_monitor = fm
+#         if fm and self.plotModelData:
+#             self.plotModelData = fm.hasModelData    
+
+#     def update_plot(self):
+
+#         self.clearFigure()
+#         if self._plot_flow_monitor is not None:
+#             self.updateScattergraphLines()
+#             self._update_cbw_line()
+#             self.updatePipeProfileLines()
+#             self.updateIsoLines_alt()
+#             self.main_window_plot_widget.figure.subplots_adjust(
+#                 left=0.05, right=0.95, bottom=0.05, top=0.95
+#             )
+#             self.isBlank = False
+#         else:
+#             getBlankFigure(self.main_window_plot_widget)
+#             self.isBlank = True
+
+#         self.updateCanvas()
+
+#     def clearFigure(self):
+#         self.main_window_plot_widget.figure.clear()
+
+#         if self.plot_axis_scatter is not None:
+#             self.plot_axis_scatter.clear()
+#             self.plot_axis_scatter = None
+#         if self.plot_axis_cbw is not None:
+#             self.plot_axis_cbw.clear()
+#             self.plot_axis_cbw = None
+#         if self.plot_axis_isoq is not None:
+#             self.plot_axis_isoq.clear()
+#             self.plot_axis_isoq = None
+#         if self.plot_axis_pipe_profile is not None:
+#             self.plot_axis_pipe_profile.clear()
+#             self.plot_axis_pipe_profile = None
+
+#         # Axis limits
+#         self.axis_limits = {
+#             "x_min": 0.0, "x_max": 0.0, 
+#             "y_min": 0.0, "y_max": 0.0,
+#             "plot_x_min": 0.0, "plot_x_max": 0.0
+#         }
+
+# # ADD for hover support (start) — teardown hover handlers/annotation linked to old axes
+#         if self._hover_annot is not None:
+#             try:
+#                 self._hover_annot.remove()
+#             except Exception:
+#                 pass
+#             self._hover_annot = None
+
+#         if self._hover_cid is not None:
+#             try:
+#                 self.main_window_plot_widget.figure.canvas.mpl_disconnect(self._hover_cid)
+#             except Exception:
+#                 pass
+#             self._hover_cid = None
+# # ADD for hover support (end) — teardown hover handlers/annotation linked to old axes
+
+#     def updateScattergraphLines(self):
+
+#         self.cScatterLines = []
+#         self.config.reset_colors()
+
+#         if self._plot_flow_monitor is None:
+#             return
+        
+#         dates = self._plot_flow_monitor.dateRange
+#         depth = self._plot_flow_monitor.depthDataRange
+
+#         if self.plotVelocityScattergraph:
+#             plotYalues = self._plot_flow_monitor.velocityDataRange
+#         else:
+#             plotYalues = self._plot_flow_monitor.flowDataRange
+
+#         tobedeleted = []
+
+#         if self.ignoreDataAboveSoffit and self._plot_flow_monitor.hasModelData:
+#             for i in reversed(range(len(depth))):
+#                 if depth[i] > self._plot_flow_monitor.modelDataPipeDia:
+#                     tobedeleted.append(i)
+
+#         if self.ignoreZeros:
+#             for i in range(len(plotYalues)):
+#                 if float(plotYalues[i]) == 0.0:
+#                     tobedeleted.append(i)
+
+#         if len(tobedeleted) > 0:
+#             dates = np.delete(np.array(dates), np.array(tobedeleted))
+#             depth = np.delete(np.array(depth), np.array(tobedeleted))
+#             plotYalues = np.delete(np.array(plotYalues), np.array(tobedeleted))
+
+#         self.plot_axis_scatter = self.main_window_plot_widget.figure.subplots(1)
+#         if self.plotFPData:
+
+# # CHANGE for hover support (start) — capture arrays and set picker + meta
+#             # --- grab BOTH velocity and flow, plus depth and dates ---
+#             if len(tobedeleted) > 0:
+#                 vel_all = np.delete(np.array(self._plot_flow_monitor.velocityDataRange), np.array(tobedeleted))
+#                 flow_all = np.delete(np.array(self._plot_flow_monitor.flowDataRange), np.array(tobedeleted))
+#             else:
+#                 vel_all = np.asarray(self._plot_flow_monitor.velocityDataRange)
+#                 flow_all = np.asarray(self._plot_flow_monitor.flowDataRange)
+
+#             dep_all = np.asarray(depth)   # already filtered earlier
+#             dat_all = np.asarray(dates)   # already filtered earlier
+
+#             # now pick what goes on X, but *store both* in meta
+#             if self.plotVelocityScattergraph:
+#                 fp_x = vel_all
+#             else:
+#                 fp_x = flow_all
+
+#             fp_y = dep_all
+
+#             cLine = self.plot_axis_scatter.scatter(
+#                 fp_x, fp_y,
+#                 s=5, label="Full Period", color="gray",
+#                 picker=5  # enables hover hit-testing
+#             )
+#             cLine._hover_meta = {
+#                 "label": "Full Period",
+#                 "x": fp_x,
+#                 "y": fp_y,
+#                 "vel": vel_all,        # <-- stash velocity
+#                 "flow": flow_all,      # <-- stash flow
+#                 "dates": dat_all if dat_all is not None else None,
+#             }
+#             self.cScatterLines.append(cLine)
+
+# # CHANGE for hover support (end) — capture arrays and set picker + meta
+
+#         if len(self.plotted_events.plotEvents) > 0:
+#             for se in self.plotted_events.plotEvents.values():
+
+#                 tobedeleted = []
+#                 for i in reversed(range(len(dates))):
+#                     if dates[i] < se.eventStart or dates[i] > se.eventEnd:
+#                         tobedeleted.append(i)
+
+#                 if len(tobedeleted) > 0:
+#                     eventPlotValues = np.delete(plotYalues, tobedeleted)
+#                     eventDepthValues = np.delete(depth, tobedeleted)
+
+#                     cLine = self.plot_axis_scatter.scatter(
+#                         eventPlotValues,
+#                         eventDepthValues,
+#                         s=5,
+#                         label=se.eventName,
+#                         color=next(self.config.plot_colors),
+#                     )
+#                     self.cScatterLines.append(cLine)
+
+#         self.axis_limits["x_min"], self.axis_limits["x_max"] = self.plot_axis_scatter.get_xlim()
+#         self.axis_limits["y_min"], self.axis_limits["y_max"] = self.plot_axis_scatter.get_ylim()
+
+#         if self.plotVelocityScattergraph:
+#             self.plot_axis_scatter.set_xlabel('Velocity (m/s)')
+#             self.plot_axis_scatter.set_title(f'Velocity Scattergraph: {self._plot_flow_monitor.monitorName}', loc='left', fontsize=16)
+#         else:
+#             self.plot_axis_scatter.set_xlabel('Flow (l/s)')
+#             self.plot_axis_scatter.set_title(f'Flow Scattergraph: {self._plot_flow_monitor.monitorName}', loc='left', fontsize=16)            
+        
+#         self.plot_axis_scatter.set_ylabel('Depth (mm)')
+#         self.plot_axis_scatter.legend()
+
+# # ADD — make sure the hover annotation is bound to the fresh axis
+#         self._ensure_hover_support()
+        
+
+#     def _update_cbw_line(self):
+#         """Update the Colebrook-White line"""
+#         if not (self.plotModelData and self.plotCBWLine):
+#             return
+
+#         if self.plot_axis_cbw is not None:
+#             self.plot_axis_cbw.remove()
+#             self.plot_axis_cbw = None
+
+#         if self._plot_flow_monitor is not None:
+
+#             calc_cbw = False
+#             calc_cbw = self._compute_cbw_values_alt()
+
+#             if calc_cbw and self._plot_flow_monitor.modelDataPipeShape == "CIRC":
+
+#                 self.useOriginal = not self.useOriginal
+
+#                 if self.plot_axis_scatter is not None:
+#                     if self.plotModelData and self.plotCBWLine:
+#                         self.plot_axis_cbw = self.plot_axis_scatter.twinx()
+#                 # Select data to plot
+#                 plotXValues = self.CBW_velocity if self.plotVelocityScattergraph else self.CBW_flow
+
+#                 # Plot CBW data
+#                 if self.plot_axis_cbw is not None:                
+#                     self.plot_axis_cbw.plot(
+#                         plotXValues,
+#                         self.CBW_depth,
+#                         linewidth=0.75,
+#                         linestyle="dotted",
+#                         color="black",
+#                         label="CBW",
+#                     )
+
+#                 # Calculate x-axis range with buffer
+#                 self.axis_limits['x_min'], self.axis_limits['x_max'] = self.update_axis_limits(
+#                     self.axis_limits['x_min'],
+#                     self.axis_limits['x_max'],
+#                     min(plotXValues),
+#                     max(plotXValues),
+#                     self.xBufferFactor
+#                     )
+
+#                 # Calculate y-axis range with buffer
+#                 self.axis_limits['y_min'], self.axis_limits['y_max'] = self.update_axis_limits(
+#                     self.axis_limits['y_min'],
+#                     self.axis_limits['y_max'],
+#                     min(self.CBW_depth),
+#                     max(self.CBW_depth),
+#                     self.yBufferFactor
+#                     )
+
+#                 self.update_plot_axis_limits()
+
+#                 # Set axis limits for scatter and CBW plots
+#                 if self.plot_axis_scatter is not None:
+#                     self.plot_axis_scatter.set_xlim(self.axis_limits['plot_x_min'], self.axis_limits['plot_x_max'])
+#                     self.plot_axis_scatter.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+#                 if self.plot_axis_cbw is not None:
+#                     self.plot_axis_cbw.set_xlim(self.axis_limits['plot_x_min'], self.axis_limits['plot_x_max'])
+#                     self.plot_axis_cbw.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+
+#     def update_plot_axis_limits(self):
+#         # Determine aspect ratio and scaling
+#         xsize, ysize = self.main_window_plot_widget.figure.get_size_inches()
+#         aspectRatio = ysize / xsize
+
+#         xAxisRange = self.axis_limits['x_max'] - self.axis_limits['x_min']
+#         yAxisRange = self.axis_limits['y_max'] - self.axis_limits['y_min']
+#         self.axisRatio = (yAxisRange / xAxisRange) / aspectRatio
+
+#         # Adjust plot X-axis limits considering pipe exaggeration and buffer
+#         if self._plot_flow_monitor is not None:
+#             pipeRadius = self._plot_flow_monitor.modelDataPipeDia / 2
+#             xOffset = (pipeRadius / self.axisRatio) * self.xBufferFactor
+#             self.axis_limits['plot_x_min'] = self.axis_limits['x_min'] - xOffset
+#             self.axis_limits['plot_x_max'] = self.axis_limits['x_max'] + xOffset * self.pipeExag
+
+#     def update_axis_limits(self, current_axis_min, current_axis_max, min_value, max_value, buffer_factor):
+#         """Helper function to calculate axis range with a buffer."""
+
+#         range_diff = max_value - min_value
+#         buffer = ((range_diff * buffer_factor) - range_diff) / 2
+#         return min(current_axis_min, min_value - buffer), max(current_axis_max, max_value + buffer)
+
+#     def _calculate_gradient(self) -> float:
+#         """Calculate pipe gradient from model data"""
+#         if self._plot_flow_monitor is None:
+#             return 0.00001
+#         if (self._plot_flow_monitor.modelDataPipeUSInvert > 0 and self._plot_flow_monitor.modelDataPipeDSInvert > 0):
+#             gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert -
+#                         self._plot_flow_monitor.modelDataPipeDSInvert) /
+#                         self._plot_flow_monitor.modelDataPipeLength)
+#             return max(gradient, 0.00001)
+#         else:
+#             return 0.00001
+
+#     def _compute_cbw_values(self) -> bool:
+#         self.CBW_depth = []
+#         self.CBW_flow = []
+#         self.CBW_velocity = []
+
+#         if self._plot_flow_monitor is None:
+#             return False
+
+#         if (
+#             self._plot_flow_monitor.modelDataPipeLength <= 0
+#             or self._plot_flow_monitor.modelDataPipeDia <= 0
+#             or self._plot_flow_monitor.modelDataPipeRoughness <= 0
+#             or self._plot_flow_monitor.modelDataPipeShape == ""
+#             or self._plot_flow_monitor.modelDataPipeHeight <= 0
+#         ):
+#             return False
+
+#         gradient = self._calculate_gradient()
+
+#         # Constants
+#         pipe_diameter_m = self._plot_flow_monitor.modelDataPipeDia / 1000  # Convert mm to meters
+#         roughness_m = self._plot_flow_monitor.modelDataPipeRoughness / 1000  # Convert mm to meters
+#         g = 9.807  # Gravitational acceleration (m/s²)
+
+#         # Initialize outputs
+#         self.CBW_depth = [0]  # Start with zero depth
+#         self.CBW_flow = [0]   # Start with zero flow
+#         self.CBW_velocity = [0]  # Start with zero velocity
+
+#         # Loop through depth proportions
+#         for depth_ratio in self.config.depth_proportions:
+#             # 1. Calculate flow area (A) and wetted perimeter (P)
+#             depth = pipe_diameter_m * depth_ratio
+#             theta = 2 * math.acos(1 - 2 * depth_ratio)  # Angle subtended by the flow
+#             flow_area = (theta - math.sin(theta)) / 8 * math.pi * pipe_diameter_m**2
+#             wetted_perimeter = pipe_diameter_m * theta / (2 * math.pi)
+
+#             # 2. Calculate hydraulic radius (R)
+#             hydraulic_radius = flow_area / wetted_perimeter
+
+#             # 3. Calculate friction factor using the Swamee-Jain approximation
+#             reynolds_number = (4 * flow_area * math.sqrt(gradient * hydraulic_radius * g)) / (1.002e-3)
+#             if reynolds_number > 4000:  # Turbulent flow
+#                 friction_factor = 0.25 / (math.log10((roughness_m / (3.7 * pipe_diameter_m)) + (5.74 / reynolds_number**0.9)))**2
+#             else:  # Laminar flow (fallback)
+#                 friction_factor = 64 / reynolds_number if reynolds_number > 0 else 0
+
+#             # 4. Calculate velocity and flow
+#             velocity = math.sqrt(gradient * hydraulic_radius * g / friction_factor)
+#             flow = flow_area * velocity
+
+#             # Append results
+#             self.CBW_depth.append(depth * 1000)  # Convert to mm
+#             self.CBW_flow.append(flow * 1000)  # Convert to L/s
+#             self.CBW_velocity.append(velocity)
+
+#         return True
+
+#     def _compute_cbw_values_alt(self) -> bool:
+#         self.CBW_depth = []
+#         self.CBW_flow = []
+#         self.CBW_velocity = []
+#         if self._plot_flow_monitor is None:
+#             return False
+#         if (
+#             self._plot_flow_monitor.modelDataPipeLength <= 0
+#             or self._plot_flow_monitor.modelDataPipeDia <= 0
+#             or self._plot_flow_monitor.modelDataPipeRoughness <= 0
+#             or self._plot_flow_monitor.modelDataPipeShape == ""
+#             or self._plot_flow_monitor.modelDataPipeHeight <= 0
+#         ):
+#             return False
+
+#         S = self._calculate_gradient()                       # slope (m/m)
+#         D = self._plot_flow_monitor.modelDataPipeDia / 1000  # m
+#         eps = self._plot_flow_monitor.modelDataPipeRoughness / 1000  # m (absolute roughness)
+#         g = 9.807
+#         nu = 1.004e-6  # m^2/s (kinematic viscosity of water ~20 °C)
+
+#         # Initialize outputs
+#         self.CBW_depth = [0]        # mm
+#         self.CBW_flow = [0]         # L/s
+#         self.CBW_velocity = [0]     # m/s
+
+#         for depth_ratio in self.config.depth_proportions:
+#             h = D * depth_ratio
+#             if depth_ratio <= 0.0:
+#                 self.CBW_depth.append(0.0)
+#                 self.CBW_flow.append(0.0)
+#                 self.CBW_velocity.append(0.0)
+#                 continue
+#             if depth_ratio >= 1.0:
+#                 theta = 2.0 * math.pi
+#             else:
+#                 # central angle of the circular segment (radians)
+#                 theta = 2.0 * math.acos(1.0 - 2.0 * depth_ratio)
+
+#             # Area and wetted perimeter for a circular segment
+#             # A = (D^2 / 8) * (theta - sin(theta))
+#             A = (D * D / 8.0) * (theta - math.sin(theta))
+#             # P = (theta * D) / 2   (NOTE: this fixes your bug)
+#             P = (theta * D) / 2.0
+
+#             # Guard against tiny P at very shallow depths
+#             if P <= 0 or A <= 0:
+#                 self.CBW_depth.append(h * 1000.0)
+#                 self.CBW_flow.append(0.0)
+#                 self.CBW_velocity.append(0.0)
+#                 continue
+
+#             R = A / P
+#             Dh = 4.0 * R  # hydraulic diameter for noncircular
+
+#             # --- Iterate f <-> V <-> Re (Swamee–Jain) with convergence ---
+#             tol = 1e-6          # relative tolerance on f
+#             max_iters = 50      # hard cap
+#             omega = 0.5         # under-relaxation (0<omega<=1)
+
+#             # reasonable initial guess (turbulent sewer flow)
+#             f = 0.02
+
+#             for _ in range(max_iters):
+#                 # uniform-flow velocity from Darcy–Weisbach
+#                 V = math.sqrt(8.0 * g * R * S / f) if f > 0 else 0.0
+#                 Re = (V * Dh) / nu
+
+#                 if Re <= 0:
+#                     f = 0.02
+#                     break
+
+#                 if Re < 2300:
+#                     f_new = 64.0 / Re
+#                 else:
+#                     # Swamee–Jain explicit friction factor
+#                     f_new = 0.25 / (math.log10((eps / (3.7 * Dh)) + (5.74 / (Re ** 0.9)))) ** 2
+
+#                 # under-relax to stabilize
+#                 f_updated = (1 - omega) * f + omega * f_new
+
+#                 # convergence check (relative)
+#                 if abs(f_updated - f) / max(f, 1e-12) < tol:
+#                     f = f_updated
+#                     break
+
+#                 f = f_updated
+#             else:
+#                 # optional: warn or log that max iterations was hit
+#                 pass
+
+#             # final V and Q
+#             V = math.sqrt(8.0 * g * R * S / f) if f > 0 else 0.0
+#             Q = A * V            
+
+#             # Append results
+#             self.CBW_depth.append(h * 1000.0)   # mm
+#             self.CBW_flow.append(Q * 1000.0)    # L/s
+#             self.CBW_velocity.append(V)         # m/s
+
+#         return True
+
+#     def updatePipeProfileLines(self):
+
+#         if self.plot_axis_pipe_profile is not None:
+#             self.plot_axis_pipe_profile.remove()
+#             self.plot_axis_pipe_profile = None
+
+#         if self.plotModelData and self.showPipeProfile and (self.plotFPData or self.plotCBWLine):
+
+#             self.update_plot_axis_limits()
+
+#             self.plot_axis_pipe_profile = self.plot_axis_scatter.twinx()
+#             # self.plot_axis_scatter
+#             self.plot_axis_pipe_profile.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+#             self.plot_axis_pipe_profile.axes.yaxis.set_visible(False)
+
+#             pipeInStation = self.axis_limits['x_min']
+#             self.pipeOutStation = self.axis_limits['x_max']
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+
+#             for i in range(0, len(self.config.pipe_profile_depth_prop)):
+
+#                 pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * ((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#                 pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._plot_flow_monitor.modelDataPipeDia)
+
+#             for i in range(len(self.config.pipe_profile_depth_prop) - 1, -1, -1):
+
+#                 pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * ((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#                 pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._plot_flow_monitor.modelDataPipeDia)
+
+#             pipeProfileX.append(self.pipeOutStation)
+#             pipeProfileY.append(0)
+
+#             self.plot_axis_pipe_profile.plot(
+#                 pipeProfileX,
+#                 pipeProfileY,
+#                 linewidth=1.5,
+#                 color="black",
+#                 label="Pipe Profile",
+#             )
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+
+#             for i in range(0, int(len(self.config.pipe_profile_depth_prop) / 2) + 1):
+
+#                 pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * ((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#                 pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._plot_flow_monitor.modelDataPipeDia)
+
+#             self.plot_axis_pipe_profile.plot(
+#                 pipeProfileX,
+#                 pipeProfileY,
+#                 linewidth=1.5,
+#                 color="black",
+#                 label="Pipe Profile",
+#             )
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+
+#             for i in range(len(self.config.pipe_profile_depth_prop) - 1, int(len(self.config.pipe_profile_depth_prop) / 2) - 1, -1):
+
+#                 pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * ((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#                 pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._plot_flow_monitor.modelDataPipeDia)
+
+#             self.plot_axis_pipe_profile.plot(
+#                 pipeProfileX,
+#                 pipeProfileY,
+#                 linewidth=1.5,
+#                 color="black",
+#                 label="Pipe Profile",
+#             )
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+
+#             for i in range(0, len(self.config.pipe_profile_depth_prop)):
+
+#                 pipeProfileX.append((((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio) * math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180))) + pipeInStation)
+#                 pipeProfileY.append((self._plot_flow_monitor.modelDataPipeDia / 2) + ((self._plot_flow_monitor.modelDataPipeDia / 2) * (math.cos(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180)))))
+
+#             self.plot_axis_pipe_profile.plot(
+#                 pipeProfileX,
+#                 pipeProfileY,
+#                 linewidth=1.5,
+#                 color="black",
+#                 label="Pipe Profile",
+#             )
+
+#     def updateIsoLines_alt(self):
+#         # Remove old overlay axis if any
+#         if self.plot_axis_isoq is not None:
+#             self.plot_axis_isoq.remove()
+#             self.plot_axis_isoq = None
+
+#         if not (self.plotModelData and self.plotIsoQLines):
+#             return
+
+#         # if self.plotModelData and self.plotIsoQLines:
+#         self.plot_axis_isoq = self.plot_axis_scatter.twinx()
+
+#         # Precompute depths (absolute units consistent with your helpers)
+#         D = self._plot_flow_monitor.modelDataPipeDia
+#         depth_list = [D * r for r in self.config.depth_proportions]
+
+#         # Robust step
+#         n = max(1, int(self.noOfIsoQLines))
+#         if n == 1:
+#             iso_values = [self.isoQLBound]
+#         else:
+#             step = (self.isoQUBound - self.isoQLBound) / (n - 1)
+#             iso_values = [self.isoQLBound + i * step for i in range(n)]
+
+#         x_max = self.axis_limits['x_max']  # e.g., max velocity or max flow on x
+
+#         for i, aValue in enumerate(iso_values):
+#             Iso_x = []  # velocity or flow on x-axis
+#             Iso_y = []  # depth on y-axis
+
+#             for depth in depth_list:
+#                 if D == 0:
+#                     continue
+#                 A = self.flowAreaByDepth(D, depth)  # m^2 (or whatever your internal unit is)
+#                 if A is None or A <= 0:
+#                     continue
+
+#                 if self.plotVelocityScattergraph:
+#                     # Iso-velocity line: V = Q/A -> you pass 'aValue' as target Q? or target V?
+#                     # From your code, when velocity mode is True, aValue seems to be target Q (l/s) -> convert and divide by A.
+#                     V = (aValue / 1000.0) / A  # m/s
+#                     x = V
+#                 else:
+#                     # Iso-flow line: Q = aValue * A * 1000
+#                     Q = aValue * A * 1000.0     # L/s
+#                     x = Q
+
+#                 # clip vs pipeOutStation if you intend to bound by station capacity
+#                 if x <= self.pipeOutStation:
+#                     Iso_x.append(x)
+#                     Iso_y.append(depth)
+
+#             # Optionally extend/anchor line to right edge to ensure visibility
+#             if Iso_x and self.plotVelocityScattergraph:
+#                 # Add a right-edge anchor (constant iso line evaluated at x_max)
+#                 # For velocity mode, invert back to depth via helper if defined; otherwise skip the anchor
+#                 try:
+#                     y_anchor = self.flowDepthByArea(int(D), (aValue / 1000.0) / x_max)
+#                     if y_anchor is not None:
+#                         Iso_x.insert(0, x_max)
+#                         Iso_y.insert(0, y_anchor)
+#                 except Exception:
+#                     pass
+
+#             if not Iso_x:
+#                 continue
+
+#             line = self.plot_axis_isoq.plot(
+#                 Iso_x, Iso_y,
+#                 linewidth=1,
+#                 linestyle="dashdot",
+#                 color="forestgreen",
+#                 label=(f"{aValue:.3g} l/s" if self.plotVelocityScattergraph else f"{aValue:.3g} m/s"),
+#             )[0]
+
+#             # Label each line near the right side of axes (less brittle than min/max)
+#             try:
+#                 # Find a point closest to 90% of current x-limits
+#                 xmin, xmax = self.plot_axis_isoq.get_xlim()
+#                 target_x = xmin + 0.9 * (xmax - xmin)
+#                 k = min(range(len(Iso_x)), key=lambda k: abs(Iso_x[k] - target_x))
+#                 self.plot_axis_isoq.text(Iso_x[k], Iso_y[k], line.get_label(),
+#                         bbox=dict(boxstyle="round", facecolor="white", alpha=0.5))
+#             except Exception:
+#                 pass
+
+#         self.plot_axis_isoq.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+#         self.plot_axis_isoq.axes.yaxis.set_visible(False)
+
+
+#     def flowAreaByDepth(self, pipeDiaInMM: int, flowDepthInMM: int):
+
+#         r = (pipeDiaInMM / 1000) / 2
+#         h = flowDepthInMM / 1000
+#         theta = 2 * math.acos((r - h) / r)
+#         area = (r**2 * (theta - math.sin(theta))) / 2
+
+#         return area
+
+#     def flowDepthByArea(self, pipeDiaInMM: int, flowAreaInM2: float):
+
+#         # r = (pipeDiaInMM / 1000) / 2
+#         for h in range(pipeDiaInMM):
+
+#             check = flowAreaInM2 - self.flowAreaByDepth(pipeDiaInMM, h)
+#             if check <= 0:
+#                 return h
+
+#     def updateCanvas(self):
+
+#         self.main_window_plot_widget.event_connections.append(self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self.onPick))
+#         self.main_window_plot_widget.showToolbar(not self.isBlank)
+#         self.main_window_plot_widget.toolbar.lockNavigation(False)
+
+# # ADD — respect self.labelOnHover (connects or disconnects motion handler) (start)
+#         self._ensure_hover_support()        
+# # ADD — respect self.labelOnHover (connects or disconnects motion handler) (end)
+
+#     def onPick(self, event):
+
+#         legline = event.artist
+#         origline = self.cScatterLegendLines[legline]
+#         vis = not origline.get_visible()
+
+#         origline.set_visible(vis)
+#         # Change the alpha on the line in the legend so we can see what lines have been toggled
+#         if vis:
+#             legline.set_alpha(1.0)
+#         else:
+#             legline.set_alpha(0.2)
+
+#         self.main_window_plot_widget.figure.canvas.draw()
+
+#     def _ensure_hover_support(self):
+#         """Create/attach the annotation and motion handler depending on labelOnHover."""
+#         # Ensure we have an annotation on the current scatter axis
+#         if self._hover_annot is None and self.plot_axis_scatter is not None:
+#             self._hover_annot = self.plot_axis_scatter.annotate(
+#                 "", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
+#                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8),
+#                 arrowprops=dict(arrowstyle="->", shrinkA=0, shrinkB=0)
+#             )
+#             self._hover_annot.set_zorder(1000)   # <--- add this
+#             self._hover_annot.set_visible(False)            
+
+#         canvas = self.main_window_plot_widget.figure.canvas
+
+#         # Connect or disconnect based on the flag
+#         if self.labelOnHover and self._hover_cid is None:
+#             self._hover_cid = canvas.mpl_connect("motion_notify_event", self._on_hover_motion)
+#         elif (not self.labelOnHover) and self._hover_cid is not None:
+#             try:
+#                 canvas.mpl_disconnect(self._hover_cid)
+#             finally:
+#                 self._hover_cid = None
+#             if self._hover_annot is not None:
+#                 self._hover_annot.set_visible(False)
+#                 canvas.draw_idle()
+
+#     def _on_hover_motion(self, event):
+#         """Show a tooltip when hovering a point on the scatter axis."""
+#         # NEW — allow hover when the cursor is over the scatter axis OR any of its twins/overlays
+#         if self.plot_axis_scatter is None:
+#             return
+
+#         allowed_axes = [ax for ax in (
+#             self.plot_axis_scatter,
+#             self.plot_axis_cbw,
+#             self.plot_axis_isoq,
+#             self.plot_axis_pipe_profile
+#         ) if ax is not None]
+
+#         if event.inaxes not in allowed_axes:
+#             if self._hover_annot is not None and self._hover_annot.get_visible():
+#                 self._hover_annot.set_visible(False)
+#                 event.canvas.draw_idle()
+#             return
+
+#         if not self.cScatterLines:
+#             return
+
+#         for coll in self.cScatterLines:
+#             # only consider scatter PathCollections
+#             if not isinstance(coll, collections.PathCollection):
+#                 continue
+
+#             contains, info = coll.contains(event)
+#             if not contains or len(info.get("ind", [])) == 0:
+#                 continue
+
+#             # if not contains or not info.get("ind"):
+#             #     continue
+
+#             idx = info["ind"][0]
+
+#             meta = getattr(coll, "_hover_meta", None)
+#             if meta is not None:
+#                 x_val = meta["x"][idx]          # whatever was plotted on X
+#                 y_val = meta["y"][idx]          # depth (mm)
+#                 label = meta.get("label", "")
+#                 vel = meta.get("vel", None)
+#                 flow = meta.get("flow", None)
+#                 date_arr = meta.get("dates", None)
+#                 date_str = f"\n{date_arr[idx]}" if (date_arr is not None and idx < len(date_arr)) else ""
+#             else:
+#                 offsets = coll.get_offsets()
+#                 x_val, y_val = offsets[idx]
+#                 label = coll.get("label", "")
+#                 vel = None
+#                 flow = None
+#                 date_str = ""
+
+#             # Fallbacks if vel/flow weren’t present (shouldn’t happen if meta is set)
+#             if vel is None or flow is None:
+#                 # Just show the x as one of them depending on mode
+#                 if self.plotVelocityScattergraph:
+#                     vel_str = f"{x_val:.3g} m/s"
+#                     flow_str = "—"
+#                 else:
+#                     flow_str = f"{x_val:.3g} l/s"
+#                     vel_str = "—"
+#             else:
+#                 vel_str = f"{vel[idx]:.3g} m/s"
+#                 flow_str = f"{flow[idx]:.3g} l/s"    # monitor data appears to be m³/s
+
+#             txt = f"{label}\nFlow: {flow_str}\nVelocity: {vel_str}\nDepth: {y_val:.0f} mm{date_str}"
+
+#             self._hover_annot.xy = (x_val, y_val)
+#             self._hover_annot.set_text(txt)
+#             self._hover_annot.set_visible(True)
+#             event.canvas.draw_idle()
+#             return
+
+#         # Not over any point -> hide
+#         if self._hover_annot is not None and self._hover_annot.get_visible():
+#             self._hover_annot.set_visible(False)
+#             event.canvas.draw_idle()
+
+# class graphScatter:
+#     xBufferFactor: float = 1.25
+#     yBufferFactor: float = 1.5
+#     pipeExag: float = 0.1
+
+#     def __init__(self, mw_pw: Optional["PlotWidget"] = None):
+
+#         self.main_window_plot_widget: "PlotWidget" = mw_pw
+#         self.config = scatterGraphConfig()
+#         self._initialize_attributes()
+#         self._initialize_plot_options()
+#         getBlankFigure(self.main_window_plot_widget)
+#         self.isBlank: bool = True
+
+#         self.CBW_depth: list[float] = []
+#         self.CBW_flow: list[float] = []
+#         self.CBW_velocity: list[float] = []
+#         self.pipeOutStation: float = 0
+#         self.axisRatio: float = 1
+
+#         self.cScatterLegendLines: Optional[list[lines.Line2D]] = None
+#         self.cScatterLines: Optional[list[Union[lines.Line2D, collections.PathCollection]]] = None
+
+#     # ------------------------
+#     # Initialization
+#     # ------------------------
+#     def _initialize_attributes(self):
+#         self.is_blank = True
+#         self.plotted_events = plottedSurveyEvents()
+#         self.plotVelocityScattergraph: bool = True
+#         self._plot_flow_monitor: Optional["flowMonitor"] = None
+
+#         # Plot axes
+#         self.plot_axis_scatter: Optional["axes.Axes"] = None
+#         self.plot_axis_cbw: Optional["axes.Axes"] = None
+#         self.plot_axis_isoq: Optional["axes.Axes"] = None
+#         self.plot_axis_pipe_profile: Optional["axes.Axes"] = None
+
+#         # Data storage
+#         self.cbw_data = {"depth": [], "flow": [], "velocity": []}
+
+#         # Axis limits
+#         self.axis_limits = {
+#             "x_min": 0.0, "x_max": 0.0,
+#             "y_min": 0.0, "y_max": 0.0,
+#             "plot_x_min": 0.0, "plot_x_max": 0.0
+#         }
+
+#         # Pipe stations
+#         self.pipe_stations = {"in": 0, "out": 0}
+#         self.axis_ratio = 1
+#         self.pipe_exag = 0.1
+
+#         # Legend
+#         self.scatter_legend_lines = None
+#         self.scatter_lines = None
+
+#         self.useOriginal = True
+
+#         # Hover support
+#         self._hover_cid = None
+#         self._hover_annot = None
+
+#     def _initialize_plot_options(self):
+#         self.plotFPData: bool = True
+#         self.ignoreDataAboveSoffit: bool = False
+#         self.ignoreZeros: bool = False
+#         self.labelOnHover: bool = False
+#         self.plotModelData: bool = False
+#         self.showPipeProfile: bool = True
+#         self.plotCBWLine: bool = True
+#         self.plotIsoQLines: bool = True
+#         self.noOfIsoQLines: float = 2
+#         self.isoQLBound: float = 1
+#         self.isoQUBound: float = 10
+
+#     # ------------------------
+#     # Shape helpers (NEW)
+#     # ------------------------
+#     def _shape(self) -> str:
+#         try:
+#             shp = self._plot_flow_monitor.modelDataPipeShape
+#         except Exception:
+#             shp = "CIRC"
+#         return (shp or "CIRC").upper()
+
+#     def _dims_m(self):
+#         """
+#         Returns geometry dict in metres:
+#         - CIRC: {"shape":"CIRC","D":D}
+#         - RECT: {"shape":"RECT","B":B,"H":H}
+#         """
+#         shp = self._shape()
+#         if shp == "RECT":
+#             B = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0)) / 1000.0
+#             H = float(getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0.0)) / 1000.0
+#             return {"shape": "RECT", "B": B, "H": H}
+#         else:
+#             D = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0)) / 1000.0
+#             return {"shape": "CIRC", "D": D}
+
+#     def _dims_mm(self):
+#         """
+#         Returns geometry dict in millimetres:
+#         - CIRC: {"shape":"CIRC","D":D}
+#         - RECT: {"shape":"RECT","B":B,"H":H}
+#         """
+#         shp = self._shape()
+#         if shp == "RECT":
+#             B = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0))
+#             H = float(getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0.0))
+#             return {"shape": "RECT", "B": B, "H": H}
+#         else:
+#             D = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0))
+#             return {"shape": "CIRC", "D": D}
+        
+#     def _section_AP(self, depth_m: float):
+#         """
+#         Area A (m²) and wetted perimeter P (m) at depth from invert.
+#         Open-channel until full; if depth >= full height, use full (pressurised) A,P.
+#         """
+#         d = self._dims_m()
+#         if d["shape"] == "RECT":
+#             B, H = d["B"], d["H"]
+#             h = max(0.0, min(depth_m, H))
+#             if h <= 0.0:
+#                 return 0.0, 0.0
+#             A = B * h
+#             P = B + 2.0 * h
+#             if depth_m >= H:
+#                 A = B * H
+#                 P = 2.0 * (B + H)
+#             return A, P
+#         else:
+#             D = d["D"]
+#             h = max(0.0, min(depth_m, D))
+#             if h <= 0.0:
+#                 return 0.0, 0.0
+#             if h < D:
+#                 theta = 2.0 * math.acos(1.0 - 2.0 * h / D)
+#                 A = (D * D / 8.0) * (theta - math.sin(theta))
+#                 P = (theta * D) / 2.0
+#             else:
+#                 A = math.pi * (D ** 2) / 4.0
+#                 P = math.pi * D
+#             return A, P
+
+#     def _char_height_m(self) -> float:
+#         """D for CIRC, H for RECT."""
+#         d = self._dims_m()
+#         return d.get("D", d.get("H", 0.0))
+
+#     def _char_half_width_m(self) -> float:
+#         """Radius for CIRC; B/2 for RECT (used for x-span of profile frames)."""
+#         d = self._dims_m()
+#         if d["shape"] == "RECT":
+#             return d["B"] / 2.0
+#         return d["D"] / 2.0
+
+#     def _char_height_mm(self) -> float:
+#         """D for CIRC, H for RECT."""
+#         d = self._dims_mm()
+#         return d.get("D", d.get("H", 0.0))
+
+#     def _char_half_width_mm(self) -> float:
+#         """Radius for CIRC; B/2 for RECT (used for x-span of profile frames)."""
+#         d = self._dims_mm()
+#         if d["shape"] == "RECT":
+#             return d["B"] / 2.0
+#         return d["D"] / 2.0
+    
+#     def _depth_from_area(self, target_A: float, *, tol_mm: float = 0.5) -> Optional[float]:
+#         """
+#         Invert A(h) via bisection over [0, full height].
+#         Returns depth in mm (float) or None if no solution.
+#         """
+#         Hc = self._char_height_m()
+#         if Hc <= 0.0 or target_A <= 0.0:
+#             return 0.0
+#         lo, hi = 0.0, Hc
+#         for _ in range(40):
+#             mid = 0.5 * (lo + hi)
+#             A, _ = self._section_AP(mid)
+#             if abs(A - target_A) <= (tol_mm / 1000.0) * max(1.0, Hc):
+#                 return mid * 1000.0
+#             if A < target_A:
+#                 lo = mid
+#             else:
+#                 hi = mid
+#         A_mid, _ = self._section_AP(0.5 * (lo + hi))
+#         if abs(A_mid - target_A) < 1e-6:
+#             return 0.5 * (lo + hi) * 1000.0
+#         return None
+
+#     # ------------------------
+#     # External properties
+#     # ------------------------
+#     @property
+#     def plot_flow_monitor(self) -> Optional["flowMonitor"]:
+#         return self._plot_flow_monitor
+
+#     @plot_flow_monitor.setter
+#     def plot_flow_monitor(self, fm: "flowMonitor"):
+#         self._plot_flow_monitor = fm
+#         if fm and self.plotModelData:
+#             self.plotModelData = fm.hasModelData
+
+#     # ------------------------
+#     # Public API
+#     # ------------------------
+#     def update_plot(self):
+
+#         self.clearFigure()
+#         if self._plot_flow_monitor is not None:
+#             self.updateScattergraphLines()
+#             self._update_cbw_line()
+#             self.updatePipeProfileLines()
+#             self.updateIsoLines_alt()
+#             self.main_window_plot_widget.figure.subplots_adjust(
+#                 left=0.05, right=0.95, bottom=0.05, top=0.95
+#             )
+#             self.isBlank = False
+#         else:
+#             getBlankFigure(self.main_window_plot_widget)
+#             self.isBlank = True
+
+#         self.updateCanvas()
+
+#     def clearFigure(self):
+#         self.main_window_plot_widget.figure.clear()
+
+#         if self.plot_axis_scatter is not None:
+#             self.plot_axis_scatter.clear()
+#             self.plot_axis_scatter = None
+#         if self.plot_axis_cbw is not None:
+#             self.plot_axis_cbw.clear()
+#             self.plot_axis_cbw = None
+#         if self.plot_axis_isoq is not None:
+#             self.plot_axis_isoq.clear()
+#             self.plot_axis_isoq = None
+#         if self.plot_axis_pipe_profile is not None:
+#             self.plot_axis_pipe_profile.clear()
+#             self.plot_axis_pipe_profile = None
+
+#         self.axis_limits = {
+#             "x_min": 0.0, "x_max": 0.0,
+#             "y_min": 0.0, "y_max": 0.0,
+#             "plot_x_min": 0.0, "plot_x_max": 0.0
+#         }
+
+#         # teardown hover
+#         if self._hover_annot is not None:
+#             try:
+#                 self._hover_annot.remove()
+#             except Exception:
+#                 pass
+#             self._hover_annot = None
+
+#         if self._hover_cid is not None:
+#             try:
+#                 self.main_window_plot_widget.figure.canvas.mpl_disconnect(self._hover_cid)
+#             except Exception:
+#                 pass
+#             self._hover_cid = None
+
+#     # ------------------------
+#     # Scatter points
+#     # ------------------------
+#     def updateScattergraphLines(self):
+
+#         self.cScatterLines = []
+#         self.config.reset_colors()
+
+#         if self._plot_flow_monitor is None:
+#             return
+
+#         dates = self._plot_flow_monitor.dateRange
+#         depth = self._plot_flow_monitor.depthDataRange
+
+#         if self.plotVelocityScattergraph:
+#             plotYalues = self._plot_flow_monitor.velocityDataRange
+#         else:
+#             plotYalues = self._plot_flow_monitor.flowDataRange
+
+#         tobedeleted = []
+
+#         # Shape-aware soffit filter
+#         if self.ignoreDataAboveSoffit and self._plot_flow_monitor.hasModelData:
+#             soffit_mm = None
+#             if self._shape() == "RECT":
+#                 soffit_mm = float(getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0.0))
+#             else:
+#                 soffit_mm = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0))
+#             if soffit_mm and soffit_mm > 0:
+#                 for i in reversed(range(len(depth))):
+#                     if depth[i] > soffit_mm:
+#                         tobedeleted.append(i)
+
+#         if self.ignoreZeros:
+#             for i in range(len(plotYalues)):
+#                 try:
+#                     if float(plotYalues[i]) == 0.0:
+#                         tobedeleted.append(i)
+#                 except Exception:
+#                     pass
+
+#         if len(tobedeleted) > 0:
+#             dates = np.delete(np.array(dates), np.array(tobedeleted))
+#             depth = np.delete(np.array(depth), np.array(tobedeleted))
+#             plotYalues = np.delete(np.array(plotYalues), np.array(tobedeleted))
+
+#         self.plot_axis_scatter = self.main_window_plot_widget.figure.subplots(1)
+#         if self.plotFPData:
+
+#             if len(tobedeleted) > 0:
+#                 vel_all = np.delete(np.array(self._plot_flow_monitor.velocityDataRange), np.array(tobedeleted))
+#                 flow_all = np.delete(np.array(self._plot_flow_monitor.flowDataRange), np.array(tobedeleted))
+#             else:
+#                 vel_all = np.asarray(self._plot_flow_monitor.velocityDataRange)
+#                 flow_all = np.asarray(self._plot_flow_monitor.flowDataRange)
+
+#             dep_all = np.asarray(depth)
+#             dat_all = np.asarray(dates)
+
+#             if self.plotVelocityScattergraph:
+#                 fp_x = vel_all
+#             else:
+#                 fp_x = flow_all
+#             fp_y = dep_all
+
+#             cLine = self.plot_axis_scatter.scatter(
+#                 fp_x, fp_y,
+#                 s=5, label="Full Period", color="gray",
+#                 picker=5
+#             )
+#             cLine._hover_meta = {
+#                 "label": "Full Period",
+#                 "x": fp_x,
+#                 "y": fp_y,
+#                 "vel": vel_all,
+#                 "flow": flow_all,
+#                 "dates": dat_all if dat_all is not None else None,
+#             }
+#             self.cScatterLines.append(cLine)
+
+#         if len(self.plotted_events.plotEvents) > 0:
+#             for se in self.plotted_events.plotEvents.values():
+
+#                 tobedeleted = []
+#                 for i in reversed(range(len(dates))):
+#                     if dates[i] < se.eventStart or dates[i] > se.eventEnd:
+#                         tobedeleted.append(i)
+
+#                 if len(tobedeleted) > 0:
+#                     eventPlotValues = np.delete(plotYalues, tobedeleted)
+#                     eventDepthValues = np.delete(depth, tobedeleted)
+
+#                     cLine = self.plot_axis_scatter.scatter(
+#                         eventPlotValues,
+#                         eventDepthValues,
+#                         s=5,
+#                         label=se.eventName,
+#                         color=next(self.config.plot_colors),
+#                     )
+#                     self.cScatterLines.append(cLine)
+
+#         self.axis_limits["x_min"], self.axis_limits["x_max"] = self.plot_axis_scatter.get_xlim()
+#         self.axis_limits["y_min"], self.axis_limits["y_max"] = self.plot_axis_scatter.get_ylim()
+
+#         if self.plotVelocityScattergraph:
+#             self.plot_axis_scatter.set_xlabel('Velocity (m/s)')
+#             self.plot_axis_scatter.set_title(f'Velocity Scattergraph: {self._plot_flow_monitor.monitorName}', loc='left', fontsize=16)
+#         else:
+#             self.plot_axis_scatter.set_xlabel('Flow (l/s)')
+#             self.plot_axis_scatter.set_title(f'Flow Scattergraph: {self._plot_flow_monitor.monitorName}', loc='left', fontsize=16)
+
+#         self.plot_axis_scatter.set_ylabel('Depth (mm)')
+#         self.plot_axis_scatter.legend()
+
+#         self._ensure_hover_support()
+
+#     # ------------------------
+#     # Colebrook-White overlay
+#     # ------------------------
+#     def _update_cbw_line(self):
+#         if not (self.plotModelData and self.plotCBWLine):
+#             return
+
+#         if self.plot_axis_cbw is not None:
+#             self.plot_axis_cbw.remove()
+#             self.plot_axis_cbw = None
+
+#         if self._plot_flow_monitor is not None:
+
+#             calc_cbw = self._compute_cbw_values_alt()
+
+#             if calc_cbw:
+#                 self.useOriginal = not self.useOriginal
+
+#                 if self.plot_axis_scatter is not None:
+#                     if self.plotModelData and self.plotCBWLine:
+#                         self.plot_axis_cbw = self.plot_axis_scatter.twinx()
+
+#                 plotXValues = self.CBW_velocity if self.plotVelocityScattergraph else self.CBW_flow
+
+#                 if self.plot_axis_cbw is not None:
+#                     self.plot_axis_cbw.plot(
+#                         plotXValues,
+#                         self.CBW_depth,
+#                         linewidth=0.75,
+#                         linestyle="dotted",
+#                         color="black",
+#                         label="CBW",
+#                     )
+
+#                 self.axis_limits['x_min'], self.axis_limits['x_max'] = self.update_axis_limits(
+#                     self.axis_limits['x_min'],
+#                     self.axis_limits['x_max'],
+#                     min(plotXValues),
+#                     max(plotXValues),
+#                     self.xBufferFactor
+#                 )
+
+#                 self.axis_limits['y_min'], self.axis_limits['y_max'] = self.update_axis_limits(
+#                     self.axis_limits['y_min'],
+#                     self.axis_limits['y_max'],
+#                     min(self.CBW_depth),
+#                     max(self.CBW_depth),
+#                     self.yBufferFactor
+#                 )
+
+#                 self.update_plot_axis_limits()
+
+#                 if self.plot_axis_scatter is not None:
+#                     self.plot_axis_scatter.set_xlim(self.axis_limits['plot_x_min'], self.axis_limits['plot_x_max'])
+#                     self.plot_axis_scatter.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+#                 if self.plot_axis_cbw is not None:
+#                     self.plot_axis_cbw.set_xlim(self.axis_limits['plot_x_min'], self.axis_limits['plot_x_max'])
+#                     self.plot_axis_cbw.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+
+#     def update_plot_axis_limits(self):
+#         xsize, ysize = self.main_window_plot_widget.figure.get_size_inches()
+#         aspectRatio = ysize / xsize
+
+#         xAxisRange = self.axis_limits['x_max'] - self.axis_limits['x_min']
+#         yAxisRange = self.axis_limits['y_max'] - self.axis_limits['y_min']
+#         self.axisRatio = (yAxisRange / xAxisRange) / aspectRatio
+
+#         if self._plot_flow_monitor is not None:
+#             half_height = self._char_height_mm() / 2
+#             xOffset = (half_height / self.axisRatio) * self.xBufferFactor
+#             self.axis_limits['plot_x_min'] = self.axis_limits['x_min'] - xOffset
+#             self.axis_limits['plot_x_max'] = self.axis_limits['x_max'] + xOffset * self.pipeExag
+
+#     def update_axis_limits(self, current_axis_min, current_axis_max, min_value, max_value, buffer_factor):
+#         range_diff = max_value - min_value
+#         buffer = ((range_diff * buffer_factor) - range_diff) / 2
+#         return min(current_axis_min, min_value - buffer), max(current_axis_max, max_value + buffer)
+
+#     def _calculate_gradient(self) -> float:
+#         if self._plot_flow_monitor is None:
+#             return 0.00001
+#         if (self._plot_flow_monitor.modelDataPipeUSInvert > 0 and self._plot_flow_monitor.modelDataPipeDSInvert > 0):
+#             gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert -
+#                         self._plot_flow_monitor.modelDataPipeDSInvert) /
+#                         self._plot_flow_monitor.modelDataPipeLength)
+#             return max(gradient, 0.00001)
+#         else:
+#             return 0.00001
+
+#     def _compute_cbw_values_alt(self) -> bool:
+#         self.CBW_depth = []
+#         self.CBW_flow = []
+#         self.CBW_velocity = []
+
+#         if self._plot_flow_monitor is None:
+#             return False
+
+#         shp = self._shape()
+#         # geometry presence check
+#         if shp == "RECT":
+#             have_geom = (getattr(self._plot_flow_monitor, "modelDataPipeDia", 0) > 0 and
+#                          getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0) > 0)
+#         else:
+#             have_geom = getattr(self._plot_flow_monitor, "modelDataPipeDia", 0) > 0
+
+#         if (
+#             self._plot_flow_monitor.modelDataPipeLength <= 0
+#             or self._plot_flow_monitor.modelDataPipeRoughness <= 0
+#             or not have_geom
+#         ):
+#             return False
+
+#         S = self._calculate_gradient()
+#         eps = self._plot_flow_monitor.modelDataPipeRoughness / 1000.0  # m
+#         g = 9.807
+#         nu = 1.004e-6  # m^2/s
+
+#         Hc = self._char_height_m()  # D for CIRC, H for RECT
+#         if Hc <= 0.0:
+#             return False
+
+#         # Initialize outputs starting at zero
+#         self.CBW_depth = [0]
+#         self.CBW_flow = [0]
+#         self.CBW_velocity = [0]
+
+#         for depth_ratio in self.config.depth_proportions:
+#             h = Hc * depth_ratio
+#             A, P = self._section_AP(h)
+#             if A <= 0.0 or P <= 0.0:
+#                 self.CBW_depth.append(h * 1000.0)
+#                 self.CBW_flow.append(0.0)
+#                 self.CBW_velocity.append(0.0)
+#                 continue
+
+#             R = A / P
+#             Dh = 4.0 * R
+
+#             # Iterate friction factor
+#             tol, max_iters, omega = 1e-6, 50, 0.5
+#             f = 0.02
+#             for _ in range(max_iters):
+#                 V = math.sqrt(8.0 * g * R * S / f) if f > 0 else 0.0
+#                 Re = (V * Dh) / nu
+#                 if Re < 2300:
+#                     f_new = 64.0 / max(Re, 1e-12)
+#                 else:
+#                     f_new = 0.25 / (math.log10((eps / (3.7 * Dh)) + (5.74 / (Re ** 0.9)))) ** 2
+#                 f_u = (1 - omega) * f + omega * f_new
+#                 if abs(f_u - f) / max(f, 1e-12) < tol:
+#                     f = f_u
+#                     break
+#                 f = f_u
+
+#             V = math.sqrt(8.0 * g * R * S / f) if f > 0 else 0.0
+#             Q = A * V
+
+#             self.CBW_depth.append(h * 1000.0)  # mm
+#             self.CBW_flow.append(Q * 1000.0)   # L/s
+#             self.CBW_velocity.append(V)        # m/s
+
+#         return True
+
+#     # ------------------------
+#     # Pipe profile overlay
+#     # ------------------------
+
+#     def updatePipeProfileLines(self):
+
+#         if self.plot_axis_pipe_profile is not None:
+#             self.plot_axis_pipe_profile.remove()
+#             self.plot_axis_pipe_profile = None
+
+#         if self.plotModelData and self.showPipeProfile and (self.plotFPData or self.plotCBWLine):
+
+#             self.update_plot_axis_limits()
+
+#             self.plot_axis_pipe_profile = self.plot_axis_scatter.twinx()
+#             self.plot_axis_pipe_profile.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+#             self.plot_axis_pipe_profile.axes.yaxis.set_visible(False)
+
+#             pipeInStation = self.axis_limits['x_min']
+#             self.pipeOutStation = self.axis_limits['x_max']
+
+#             # shape-aware frame span and height (in mm)
+#             half_span_x = (self._char_half_width_mm() / self.axisRatio) * self.pipeExag
+#             Hc_mm = self._char_height_mm()
+
+#             # RECT profile (two rectangles at in/out) and return early
+#             if self._shape() == "RECT":
+
+#                 pipeProfileX = []
+#                 pipeProfileY = []
+
+#                 pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#                 pipeProfileY.append(self._char_height_mm())
+#                 pipeProfileX.append(((-1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#                 pipeProfileY.append(0)
+#                 pipeProfileX.append(((-1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#                 pipeProfileY.append(0)
+#                 pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#                 pipeProfileY.append(self._char_height_mm())
+#                 pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#                 pipeProfileY.append(self._char_height_mm())
+
+#                 self.plot_axis_pipe_profile.plot(
+#                     pipeProfileX,
+#                     pipeProfileY,
+#                     linewidth=1.5,
+#                     color="black",
+#                     label="Pipe Profile",
+#                 )
+
+#                 pipeProfileX = []
+#                 pipeProfileY = []
+
+#                 pipeProfileX.append(((-1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#                 pipeProfileY.append(0)
+#                 pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#                 pipeProfileY.append(0)
+#                 pipeProfileX.append(self.pipeOutStation)
+#                 pipeProfileY.append(self._char_height_mm() / 2)
+
+#                 self.plot_axis_pipe_profile.plot(
+#                     pipeProfileX,
+#                     pipeProfileY,
+#                     linewidth=1.5,
+#                     color="black",
+#                     label="Pipe Profile",
+#                 )
+
+#                 pipeProfileX = []
+#                 pipeProfileY = []
+
+#                 pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#                 pipeProfileY.append(self._char_height_mm())
+#                 pipeProfileX.append(((-1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#                 pipeProfileY.append(self._char_height_mm())
+#                 pipeProfileX.append(pipeInStation)
+#                 pipeProfileY.append(self._char_height_mm() / 2)
+
+#                 self.plot_axis_pipe_profile.plot(
+#                     pipeProfileX,
+#                     pipeProfileY,
+#                     linewidth=1.5,
+#                     color="black",
+#                     label="Pipe Profile",
+#                 )
+
+#                 pipeProfileX = []
+#                 pipeProfileY = []
+
+#                 pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * 0) + pipeInStation)
+#                 pipeProfileY.append(0)
+#                 pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * -1) + pipeInStation)
+#                 pipeProfileY.append(0)
+#                 pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * -1) + pipeInStation)
+#                 pipeProfileY.append(self._char_height_mm())
+#                 pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * 0) + pipeInStation)
+#                 pipeProfileY.append(self._char_height_mm())
+
+#                 self.plot_axis_pipe_profile.plot(
+#                     pipeProfileX,
+#                     pipeProfileY,
+#                     linewidth=1.5,
+#                     color="black",
+#                     label="Pipe Profile",
+#                 )
+#                 return
+
+#             # ------------------------
+#             # CIRC profile (your original logic)
+#             # ------------------------
+#             pipeProfileX = []
+#             pipeProfileY = []
+
+#             for i in range(0, len(self.config.pipe_profile_depth_prop)):
+#                 pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#                 pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+
+#             for i in range(len(self.config.pipe_profile_depth_prop) - 1, -1, -1):
+#                 pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#                 pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+
+#             pipeProfileX.append(self.pipeOutStation)
+#             pipeProfileY.append(0)
+
+#             self.plot_axis_pipe_profile.plot(
+#                 pipeProfileX,
+#                 pipeProfileY,
+#                 linewidth=1.5,
+#                 color="black",
+#                 label="Pipe Profile",
+#             )
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+
+#             for i in range(0, int(len(self.config.pipe_profile_depth_prop) / 2) + 1):
+
+#                 pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#                 pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+
+#             self.plot_axis_pipe_profile.plot(
+#                 pipeProfileX,
+#                 pipeProfileY,
+#                 linewidth=1.5,
+#                 color="black",
+#                 label="Pipe Profile",
+#             )
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+
+#             for i in range(len(self.config.pipe_profile_depth_prop) - 1, int(len(self.config.pipe_profile_depth_prop) / 2) - 1, -1):
+
+#                 pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#                 pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+
+#             self.plot_axis_pipe_profile.plot(
+#                 pipeProfileX,
+#                 pipeProfileY,
+#                 linewidth=1.5,
+#                 color="black",
+#                 label="Pipe Profile",
+#             )
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+
+#             for i in range(0, len(self.config.pipe_profile_depth_prop)):
+
+#                 pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180))) + pipeInStation)
+#                 pipeProfileY.append(self._char_half_width_mm() + (self._char_half_width_mm() * (math.cos(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180)))))
+
+#             self.plot_axis_pipe_profile.plot(
+#                 pipeProfileX,
+#                 pipeProfileY,
+#                 linewidth=1.5,
+#                 color="black",
+#                 label="Pipe Profile",
+#             )
+
+#     # ------------------------
+#     # Iso-Q / Iso-V overlay
+#     # ------------------------
+#     def updateIsoLines_alt(self):
+#         if self.plot_axis_isoq is not None:
+#             self.plot_axis_isoq.remove()
+#             self.plot_axis_isoq = None
+
+#         if not (self.plotModelData and self.plotIsoQLines):
+#             return
+
+#         self.plot_axis_isoq = self.plot_axis_scatter.twinx()
+
+#         Hc_mm = self._char_height_m() * 1000.0
+#         depth_list = [Hc_mm * r for r in self.config.depth_proportions]
+
+#         n = max(1, int(self.noOfIsoQLines))
+#         if n == 1:
+#             iso_values = [self.isoQLBound]
+#         else:
+#             step = (self.isoQUBound - self.isoQLBound) / (n - 1)
+#             iso_values = [self.isoQLBound + i * step for i in range(n)]
+
+#         x_max = self.axis_limits['x_max']
+
+#         for aValue in iso_values:
+#             Iso_x, Iso_y = [], []
+
+#             for depth in depth_list:
+#                 A = self._section_AP(depth / 1000.0)[0]
+#                 if A is None or A <= 0:
+#                     continue
+
+#                 if self.plotVelocityScattergraph:
+#                     # plotting velocity on X; aValue interpreted as target flow (L/s)
+#                     V = (aValue / 1000.0) / A  # m/s
+#                     x = V
+#                 else:
+#                     # plotting flow on X; aValue interpreted as target velocity (m/s)
+#                     Q = aValue * A * 1000.0  # L/s
+#                     x = Q
+
+#                 Iso_x.append(x)
+#                 Iso_y.append(depth)
+
+#             # Optional right-edge anchor (depth at A = Q/V for velocity mode)
+#             if Iso_x and self.plotVelocityScattergraph:
+#                 try:
+#                     A_anchor = (aValue / 1000.0) / max(x_max, 1e-12)
+#                     y_anchor = self._depth_from_area(A_anchor)
+#                     if y_anchor is not None:
+#                         Iso_x.insert(0, x_max)
+#                         Iso_y.insert(0, y_anchor)
+#                 except Exception:
+#                     pass
+
+#             if not Iso_x:
+#                 continue
+
+#             line = self.plot_axis_isoq.plot(
+#                 Iso_x, Iso_y,
+#                 linewidth=1,
+#                 linestyle="dashdot",
+#                 color="forestgreen",
+#                 label=(f"{aValue:.3g} l/s" if self.plotVelocityScattergraph else f"{aValue:.3g} m/s"),
+#             )[0]
+
+#             # Label near right side
+#             try:
+#                 xmin, xmax = self.plot_axis_isoq.get_xlim()
+#                 target_x = xmin + 0.9 * (xmax - xmin)
+#                 k = min(range(len(Iso_x)), key=lambda k: abs(Iso_x[k] - target_x))
+#                 self.plot_axis_isoq.text(Iso_x[k], Iso_y[k], line.get_label(),
+#                         bbox=dict(boxstyle="round", facecolor="white", alpha=0.5))
+#             except Exception:
+#                 pass
+
+#         self.plot_axis_isoq.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+#         self.plot_axis_isoq.axes.yaxis.set_visible(False)
+
+#     # ------------------------
+#     # Legacy helpers now shape-aware wrappers
+#     # ------------------------
+#     def flowAreaByDepth(self, pipeDiaInMM: int, flowDepthInMM: int):
+#         return self._section_AP(flowDepthInMM / 1000.0)[0]
+
+#     def flowDepthByArea(self, pipeDiaInMM: int, flowAreaInM2: float):
+#         d_mm = self._depth_from_area(flowAreaInM2)
+#         return int(d_mm) if d_mm is not None else None
+
+#     # ------------------------
+#     # Canvas & interactivity
+#     # ------------------------
+#     def updateCanvas(self):
+#         self.main_window_plot_widget.event_connections.append(
+#             self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self.onPick)
+#         )
+#         self.main_window_plot_widget.showToolbar(not self.isBlank)
+#         self.main_window_plot_widget.toolbar.lockNavigation(False)
+#         self._ensure_hover_support()
+
+#     def onPick(self, event):
+#         legline = event.artist
+#         origline = self.cScatterLegendLines[legline]
+#         vis = not origline.get_visible()
+#         origline.set_visible(vis)
+#         if vis:
+#             legline.set_alpha(1.0)
+#         else:
+#             legline.set_alpha(0.2)
+#         self.main_window_plot_widget.figure.canvas.draw()
+
+#     def _ensure_hover_support(self):
+#         if self._hover_annot is None and self.plot_axis_scatter is not None:
+#             self._hover_annot = self.plot_axis_scatter.annotate(
+#                 "", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
+#                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8),
+#                 arrowprops=dict(arrowstyle="->", shrinkA=0, shrinkB=0)
+#             )
+#             self._hover_annot.set_zorder(1000)
+#             self._hover_annot.set_visible(False)
+
+#         canvas = self.main_window_plot_widget.figure.canvas
+#         if self.labelOnHover and self._hover_cid is None:
+#             self._hover_cid = canvas.mpl_connect("motion_notify_event", self._on_hover_motion)
+#         elif (not self.labelOnHover) and self._hover_cid is not None:
+#             try:
+#                 canvas.mpl_disconnect(self._hover_cid)
+#             finally:
+#                 self._hover_cid = None
+#             if self._hover_annot is not None:
+#                 self._hover_annot.set_visible(False)
+#                 canvas.draw_idle()
+
+#     def _on_hover_motion(self, event):
+#         if self.plot_axis_scatter is None:
+#             return
+
+#         allowed_axes = [ax for ax in (
+#             self.plot_axis_scatter,
+#             self.plot_axis_cbw,
+#             self.plot_axis_isoq,
+#             self.plot_axis_pipe_profile
+#         ) if ax is not None]
+
+#         if event.inaxes not in allowed_axes:
+#             if self._hover_annot is not None and self._hover_annot.get_visible():
+#                 self._hover_annot.set_visible(False)
+#                 event.canvas.draw_idle()
+#             return
+
+#         if not self.cScatterLines:
+#             return
+
+#         for coll in self.cScatterLines:
+#             if not isinstance(coll, collections.PathCollection):
+#                 continue
+
+#             contains, info = coll.contains(event)
+#             if not contains or len(info.get("ind", [])) == 0:
+#                 continue
+
+#             idx = info["ind"][0]
+
+#             meta = getattr(coll, "_hover_meta", None)
+#             if meta is not None:
+#                 x_val = meta["x"][idx]
+#                 y_val = meta["y"][idx]
+#                 label = meta.get("label", "")
+#                 vel = meta.get("vel", None)
+#                 flow = meta.get("flow", None)
+#                 date_arr = meta.get("dates", None)
+#                 date_str = f"\n{date_arr[idx]}" if (date_arr is not None and idx < len(date_arr)) else ""
+#             else:
+#                 offsets = coll.get_offsets()
+#                 x_val, y_val = offsets[idx]
+#                 label = coll.get("label", "")
+#                 vel = None
+#                 flow = None
+#                 date_str = ""
+
+#             if vel is None or flow is None:
+#                 if self.plotVelocityScattergraph:
+#                     vel_str = f"{x_val:.3g} m/s"
+#                     flow_str = "—"
+#                 else:
+#                     flow_str = f"{x_val:.3g} l/s"
+#                     vel_str = "—"
+#             else:
+#                 vel_str = f"{vel[idx]:.3g} m/s"
+#                 flow_str = f"{flow[idx]:.3g} l/s"
+
+#             txt = f"{label}\nFlow: {flow_str}\nVelocity: {vel_str}\nDepth: {y_val:.0f} mm{date_str}"
+
+#             self._hover_annot.xy = (x_val, y_val)
+#             self._hover_annot.set_text(txt)
+#             self._hover_annot.set_visible(True)
+#             event.canvas.draw_idle()
+#             return
+
+#         if self._hover_annot is not None and self._hover_annot.get_visible():
+#             self._hover_annot.set_visible(False)
+#             event.canvas.draw_idle()
+
+
+
+@dataclass
+class AxisBox:
+    x_min: float = math.inf
+    x_max: float = -math.inf
+    y_min: float = math.inf
+    y_max: float = -math.inf
+
+    def include_points(self, x, y):
+        if x is None or y is None: return
+        if len(x) == 0 or len(y) == 0: return
+        x = np.asarray(x); y = np.asarray(y)
+        # guard against all-nan arrays
+        if np.all(np.isnan(x)) or np.all(np.isnan(y)): return
+        self.x_min = float(min(self.x_min, np.nanmin(x)))
+        self.x_max = float(max(self.x_max, np.nanmax(x)))
+        self.y_min = float(min(self.y_min, np.nanmin(y)))
+        self.y_max = float(max(self.y_max, np.nanmax(y)))
+
+    def is_valid(self):
+        return (self.x_min < self.x_max) and (self.y_min < self.y_max)
+
+
+# class graphScatter:
+#     xBufferFactor: float = 1.25
+#     yBufferFactor: float = 1.5
+#     pipeExag: float = 0.1
+
+#     def __init__(self, mw_pw: Optional["PlotWidget"] = None):
+
+#         self.main_window_plot_widget: "PlotWidget" = mw_pw
+#         self.config = scatterGraphConfig()
+#         self._initialize_attributes()
+#         self._initialize_plot_options()
+#         getBlankFigure(self.main_window_plot_widget)
+#         self.isBlank: bool = True
+
+#         self.CBW_depth: list[float] = []
+#         self.CBW_flow: list[float] = []
+#         self.CBW_velocity: list[float] = []
+#         self.pipeOutStation: float = 0
+#         self.axisRatio: float = 1
+
+#         self.cScatterLegendLines: Optional[list[lines.Line2D]] = None
+#         self.cScatterLines: Optional[list[Union[lines.Line2D, collections.PathCollection]]] = None
+
+#     # ------------------------
+#     # Initialization
+#     # ------------------------
+#     def _initialize_attributes(self):
+#         self.is_blank = True
+#         self.plotted_events = plottedSurveyEvents()
+#         self.plotVelocityScattergraph: bool = True
+#         self._plot_flow_monitor: Optional["flowMonitor"] = None
+
+#         # Plot axes
+#         self.plot_axis_scatter: Optional["axes.Axes"] = None
+#         self.plot_axis_cbw: Optional["axes.Axes"] = None
+#         self.plot_axis_isoq: Optional["axes.Axes"] = None
+#         self.plot_axis_pipe_profile: Optional["axes.Axes"] = None
+
+#         # Data storage
+#         self.cbw_data = {"depth": [], "flow": [], "velocity": []}
+
+#         # Axis limits
+#         self.axis_limits = {
+#             "x_min": 0.0, "x_max": 0.0,
+#             "y_min": 0.0, "y_max": 0.0,
+#             "plot_x_min": 0.0, "plot_x_max": 0.0
+#         }
+
+#         # Pipe stations
+#         self.pipe_stations = {"in": 0, "out": 0}
+#         self.axis_ratio = 1
+#         self.pipe_exag = 0.1
+
+#         # Legend
+#         self.scatter_legend_lines = None
+#         self.scatter_lines = None
+
+#         self.useOriginal = True
+
+#         # Hover support
+#         self._hover_cid = None
+#         self._hover_annot = None
+
+#         # --- NEW: resize hook id
+#         self._resize_cid = None
+
+#     def _initialize_plot_options(self):
+#         self.plotFPData: bool = True
+#         self.ignoreDataAboveSoffit: bool = False
+#         self.ignoreZeros: bool = False
+#         self.labelOnHover: bool = False
+#         self.plotModelData: bool = False
+#         self.showPipeProfile: bool = True
+#         self.plotCBWLine: bool = True
+#         self.plotIsoQLines: bool = True
+#         self.noOfIsoQLines: float = 2
+#         self.isoQLBound: float = 1
+#         self.isoQUBound: float = 10
+
+#     # ------------------------
+#     # Shape helpers (unchanged)
+#     # ------------------------
+#     def _shape(self) -> str:
+#         try:
+#             shp = self._plot_flow_monitor.modelDataPipeShape
+#         except Exception:
+#             shp = "CIRC"
+#         return (shp or "CIRC").upper()
+
+#     def _dims_m(self):
+#         shp = self._shape()
+#         if shp == "RECT":
+#             B = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0)) / 1000.0
+#             H = float(getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0.0)) / 1000.0
+#             return {"shape": "RECT", "B": B, "H": H}
+#         else:
+#             D = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0)) / 1000.0
+#             return {"shape": "CIRC", "D": D}
+
+#     def _dims_mm(self):
+#         shp = self._shape()
+#         if shp == "RECT":
+#             B = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0))
+#             H = float(getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0.0))
+#             return {"shape": "RECT", "B": B, "H": H}
+#         else:
+#             D = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0))
+#             return {"shape": "CIRC", "D": D}
+
+#     def _section_AP(self, depth_m: float):
+#         d = self._dims_m()
+#         if d["shape"] == "RECT":
+#             B, H = d["B"], d["H"]
+#             h = max(0.0, min(depth_m, H))
+#             if h <= 0.0:
+#                 return 0.0, 0.0
+#             A = B * h
+#             P = B + 2.0 * h
+#             if depth_m >= H:
+#                 A = B * H
+#                 P = 2.0 * (B + H)
+#             return A, P
+#         else:
+#             D = d["D"]
+#             h = max(0.0, min(depth_m, D))
+#             if h <= 0.0:
+#                 return 0.0, 0.0
+#             if h < D:
+#                 theta = 2.0 * math.acos(1.0 - 2.0 * h / D)
+#                 A = (D * D / 8.0) * (theta - math.sin(theta))
+#                 P = (theta * D) / 2.0
+#             else:
+#                 A = math.pi * (D ** 2) / 4.0
+#                 P = math.pi * D
+#             return A, P
+
+#     def _char_height_m(self) -> float:
+#         d = self._dims_m()
+#         return d.get("D", d.get("H", 0.0))
+
+#     def _char_half_width_m(self) -> float:
+#         d = self._dims_m()
+#         if d["shape"] == "RECT":
+#             return d["B"] / 2.0
+#         return d["D"] / 2.0
+
+#     def _char_height_mm(self) -> float:
+#         d = self._dims_mm()
+#         return d.get("D", d.get("H", 0.0))
+
+#     def _char_half_width_mm(self) -> float:
+#         d = self._dims_mm()
+#         if d["shape"] == "RECT":
+#             return d["B"] / 2.0
+#         return d["D"] / 2.0
+
+#     def _depth_from_area(self, target_A: float, *, tol_mm: float = 0.5) -> Optional[float]:
+#         Hc = self._char_height_m()
+#         if Hc <= 0.0 or target_A <= 0.0:
+#             return 0.0
+#         lo, hi = 0.0, Hc
+#         for _ in range(40):
+#             mid = 0.5 * (lo + hi)
+#             A, _ = self._section_AP(mid)
+#             if abs(A - target_A) <= (tol_mm / 1000.0) * max(1.0, Hc):
+#                 return mid * 1000.0
+#             if A < target_A:
+#                 lo = mid
+#             else:
+#                 hi = mid
+#         A_mid, _ = self._section_AP(0.5 * (lo + hi))
+#         if abs(A_mid - target_A) < 1e-6:
+#             return 0.5 * (lo + hi) * 1000.0
+#         return None
+
+#     # ------------------------
+#     # External properties
+#     # ------------------------
+#     @property
+#     def plot_flow_monitor(self) -> Optional["flowMonitor"]:
+#         return self._plot_flow_monitor
+
+#     @plot_flow_monitor.setter
+#     def plot_flow_monitor(self, fm: "flowMonitor"):
+#         self._plot_flow_monitor = fm
+#         if fm and self.plotModelData:
+#             self.plotModelData = fm.hasModelData
+
+#     # ------------------------
+#     # Public API  (CHANGED: two-pass)
+#     # ------------------------
+#     def update_plot(self):
+
+#         self.clearFigure()
+#         if self._plot_flow_monitor is None:
+#             getBlankFigure(self.main_window_plot_widget)
+#             self.isBlank = True
+#             self._ensure_resize_handler()  # NEW
+#             self.updateCanvas()
+#             return
+
+#         # ----- PASS A: gather data extents (NO plotting, NO limits) -----------
+#         box = AxisBox()
+
+#         # Prepare filtered scatter arrays (re-uses your logic)
+#         scat_x, scat_y, events_payload, vel_all, flow_all, dat_all = self._prepare_scatter_arrays()  # NEW
+#         if scat_x is not None and scat_y is not None:
+#             box.include_points(scat_x, scat_y)
+#         for ev in events_payload:
+#             box.include_points(ev["x"], ev["y"])
+
+#         # CBW arrays (compute only; do not plot yet)
+#         cbw_ok = False
+#         if self.plotModelData and self.plotCBWLine:
+#             cbw_ok = self._compute_cbw_values_alt()
+#             if cbw_ok:
+#                 cbw_x = self.CBW_velocity if self.plotVelocityScattergraph else self.CBW_flow
+#                 cbw_y = self.CBW_depth
+#                 box.include_points(cbw_x, cbw_y)
+
+#         if self.showPipeProfile and self.plotModelData:
+#             px0, px1, py0, py1 = self._preview_pipe_profile_extents(box) or (None,)*4
+#             if px0 is not None:
+#                 box.x_min = min(box.x_min, px0)
+#                 box.x_max = max(box.x_max, px1)
+#                 box.y_min = min(box.y_min, py0)
+#                 box.y_max = max(box.y_max, py1)
+        
+#         # Include iso-line X/Y extents (optional but recommended so labels/lines don’t clip)
+#         iso_ext = self._preview_iso_extents()
+#         if iso_ext:
+#             ix0, ix1, iy0, iy1 = iso_ext
+#             if ix0 is not None and ix1 is not None:
+#                 box.x_min = min(box.x_min, ix0)
+#                 box.x_max = max(box.x_max, ix1)
+#             box.y_min = min(box.y_min, iy0)
+#             box.y_max = max(box.y_max, iy1)
+
+#         # Right before finalising limits, if box is not valid along Y, seed with pipe height
+#         if not (box.y_min < box.y_max):
+#             Hc_mm = float(self._char_height_mm())
+#             if Hc_mm > 0:
+#                 box.y_min, box.y_max = 0.0, Hc_mm
+                
+#         # Finalise limits & axis ratio from data + figure size
+#         limits = self._finalise_limits(box)  # NEW
+#         print("estimated limits:", limits)
+#         self.axis_limits.update(limits)
+#         self.axisRatio = limits["axisRatio"]
+
+#         # ----- PASS B: plot everything; then apply SAME limits everywhere ------
+#         self.plot_axis_scatter = self.main_window_plot_widget.figure.subplots(1)
+
+#         # Scatter (actual plotting)
+#         self._plot_scatter_from_arrays(  # NEW
+#             scat_x, scat_y, events_payload,
+#             vel_all=vel_all, flow_all=flow_all, dat_all=dat_all
+#         )
+
+#         # CBW overlay (plot only; no limit math)
+#         if cbw_ok:
+#             self.plot_axis_cbw = self.plot_axis_scatter.twinx()
+#             self._plot_cbw_line(self.plot_axis_cbw)  # NEW
+
+#         # Pipe profile (uses precomputed axisRatio; no limit math)
+#         if self.plotModelData and self.showPipeProfile and (self.plotFPData or (cbw_ok and self.plotCBWLine)):
+#             self.plot_axis_pipe_profile = self.plot_axis_scatter.twinx()
+#             self._draw_pipe_profile(self.plot_axis_pipe_profile)  # NEW
+
+#         # Iso-Q / Iso-V overlay (your method doesn’t change limits; keep it)
+#         if self.plotModelData and self.plotIsoQLines:
+#             self.plot_axis_isoq = self.plot_axis_scatter.twinx()
+#             self.updateIsoLines_alt()  # unchanged; uses self.axis_limits for ylim
+
+#         # Apply identical limits to all axes
+#         for ax in (self.plot_axis_scatter, self.plot_axis_cbw, self.plot_axis_isoq, self.plot_axis_pipe_profile):
+#             if ax is None: continue
+#             ax.set_xlim(self.axis_limits['plot_x_min'], self.axis_limits['plot_x_max'])
+#             ax.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+#             if ax is not self.plot_axis_scatter:
+#                 ax.axes.yaxis.set_visible(False)
+        
+#         print("actual limits xmin,xmax", self.plot_axis_scatter.get_xlim())
+
+#         self.main_window_plot_widget.figure.subplots_adjust(
+#             left=0.05, right=0.95, bottom=0.05, top=0.95
+#         )
+#         self.isBlank = False
+#         self._ensure_resize_handler()  # NEW
+#         self.updateCanvas()
+
+#     def clearFigure(self):
+#         self.main_window_plot_widget.figure.clear()
+
+#         if self.plot_axis_scatter is not None:
+#             self.plot_axis_scatter.clear()
+#             self.plot_axis_scatter = None
+#         if self.plot_axis_cbw is not None:
+#             self.plot_axis_cbw.clear()
+#             self.plot_axis_cbw = None
+#         if self.plot_axis_isoq is not None:
+#             self.plot_axis_isoq.clear()
+#             self.plot_axis_isoq = None
+#         if self.plot_axis_pipe_profile is not None:
+#             self.plot_axis_pipe_profile.clear()
+#             self.plot_axis_pipe_profile = None
+
+#         self.axis_limits = {
+#             "x_min": 0.0, "x_max": 0.0,
+#             "y_min": 0.0, "y_max": 0.0,
+#             "plot_x_min": 0.0, "plot_x_max": 0.0
+#         }
+
+#         # teardown hover
+#         if self._hover_annot is not None:
+#             try:
+#                 self._hover_annot.remove()
+#             except Exception:
+#                 pass
+#             self._hover_annot = None
+
+#         if self._hover_cid is not None:
+#             try:
+#                 self.main_window_plot_widget.figure.canvas.mpl_disconnect(self._hover_cid)
+#             except Exception:
+#                 pass
+#             self._hover_cid = None
+
+#     # ------------------------
+#     # Scatter points (SPLIT: prepare vs plot)
+#     # ------------------------
+
+#     # --- NEW: data prep only; no plotting, no limit reads
+#     def _prepare_scatter_arrays(self):
+#         if self._plot_flow_monitor is None:
+#             return None, None, [], None, None, None
+
+#         dates = self._plot_flow_monitor.dateRange
+#         depth = self._plot_flow_monitor.depthDataRange
+
+#         if self.plotVelocityScattergraph:
+#             plotYalues = self._plot_flow_monitor.velocityDataRange
+#         else:
+#             plotYalues = self._plot_flow_monitor.flowDataRange
+
+#         tobedeleted = []
+
+#         # Shape-aware soffit filter
+#         if self.ignoreDataAboveSoffit and self._plot_flow_monitor.hasModelData:
+#             soffit_mm = None
+#             if self._shape() == "RECT":
+#                 soffit_mm = float(getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0.0))
+#             else:
+#                 soffit_mm = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0))
+#             if soffit_mm and soffit_mm > 0:
+#                 for i in reversed(range(len(depth))):
+#                     if depth[i] > soffit_mm:
+#                         tobedeleted.append(i)
+
+#         if self.ignoreZeros:
+#             for i in range(len(plotYalues)):
+#                 try:
+#                     if float(plotYalues[i]) == 0.0:
+#                         tobedeleted.append(i)
+#                 except Exception:
+#                     pass
+
+#         if len(tobedeleted) > 0:
+#             dates = np.delete(np.array(dates), np.array(tobedeleted))
+#             depth = np.delete(np.array(depth), np.array(tobedeleted))
+#             plotYalues = np.delete(np.array(plotYalues), np.array(tobedeleted))
+
+#         # Build main series
+#         if self.plotVelocityScattergraph:
+#             fp_x = np.asarray(self._plot_flow_monitor.velocityDataRange)
+#         else:
+#             fp_x = np.asarray(self._plot_flow_monitor.flowDataRange)
+
+#         if len(tobedeleted) > 0:
+#             fp_x = np.delete(fp_x, np.array(tobedeleted))
+
+#         fp_y = np.asarray(depth)
+#         dat_all = np.asarray(dates) if dates is not None else None
+
+#         # Keep vel/flow for hover meta
+#         if len(tobedeleted) > 0:
+#             vel_all = np.delete(np.array(self._plot_flow_monitor.velocityDataRange), np.array(tobedeleted))
+#             flow_all = np.delete(np.array(self._plot_flow_monitor.flowDataRange), np.array(tobedeleted))
+#         else:
+#             vel_all = np.asarray(self._plot_flow_monitor.velocityDataRange)
+#             flow_all = np.asarray(self._plot_flow_monitor.flowDataRange)
+
+#         # Event subsets for plotting later
+#         events_payload = []
+#         if len(self.plotted_events.plotEvents) > 0:
+#             for se in self.plotted_events.plotEvents.values():
+#                 idx_del = []
+#                 for i in reversed(range(len(dates))):
+#                     if dates[i] < se.eventStart or dates[i] > se.eventEnd:
+#                         idx_del.append(i)
+#                 if len(idx_del) > 0:
+#                     ev_x = np.delete(plotYalues, idx_del)
+#                     ev_y = np.delete(depth, idx_del)
+#                     events_payload.append({"name": se.eventName, "x": ev_x, "y": ev_y})
+
+#         return fp_x, fp_y, events_payload, vel_all, flow_all, dat_all
+
+#     # --- NEW: actual plotting; no limit math here
+#     def _plot_scatter_from_arrays(self, fp_x, fp_y, events_payload, *, vel_all, flow_all, dat_all):
+#         self.cScatterLines = []
+#         self.config.reset_colors()
+
+#         if self.plotFPData and fp_x is not None and fp_y is not None:
+#             cLine = self.plot_axis_scatter.scatter(
+#                 fp_x, fp_y,
+#                 s=5, label="Full Period", color="gray",
+#                 picker=5
+#             )
+#             cLine._hover_meta = {
+#                 "label": "Full Period",
+#                 "x": fp_x,
+#                 "y": fp_y,
+#                 "vel": vel_all,
+#                 "flow": flow_all,
+#                 "dates": dat_all if dat_all is not None else None,
+#             }
+#             self.cScatterLines.append(cLine)
+
+#         if events_payload:
+#             for ev in events_payload:
+#                 cLine = self.plot_axis_scatter.scatter(
+#                     ev["x"], ev["y"],
+#                     s=5,
+#                     label=ev["name"],
+#                     color=next(self.config.plot_colors),
+#                 )
+#                 self.cScatterLines.append(cLine)
+
+#         if self.plotVelocityScattergraph:
+#             self.plot_axis_scatter.set_xlabel('Velocity (m/s)')
+#             self.plot_axis_scatter.set_title(f'Velocity Scattergraph: {self._plot_flow_monitor.monitorName}', loc='left', fontsize=16)
+#         else:
+#             self.plot_axis_scatter.set_xlabel('Flow (l/s)')
+#             self.plot_axis_scatter.set_title(f'Flow Scattergraph: {self._plot_flow_monitor.monitorName}', loc='left', fontsize=16)
+
+#         self.plot_axis_scatter.set_ylabel('Depth (mm)')
+#         self.plot_axis_scatter.legend()
+#         self._ensure_hover_support()
+#         print("scatter xmin,xmax", self.plot_axis_scatter.get_xlim())
+
+#     # ------------------------
+#     # Colebrook-White overlay
+#     # ------------------------
+#     # NOTE: _compute_cbw_values_alt is unchanged and still used.
+
+#     # --- NEW: plot-only wrapper that does not mutate limits
+#     def _plot_cbw_line(self, ax_cbw):
+#         if not (self.plotModelData and self.plotCBWLine):
+#             return
+#         if self._plot_flow_monitor is None:
+#             return
+#         if not (self.CBW_depth and (self.CBW_velocity or self.CBW_flow)):
+#             return
+
+#         plotXValues = self.CBW_velocity if self.plotVelocityScattergraph else self.CBW_flow
+#         ax_cbw.plot(
+#             plotXValues,
+#             self.CBW_depth,
+#             linewidth=0.75,
+#             linestyle="dotted",
+#             color="black",
+#             label="CBW",
+#         )
+#         print("cbw xmin,xmax", ax_cbw.get_xlim())
+
+#     def _calculate_gradient(self) -> float:
+#         if self._plot_flow_monitor is None:
+#             return 0.00001
+#         if (self._plot_flow_monitor.modelDataPipeUSInvert > 0 and self._plot_flow_monitor.modelDataPipeDSInvert > 0):
+#             gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert -
+#                         self._plot_flow_monitor.modelDataPipeDSInvert) /
+#                         self._plot_flow_monitor.modelDataPipeLength)
+#             return max(gradient, 0.00001)
+#         else:
+#             return 0.00001
+
+#     def _compute_cbw_values_alt(self) -> bool:
+#         # (unchanged, omitted here for brevity in this snippet)
+#         # keep your existing implementation exactly as-is
+#         ...
+#         return True
+
+#     # ------------------------
+#     # Pipe profile overlay (CHANGED: with limit math)
+#     # ------------------------
+#     def _draw_pipe_profile(self, ax):
+#         # Uses precomputed self.axisRatio and self.axis_limits
+#         pipeInStation = self.axis_limits['x_min']
+#         self.pipeOutStation = self.axis_limits['x_max']
+
+#         half_span_x = (self._char_half_width_mm() / max(self.axisRatio, 1e-12)) * self.pipeExag
+#         Hc_mm = self._char_height_mm()
+
+#         if self._shape() == "RECT":
+#             pipeProfileX = []
+#             pipeProfileY = []
+
+#             pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#             pipeProfileY.append(self._char_height_mm())
+#             pipeProfileX.append(((-1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#             pipeProfileY.append(0)
+#             pipeProfileX.append(((-1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#             pipeProfileY.append(0)
+#             pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#             pipeProfileY.append(self._char_height_mm())
+#             pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#             pipeProfileY.append(self._char_height_mm())
+
+#             ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+#             pipeProfileX.append(((-1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#             pipeProfileY.append(0)
+#             pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#             pipeProfileY.append(0)
+#             pipeProfileX.append(self.pipeOutStation)
+#             pipeProfileY.append(self._char_height_mm() / 2)
+#             ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+#             pipeProfileX.append(((1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#             pipeProfileY.append(self._char_height_mm())
+#             pipeProfileX.append(((-1 * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#             pipeProfileY.append(self._char_height_mm())
+#             pipeProfileX.append(pipeInStation)
+#             pipeProfileY.append(self._char_height_mm() / 2)
+#             ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+
+#             pipeProfileX = []
+#             pipeProfileY = []
+#             pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * 0) + pipeInStation)
+#             pipeProfileY.append(0)
+#             pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * -1) + pipeInStation)
+#             pipeProfileY.append(0)
+#             pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * -1) + pipeInStation)
+#             pipeProfileY.append(self._char_height_mm())
+#             pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * 0) + pipeInStation)
+#             pipeProfileY.append(self._char_height_mm())
+#             ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+#             return
+
+#         # CIRC (unchanged math, just using ax passed in)
+#         pipeProfileX = []
+#         pipeProfileY = []
+#         for i in range(0, len(self.config.pipe_profile_depth_prop)):
+#             pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#             pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+
+#         for i in range(len(self.config.pipe_profile_depth_prop) - 1, -1, -1):
+#             pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#             pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+
+#         pipeProfileX.append(self.pipeOutStation)
+#         pipeProfileY.append(0)
+#         ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+
+#         pipeProfileX = []
+#         pipeProfileY = []
+#         for i in range(0, int(len(self.config.pipe_profile_depth_prop) / 2) + 1):
+#             pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
+#             pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+#         ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+
+#         pipeProfileX = []
+#         pipeProfileY = []
+#         for i in range(len(self.config.pipe_profile_depth_prop) - 1, int(len(self.config.pipe_profile_depth_prop) / 2) - 1, -1):
+#             pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * (self._char_half_width_mm() / self.axisRatio)) * self.pipeExag) + pipeInStation)
+#             pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+#         ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+
+#         pipeProfileX = []
+#         pipeProfileY = []
+#         for i in range(0, len(self.config.pipe_profile_depth_prop)):
+#             pipeProfileX.append(((self._char_half_width_mm() / self.axisRatio) * math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180))) + pipeInStation)
+#             pipeProfileY.append(self._char_half_width_mm() + (self._char_half_width_mm() * (math.cos(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180)))))
+#         ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+#         print("pipe profile xmin,xmax", ax.get_xlim())
+
+#     def _buffered_data_limits_from_box(self, box):
+#         """Return buffered DATA limits (no pipe padding): (x_min, x_max, y_min, y_max)."""
+#         if not (box and box.is_valid()):
+#             # fallback—use a 0..1 window so we can still compute axis ratio
+#             return 0.0, 1.0, 0.0, 1.0
+
+#         x_range = max(1e-12, box.x_max - box.x_min)
+#         y_range = max(1e-12, box.y_max - box.y_min)
+#         x_pad = (self.xBufferFactor - 1.0) * x_range * 0.5
+#         y_pad = (self.yBufferFactor - 1.0) * y_range * 0.5
+
+#         x_min = box.x_min - x_pad
+#         x_max = box.x_max + x_pad
+#         y_min = box.y_min - y_pad
+#         y_max = box.y_max + y_pad
+#         return x_min, x_max, y_min, y_max
+
+#     def _axis_ratio_from_limits(self, x_min, x_max, y_min, y_max):
+#         """axisRatio = (Y/X) scaled by figure aspect; same definition you use elsewhere."""
+#         fig_w, fig_h = self.main_window_plot_widget.figure.get_size_inches()
+#         fig_aspect = fig_h / max(fig_w, 1e-12)
+#         x_rng = max(x_max - x_min, 1e-12)
+#         y_rng = max(y_max - y_min, 1e-12)
+#         return (y_rng / x_rng) / max(fig_aspect, 1e-12)
+
+#     def _preview_pipe_profile_extents(self, box):
+#         """
+#         Extents needed by the pipe-profile drawing, including the inner cross-section
+#         at the IN station (the bit you draw without pipeExag). We intentionally do NOT
+#         include exag padding here to avoid double-counting; keep adding that once in
+#         your final-limits step.
+#         """
+#         Hc_mm = float(self._char_height_mm())
+#         if Hc_mm <= 0:
+#             return None
+
+#         # 1) Buffered DATA limits (scatter/CBW/iso only)
+#         x_min_d, x_max_d, y_min_d, y_max_d = self._buffered_data_limits_from_box(box)
+
+#         # 2) axisRatio from the DATA window (not from any pipe padding)
+#         axisRatio = self._axis_ratio_from_limits(x_min_d, x_max_d, y_min_d, y_max_d)
+#         axisRatio = max(axisRatio, 1e-12)
+
+#         # 3) Core half-width in X units for the inner cross-section at IN station
+#         rmm = float(self._char_half_width_mm())          # radius (CIRC) or B/2 (RECT) in mm
+#         x_off_core = rmm / axisRatio                     # NOTE: no * pipeExag here
+
+#         pipeInStation = x_min_d      # you set this when drawing
+#         pipeOutStation = x_max_d
+
+#         # 4) Build X extents contributed by the inner shape at IN station
+#         if self._shape() == "RECT":
+#             # Your RECT inner rectangle spans [IN - x_off_core, IN] in X
+#             inner_x_min = pipeInStation - x_off_core
+#             inner_x_max = pipeInStation
+#         else:
+#             # Your CIRC inner arc spans [IN - x_off_core, IN + x_off_core] in X
+#             inner_x_min = pipeInStation - x_off_core
+#             inner_x_max = pipeInStation + x_off_core
+
+#         # 5) Merge with DATA window; Y must cover the full section [0, H]
+#         x_min_p = min(x_min_d, inner_x_min)
+#         x_max_p = max(x_max_d, inner_x_max)
+#         y_min_p = min(y_min_d, 0.0)
+#         y_max_p = max(y_max_d, Hc_mm)
+
+#         print("preview_pipe_profile_extents:", (x_min_p, x_max_p))
+
+#         return (x_min_p, x_max_p, y_min_p, y_max_p)
+
+#     # ------------------------
+#     # Iso-Q / Iso-V overlay (kept as-is; no limit changes inside)
+#     # ------------------------
+#     def updateIsoLines_alt(self):
+#         if self.plot_axis_isoq is not None:
+#             self.plot_axis_isoq.remove()
+#             self.plot_axis_isoq = None
+
+#         if not (self.plotModelData and self.plotIsoQLines):
+#             return
+
+#         self.plot_axis_isoq = self.plot_axis_scatter.twinx()
+
+#         Hc_mm = self._char_height_m() * 1000.0
+#         depth_list = [Hc_mm * r for r in self.config.depth_proportions]
+
+#         n = max(1, int(self.noOfIsoQLines))
+#         if n == 1:
+#             iso_values = [self.isoQLBound]
+#         else:
+#             step = (self.isoQUBound - self.isoQLBound) / (n - 1)
+#             iso_values = [self.isoQLBound + i * step for i in range(n)]
+
+#         x_max = self.axis_limits['x_max']
+
+#         for aValue in iso_values:
+#             Iso_x, Iso_y = [], []
+
+#             for depth in depth_list:
+#                 A = self._section_AP(depth / 1000.0)[0]
+#                 if A is None or A <= 0:
+#                     continue
+
+#                 if self.plotVelocityScattergraph:
+#                     V = (aValue / 1000.0) / A  # m/s
+#                     x = V
+#                 else:
+#                     Q = aValue * A * 1000.0  # L/s
+#                     x = Q
+
+#                 Iso_x.append(x)
+#                 Iso_y.append(depth)
+
+#             if Iso_x and self.plotVelocityScattergraph:
+#                 try:
+#                     A_anchor = (aValue / 1000.0) / max(x_max, 1e-12)
+#                     y_anchor = self._depth_from_area(A_anchor)
+#                     if y_anchor is not None:
+#                         Iso_x.insert(0, x_max)
+#                         Iso_y.insert(0, y_anchor)
+#                 except Exception:
+#                     pass
+
+#             if not Iso_x:
+#                 continue
+
+#             line = self.plot_axis_isoq.plot(
+#                 Iso_x, Iso_y,
+#                 linewidth=1,
+#                 linestyle="dashdot",
+#                 color="forestgreen",
+#                 label=(f"{aValue:.3g} l/s" if self.plotVelocityScattergraph else f"{aValue:.3g} m/s"),
+#             )[0]
+
+#             try:
+#                 xmin, xmax = self.plot_axis_isoq.get_xlim()
+#                 target_x = xmin + 0.9 * (xmax - xmin)
+#                 k = min(range(len(Iso_x)), key=lambda k: abs(Iso_x[k] - target_x))
+#                 self.plot_axis_isoq.text(Iso_x[k], Iso_y[k], line.get_label(),
+#                         bbox=dict(boxstyle="round", facecolor="white", alpha=0.5))
+#             except Exception:
+#                 pass
+
+#         self.plot_axis_isoq.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+#         self.plot_axis_isoq.axes.yaxis.set_visible(False)
+
+#         print("isoQ xmin,xmax", self.plot_axis_isoq.get_xlim())
+
+#     def _preview_iso_extents(self):
+#         """
+#         Compute min/max X and Y that iso-lines would span, without plotting.
+#         Uses your existing config (depth_proportions, bounds, noOfIsoLines)
+#         and current scatter mode (velocity vs flow).
+#         Returns (x_min, x_max, y_min, y_max) or None if nothing valid.
+#         """
+#         if not (self.plotModelData and self.plotIsoQLines):
+#             return None
+
+#         Hc_m = self._char_height_m()
+#         if Hc_m <= 0:
+#             return None
+
+#         # Depths in mm for Y axis; we’ll ensure [0, Hc_mm]
+#         Hc_mm = Hc_m * 1000.0
+#         depth_list_mm = [Hc_mm * r for r in getattr(self.config, "depth_proportions", [0.0, 1.0])]
+#         if not depth_list_mm:
+#             depth_list_mm = [0.0, Hc_mm]
+
+#         # Iso values
+#         n = max(1, int(self.noOfIsoQLines))
+#         if n == 1:
+#             iso_values = [float(self.isoQLBound)]
+#         else:
+#             step = (float(self.isoQUBound) - float(self.isoQLBound)) / (n - 1)
+#             iso_values = [float(self.isoQLBound) + i * step for i in range(n)]
+
+#         xmins, xmaxs = [], []
+#         for val in iso_values:
+#             xs = []
+#             for dmm in depth_list_mm:
+#                 A = self._section_AP(dmm / 1000.0)[0]  # m²
+#                 if A is None or A <= 0:
+#                     continue
+#                 if self.plotVelocityScattergraph:
+#                     # X is velocity; interpret iso value as FLOW (L/s)
+#                     V = (val / 1000.0) / A  # m/s
+#                     xs.append(V)
+#                 else:
+#                     # X is flow; interpret iso value as VELOCITY (m/s)
+#                     Q = val * A * 1000.0  # L/s
+#                     xs.append(Q)
+#             if xs:
+#                 xmins.append(min(xs))
+#                 xmaxs.append(max(xs))
+
+#         if not xmins:
+#             return None
+
+#         return (min(xmins), max(xmaxs), 0.0, Hc_mm)
+    
+#     # ------------------------
+#     # Legacy helpers (kept)
+#     # ------------------------
+#     def flowAreaByDepth(self, pipeDiaInMM: int, flowDepthInMM: int):
+#         return self._section_AP(flowDepthInMM / 1000.0)[0]
+
+#     def flowDepthByArea(self, pipeDiaInMM: int, flowAreaInM2: float):
+#         d_mm = self._depth_from_area(flowAreaInM2)
+#         return int(d_mm) if d_mm is not None else None
+
+#     # ------------------------
+#     # Canvas & interactivity (unchanged + resize hook)
+#     # ------------------------
+#     def updateCanvas(self):
+#         self.main_window_plot_widget.event_connections.append(
+#             self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self.onPick)
+#         )
+#         self.main_window_plot_widget.showToolbar(not self.isBlank)
+#         self.main_window_plot_widget.toolbar.lockNavigation(False)
+#         self._ensure_hover_support()
+
+#     def onPick(self, event):
+#         legline = event.artist
+#         origline = self.cScatterLegendLines[legline]
+#         vis = not origline.get_visible()
+#         origline.set_visible(vis)
+#         if vis:
+#             legline.set_alpha(1.0)
+#         else:
+#             legline.set_alpha(0.2)
+#         self.main_window_plot_widget.figure.canvas.draw()
+
+#     def _ensure_hover_support(self):
+#         if self._hover_annot is None and self.plot_axis_scatter is not None:
+#             self._hover_annot = self.plot_axis_scatter.annotate(
+#                 "", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
+#                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8),
+#                 arrowprops=dict(arrowstyle="->", shrinkA=0, shrinkB=0)
+#             )
+#             self._hover_annot.set_zorder(1000)
+#             self._hover_annot.set_visible(False)
+
+#         canvas = self.main_window_plot_widget.figure.canvas
+#         if self.labelOnHover and self._hover_cid is None:
+#             self._hover_cid = canvas.mpl_connect("motion_notify_event", self._on_hover_motion)
+#         elif (not self.labelOnHover) and self._hover_cid is not None:
+#             try:
+#                 canvas.mpl_disconnect(self._hover_cid)
+#             finally:
+#                 self._hover_cid = None
+#             if self._hover_annot is not None:
+#                 self._hover_annot.set_visible(False)
+#                 canvas.draw_idle()
+
+#     def _on_hover_motion(self, event):
+#         if self.plot_axis_scatter is None:
+#             return
+
+#         allowed_axes = [ax for ax in (
+#             self.plot_axis_scatter,
+#             self.plot_axis_cbw,
+#             self.plot_axis_isoq,
+#             self.plot_axis_pipe_profile
+#         ) if ax is not None]
+
+#         if event.inaxes not in allowed_axes:
+#             if self._hover_annot is not None and self._hover_annot.get_visible():
+#                 self._hover_annot.set_visible(False)
+#                 event.canvas.draw_idle()
+#             return
+
+#         if not self.cScatterLines:
+#             return
+
+#         for coll in self.cScatterLines:
+#             if not isinstance(coll, collections.PathCollection):
+#                 continue
+
+#             contains, info = coll.contains(event)
+#             if not contains or len(info.get("ind", [])) == 0:
+#                 continue
+
+#             idx = info["ind"][0]
+
+#             meta = getattr(coll, "_hover_meta", None)
+#             if meta is not None:
+#                 x_val = meta["x"][idx]
+#                 y_val = meta["y"][idx]
+#                 label = meta.get("label", "")
+#                 vel = meta.get("vel", None)
+#                 flow = meta.get("flow", None)
+#                 date_arr = meta.get("dates", None)
+#                 date_str = f"\n{date_arr[idx]}" if (date_arr is not None and idx < len(date_arr)) else ""
+#             else:
+#                 offsets = coll.get_offsets()
+#                 x_val, y_val = offsets[idx]
+#                 label = coll.get("label", "")
+#                 vel = None
+#                 flow = None
+#                 date_str = ""
+
+#             if vel is None or flow is None:
+#                 if self.plotVelocityScattergraph:
+#                     vel_str = f"{x_val:.3g} m/s"
+#                     flow_str = "—"
+#                 else:
+#                     flow_str = f"{x_val:.3g} l/s"
+#                     vel_str = "—"
+#             else:
+#                 vel_str = f"{vel[idx]:.3g} m/s"
+#                 flow_str = f"{flow[idx]:.3g} l/s"
+
+#             txt = f"{label}\nFlow: {flow_str}\nVelocity: {vel_str}\nDepth: {y_val:.0f} mm{date_str}"
+
+#             self._hover_annot.xy = (x_val, y_val)
+#             self._hover_annot.set_text(txt)
+#             self._hover_annot.set_visible(True)
+#             event.canvas.draw_idle()
+#             return
+
+#         if self._hover_annot is not None and self._hover_annot.get_visible():
+#             self._hover_annot.set_visible(False)
+#             event.canvas.draw_idle()
+
+#     # ------------------------
+#     # --- NEW: limits finalisation & resize hook
+#     # ------------------------
+#     def _finalise_limits(self, box: AxisBox):
+#         # Fallback if nothing valid
+#         if not box.is_valid():
+#             return {
+#                 "x_min": 0.0, "x_max": 1.0,
+#                 "y_min": 0.0, "y_max": 1.0,
+#                 "plot_x_min": 0.0, "plot_x_max": 1.0,
+#                 "axisRatio": 1.0
+#             }
+
+#         # Data buffers
+#         x_range = max(1e-12, box.x_max - box.x_min)
+#         y_range = max(1e-12, box.y_max - box.y_min)
+#         x_pad = (self.xBufferFactor - 1.0) * x_range * 0.5
+#         y_pad = (self.yBufferFactor - 1.0) * y_range * 0.5
+
+#         x_min = box.x_min - x_pad
+#         x_max = box.x_max + x_pad
+#         y_min = box.y_min - y_pad
+#         y_max = box.y_max + y_pad
+
+#         # Aspect from figure size
+#         fig_w, fig_h = self.main_window_plot_widget.figure.get_size_inches()
+#         fig_aspect = fig_h / max(fig_w, 1e-12)
+#         axisRatio = ((y_max - y_min) / max(x_max - x_min, 1e-12)) / max(fig_aspect, 1e-12)
+
+#         # Convert pipe half-width (mm) to X units via axisRatio (your convention)
+#         half_span_mm = self._char_half_width_mm()
+#         x_offset = (half_span_mm / max(axisRatio, 1e-12)) * self.pipeExag
+
+#         plot_x_min = x_min - x_offset
+#         plot_x_max = x_max + x_offset  # symmetric padding (stable). Make asymmetric if you prefer.
+
+#         return {
+#             "x_min": x_min, "x_max": x_max,
+#             "y_min": y_min, "y_max": y_max,
+#             "plot_x_min": plot_x_min, "plot_x_max": plot_x_max,
+#             "axisRatio": axisRatio
+#         }
+
+#     def _ensure_resize_handler(self):
+#         if self._resize_cid is None and self.main_window_plot_widget is not None:
+#             canvas = self.main_window_plot_widget.figure.canvas
+#             self._resize_cid = canvas.mpl_connect("resize_event", lambda evt: self.update_plot())
+
+class graphScatter:
     xBufferFactor: float = 1.25
     yBufferFactor: float = 1.5
     pipeExag: float = 0.1
 
-    def __init__(self, mw_pw: PlotWidget = None):
+    def __init__(self, mw_pw: Optional["PlotWidget"] = None):
 
-        self.main_window_plot_widget: PlotWidget = mw_pw
+        self.main_window_plot_widget: "PlotWidget" = mw_pw
         self.config = scatterGraphConfig()
         self._initialize_attributes()
         self._initialize_plot_options()
         getBlankFigure(self.main_window_plot_widget)
         self.isBlank: bool = True
 
-        # self.__plotFM: flowMonitor = None
-        # self.plotAxisScatter: axes.Axes = None
-        # self.plot_axis_cbw: axes.Axes = None
-        # self.plotAxisIsoQ: axes.Axes = None
-        # self.plot_axis_pipe_profile: axes.Axes = None
-        # self.plottedEvents: plottedSurveyEvents = None
         self.CBW_depth: list[float] = []
         self.CBW_flow: list[float] = []
         self.CBW_velocity: list[float] = []
-        # self.pipeProfileX: list[float] = []
-        # self.pipeProfileY: list[float] = []
-        # self.pipeProfileDepthProp: list[float] = []
-        # self.xAxisMin: float = 0
-        # self.xAxisMax: float = 0
-        # self.yAxisMin: float = 0
-        # self.yAxisMax: float = 0
-        # self.plotXMin: float = 0
-        # self.plotXMax: float = 0
-        # self.pipeInStation: float = 0
         self.pipeOutStation: float = 0
         self.axisRatio: float = 1
 
-        self.cScatterLegendLines: list[lines.Line2D] = None
-        self.cScatterLines: list[lines.Line2D] = None
+        self.cScatterLegendLines: Optional[list[lines.Line2D]] = None
+        self.cScatterLines: Optional[list[Union[lines.Line2D, collections.PathCollection]]] = None
 
+    # ------------------------
+    # Initialization
+    # ------------------------
     def _initialize_attributes(self):
-        """Initialize all class attributes with default values"""
         self.is_blank = True
-        # self.plot_velocity_scattergraph = True
         self.plotted_events = plottedSurveyEvents()
         self.plotVelocityScattergraph: bool = True
-        # self.plottedEvents = plottedSurveyEvents()
-        self._plot_flow_monitor: flowMonitor = None
+        self._plot_flow_monitor: Optional["flowMonitor"] = None
 
         # Plot axes
-        self.plot_axis_scatter: axes.Axes = None
-        self.plot_axis_cbw: axes.Axes = None
-        self.plot_axis_isoq: axes.Axes = None
-        self.plot_axis_pipe_profile: axes.Axes = None
-
-        # Data storage
-        self.cbw_data = {"depth": [], "flow": [], "velocity": []}
-        # self.pipe_profile = {"x": [], "y": [], "depth_prop": []}
+        self.plot_axis_scatter: Optional["axes.Axes"] = None
+        self.plot_axis_cbw: Optional["axes.Axes"] = None
+        self.plot_axis_isoq: Optional["axes.Axes"] = None
+        self.plot_axis_pipe_profile: Optional["axes.Axes"] = None
 
         # Axis limits
         self.axis_limits = {
-            "x_min": 0, "x_max": 0, 
-            "y_min": 0, "y_max": 0,
-            "plot_x_min": 0, "plot_x_max": 0
+            "x_min": 0.0, "x_max": 0.0,
+            "y_min": 0.0, "y_max": 0.0,
+            "plot_x_min": 0.0, "plot_x_max": 0.0
         }
 
-        # Pipe stations
-        self.pipe_stations = {"in": 0, "out": 0}
-        self.axis_ratio = 1
-        self.pipe_exag = 0.1
+        # Anchors for pipe profile (NEW)
+        self._pipe_anchor_in: Optional[float] = None
+        self._pipe_anchor_out: Optional[float] = None
 
         # Legend
-        self.scatter_legend_lines = None
-        self.scatter_lines = None
+        self.cScatterLegendLines = None
+        self.cScatterLines = None
 
         self.useOriginal = True
 
+        # Hover support
+        self._hover_cid = None
+        self._hover_annot = None
+
+        # Resize hook id
+        self._resize_cid = None
+
     def _initialize_plot_options(self):
-        """Initialize plotting options with default values"""
         self.plotFPData: bool = True
         self.ignoreDataAboveSoffit: bool = False
         self.ignoreZeros: bool = False
@@ -1405,49 +3403,167 @@ class graphScatter:
         self.isoQLBound: float = 1
         self.isoQUBound: float = 10
 
-        # self.plot_options = {
-        #     "plot_fp_data": True,
-        #     "ignore_data_above_soffit": False,
-        #     "ignore_zeros": False,
-        #     "label_on_hover": False,
-        #     "plot_model_data": False,
-        #     "show_pipe_profile": True,
-        #     "plot_cbw_line": True,
-        #     "plot_iso_q_lines": True,
-        #     "iso_q_lines_count": 2,
-        #     "iso_q_lower_bound": 1,
-        #     "iso_q_upper_bound": 10
-        # }
+    # ------------------------
+    # Shape helpers (unchanged)
+    # ------------------------
+    def _shape(self) -> str:
+        try:
+            shp = self._plot_flow_monitor.modelDataPipeShape
+        except Exception:
+            shp = "CIRC"
+        return (shp or "CIRC").upper()
 
+    def _dims_m(self):
+        shp = self._shape()
+        if shp == "RECT":
+            B = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0)) / 1000.0
+            H = float(getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0.0)) / 1000.0
+            return {"shape": "RECT", "B": B, "H": H}
+        else:
+            D = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0)) / 1000.0
+            return {"shape": "CIRC", "D": D}
+
+    def _dims_mm(self):
+        shp = self._shape()
+        if shp == "RECT":
+            B = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0))
+            H = float(getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0.0))
+            return {"shape": "RECT", "B": B, "H": H}
+        else:
+            D = float(getattr(self._plot_flow_monitor, "modelDataPipeDia", 0.0))
+            return {"shape": "CIRC", "D": D}
+
+    def _section_AP(self, depth_m: float):
+        d = self._dims_m()
+        if d["shape"] == "RECT":
+            B, H = d["B"], d["H"]
+            h = max(0.0, min(depth_m, H))
+            if h <= 0.0:
+                return 0.0, 0.0
+            A = B * h
+            P = B + 2.0 * h
+            if depth_m >= H:
+                A = B * H
+                P = 2.0 * (B + H)
+            return A, P
+        else:
+            D = d["D"]
+            h = max(0.0, min(depth_m, D))
+            if h <= 0.0:
+                return 0.0, 0.0
+            if h < D:
+                theta = 2.0 * math.acos(1.0 - 2.0 * h / D)
+                A = (D * D / 8.0) * (theta - math.sin(theta))
+                P = (theta * D) / 2.0
+            else:
+                A = math.pi * (D ** 2) / 4.0
+                P = math.pi * D
+            return A, P
+
+    def _char_height_m(self) -> float:
+        d = self._dims_m()
+        return d.get("D", d.get("H", 0.0))
+
+    def _char_half_width_m(self) -> float:
+        d = self._dims_m()
+        if d["shape"] == "RECT":
+            return d["B"] / 2.0
+        return d["D"] / 2.0
+
+    def _char_height_mm(self) -> float:
+        d = self._dims_mm()
+        return d.get("D", d.get("H", 0.0))
+
+    def _char_half_width_mm(self) -> float:
+        d = self._dims_mm()
+        if d["shape"] == "RECT":
+            return d["B"] / 2.0
+        return d["D"] / 2.0
+
+    def _depth_from_area(self, target_A: float, *, tol_mm: float = 0.5) -> Optional[float]:
+        Hc = self._char_height_m()
+        if Hc <= 0.0 or target_A <= 0.0:
+            return 0.0
+        lo, hi = 0.0, Hc
+        for _ in range(40):
+            mid = 0.5 * (lo + hi)
+            A, _ = self._section_AP(mid)
+            if abs(A - target_A) <= (tol_mm / 1000.0) * max(1.0, Hc):
+                return mid * 1000.0
+            if A < target_A:
+                lo = mid
+            else:
+                hi = mid
+        A_mid, _ = self._section_AP(0.5 * (lo + hi))
+        if abs(A_mid - target_A) < 1e-6:
+            return 0.5 * (lo + hi) * 1000.0
+        return None
+
+    # ------------------------
+    # External properties
+    # ------------------------
     @property
-    def plot_flow_monitor(self) -> flowMonitor:
+    def plot_flow_monitor(self) -> Optional["flowMonitor"]:
         return self._plot_flow_monitor
 
     @plot_flow_monitor.setter
-    def plot_flow_monitor(self, fm: flowMonitor):
+    def plot_flow_monitor(self, fm: "flowMonitor"):
         self._plot_flow_monitor = fm
         if fm and self.plotModelData:
-            self.plotModelData = fm.hasModelData    
+            self.plotModelData = fm.hasModelData
 
+    # ------------------------
+    # Public API
+    # ------------------------
     def update_plot(self):
 
         self.clearFigure()
-        if self._plot_flow_monitor is not None:
-            self.updateScattergraphLines()
-            self._update_cbw_line()
-            # self.updateCBWLine()
-            self.updatePipeProfileLines()
-            self.updateIsoLines()
-            # self.plotFigure.subplots_adjust(
-            #     left=0.01, right=0.99, bottom=0.01, top=0.99)
-            self.main_window_plot_widget.figure.subplots_adjust(
-                left=0.05, right=0.95, bottom=0.05, top=0.95
-            )
-            self.isBlank = False
-        else:
+        if self._plot_flow_monitor is None:
             getBlankFigure(self.main_window_plot_widget)
             self.isBlank = True
+            self._ensure_resize_handler()
+            self.updateCanvas()
+            return
 
+        # ---- Compute limits once (scatter + CBW; then ensure pipe profile fits)
+        limits = self._compute_plot_limits()
+        self.axis_limits.update(limits)
+        self.axisRatio = limits["axisRatio"]
+
+        # ---- Draw everything (plot functions do not change limits)
+        self.plot_axis_scatter = self.main_window_plot_widget.figure.subplots(1)
+
+        # Scatter
+        fp_x, fp_y, events_payload, vel_all, flow_all, dat_all = self._prepare_scatter_arrays()
+        self._plot_scatter_from_arrays(fp_x, fp_y, events_payload, vel_all=vel_all, flow_all=flow_all, dat_all=dat_all)
+
+        # CBW
+        if self.plotModelData and self.plotCBWLine and self.CBW_depth and (self.CBW_velocity or self.CBW_flow):
+            self.plot_axis_cbw = self.plot_axis_scatter.twinx()
+            self._plot_cbw_line(self.plot_axis_cbw)
+
+        # Pipe profile
+        if self.plotModelData and self.showPipeProfile and (self.plotFPData or (self.plotCBWLine and self.CBW_depth)):
+            self.plot_axis_pipe_profile = self.plot_axis_scatter.twinx()
+            self._draw_pipe_profile(self.plot_axis_pipe_profile)
+
+        # Iso-Q / Iso-V
+        if self.plotModelData and self.plotIsoQLines:
+            self.plot_axis_isoq = self.plot_axis_scatter.twinx()
+            self.updateIsoLines_alt()
+
+        # Apply identical limits to all axes
+        for ax in (self.plot_axis_scatter, self.plot_axis_cbw, self.plot_axis_isoq, self.plot_axis_pipe_profile):
+            if ax is None:
+                continue
+            ax.set_xlim(self.axis_limits['plot_x_min'], self.axis_limits['plot_x_max'])
+            ax.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+            if ax is not self.plot_axis_scatter:
+                ax.axes.yaxis.set_visible(False)
+
+        self.main_window_plot_widget.figure.subplots_adjust(left=0.05, right=0.95, bottom=0.05, top=0.95)
+        self.isBlank = False
+        self._ensure_resize_handler()
         self.updateCanvas()
 
     def clearFigure(self):
@@ -1466,436 +3582,654 @@ class graphScatter:
             self.plot_axis_pipe_profile.clear()
             self.plot_axis_pipe_profile = None
 
-        # Axis limits
-        self.axis_limits = {
-            "x_min": 0, "x_max": 0, 
-            "y_min": 0, "y_max": 0,
-            "plot_x_min": 0, "plot_x_max": 0
-        }            
+        self.axis_limits = {"x_min": 0.0, "x_max": 0.0, "y_min": 0.0, "y_max": 0.0, "plot_x_min": 0.0, "plot_x_max": 0.0}
 
-    def updateScattergraphLines(self):
+        # teardown hover
+        if self._hover_annot is not None:
+            try: self._hover_annot.remove()
+            except Exception: pass
+            self._hover_annot = None
 
-        self.cScatterLines = []
-        self.config.reset_colors()
+        if self._hover_cid is not None:
+            try: self.main_window_plot_widget.figure.canvas.mpl_disconnect(self._hover_cid)
+            except Exception: pass
+            self._hover_cid = None
+
+    # ------------------------
+    # Scatter points (prepare + plot)
+    # ------------------------
+    def _prepare_scatter_arrays(self):
+        if self._plot_flow_monitor is None:
+            return None, None, [], None, None, None
 
         dates = self._plot_flow_monitor.dateRange
         depth = self._plot_flow_monitor.depthDataRange
 
         if self.plotVelocityScattergraph:
-            plotYalues = self._plot_flow_monitor.velocityDataRange
+            plotX = self._plot_flow_monitor.velocityDataRange
         else:
-            plotYalues = self._plot_flow_monitor.flowDataRange
+            plotX = self._plot_flow_monitor.flowDataRange
 
         tobedeleted = []
 
+        # Shape-aware soffit filter
         if self.ignoreDataAboveSoffit and self._plot_flow_monitor.hasModelData:
-            for i in reversed(range(len(depth))):
-                if depth[i] > self._plot_flow_monitor.modelDataPipeDia:
-                    tobedeleted.append(i)
-
-        if self.ignoreZeros:
-            for i in range(len(plotYalues)):
-                if float(plotYalues[i]) == 0.0:
-                    tobedeleted.append(i)
-
-        if len(tobedeleted) > 0:
-            dates = np.delete(dates, tobedeleted)
-            depth = np.delete(depth, tobedeleted)
-            plotYalues = np.delete(plotYalues, tobedeleted)
-
-        self.plot_axis_scatter = self.main_window_plot_widget.figure.subplots(1)
-        if self.plotFPData:
-            cLine = self.plot_axis_scatter.scatter(
-                plotYalues, depth, s=5, label="Full Period", color="gray"
-            )
-            self.cScatterLines.append(cLine)
-
-        if len(self.plotted_events.plotEvents) > 0:
-            for se in self.plotted_events.plotEvents.values():
-
-                tobedeleted = []
-
-                for i in reversed(range(len(dates))):
-                    # if dt.strptime(dates[i], "%d/%m/%Y %H:%M") < se.eventStart or dt.strptime(dates[i], "%d/%m/%Y %H:%M") > se.eventEnd:
-                    if dates[i] < se.eventStart or dates[i] > se.eventEnd:
+            soffit_mm = float(getattr(self._plot_flow_monitor, "modelDataPipeHeight" if self._shape()=="RECT" else "modelDataPipeDia", 0.0))
+            if soffit_mm > 0:
+                for i in reversed(range(len(depth))):
+                    if depth[i] > soffit_mm:
                         tobedeleted.append(i)
 
-                if len(tobedeleted) > 0:
-                    eventPlotValues = np.delete(plotYalues, tobedeleted)
-                    eventDepthValues = np.delete(depth, tobedeleted)
+        if self.ignoreZeros:
+            for i in range(len(plotX)):
+                try:
+                    if float(plotX[i]) == 0.0:
+                        tobedeleted.append(i)
+                except Exception:
+                    pass
 
-                cLine = self.plot_axis_scatter.scatter(
-                    eventPlotValues,
-                    eventDepthValues,
-                    s=5,
-                    label=se.eventName,
-                    color=next(self.config.plot_colors),
-                )
+        if len(tobedeleted) > 0:
+            dates = np.delete(np.array(dates), np.array(tobedeleted))
+            depth = np.delete(np.array(depth), np.array(tobedeleted))
+            plotX = np.delete(np.array(plotX), np.array(tobedeleted))
+
+        # Build main series
+        fp_x = np.asarray(plotX)
+        fp_y = np.asarray(depth)
+        dat_all = np.asarray(dates) if dates is not None else None
+
+        # Keep vel/flow for hover meta
+        if len(tobedeleted) > 0:
+            vel_all = np.delete(np.array(self._plot_flow_monitor.velocityDataRange), np.array(tobedeleted))
+            flow_all = np.delete(np.array(self._plot_flow_monitor.flowDataRange), np.array(tobedeleted))
+        else:
+            vel_all = np.asarray(self._plot_flow_monitor.velocityDataRange)
+            flow_all = np.asarray(self._plot_flow_monitor.flowDataRange)
+
+        # Event subsets for plotting later
+        events_payload = []
+        if len(self.plotted_events.plotEvents) > 0:
+            for se in self.plotted_events.plotEvents.values():
+                idx_del = []
+                for i in reversed(range(len(dates))):
+                    if dates[i] < se.eventStart or dates[i] > se.eventEnd:
+                        idx_del.append(i)
+                if len(idx_del) > 0:
+                    ev_x = np.delete(fp_x, idx_del)
+                    ev_y = np.delete(fp_y, idx_del)
+                    events_payload.append({"name": se.eventName, "x": ev_x, "y": ev_y})
+
+        return fp_x, fp_y, events_payload, vel_all, flow_all, dat_all
+
+    def _plot_scatter_from_arrays(self, fp_x, fp_y, events_payload, *, vel_all, flow_all, dat_all):
+        self.cScatterLines = []
+        self.config.reset_colors()
+
+        if self.plotFPData and fp_x is not None and fp_y is not None:
+            cLine = self.plot_axis_scatter.scatter(fp_x, fp_y, s=5, label="Full Period", color="gray", picker=5)
+            cLine._hover_meta = {
+                "label": "Full Period", "x": fp_x, "y": fp_y,
+                "vel": vel_all, "flow": flow_all, "dates": dat_all if dat_all is not None else None,
+            }
+            self.cScatterLines.append(cLine)
+
+        if events_payload:
+            for ev in events_payload:
+                cLine = self.plot_axis_scatter.scatter(ev["x"], ev["y"], s=5, label=ev["name"], color=next(self.config.plot_colors))
                 self.cScatterLines.append(cLine)
 
-        self.axis_limits["x_min"], self.axis_limits["x_max"] = self.plot_axis_scatter.get_xlim()
-        self.axis_limits["y_min"], self.axis_limits["y_max"] = self.plot_axis_scatter.get_ylim()
+        if self.plotVelocityScattergraph:
+            self.plot_axis_scatter.set_xlabel('Velocity (m/s)')
+            self.plot_axis_scatter.set_title(f'Velocity Scattergraph: {self._plot_flow_monitor.monitorName}', loc='left', fontsize=16)
+        else:
+            self.plot_axis_scatter.set_xlabel('Flow (l/s)')
+            self.plot_axis_scatter.set_title(f'Flow Scattergraph: {self._plot_flow_monitor.monitorName}', loc='left', fontsize=16)
 
-    def _update_cbw_line(self):
-        """Update the Colebrook-White line"""
+        self.plot_axis_scatter.set_ylabel('Depth (mm)')
+        self.plot_axis_scatter.legend()
+        self._ensure_hover_support()
+
+    # ------------------------
+    # Colebrook-White overlay (compute + plot, no limit mutations)
+    # ------------------------
+    def _plot_cbw_line(self, ax_cbw):
         if not (self.plotModelData and self.plotCBWLine):
             return
+        if self._plot_flow_monitor is None:
+            return
+        if not (self.CBW_depth and (self.CBW_velocity or self.CBW_flow)):
+            return
 
-        if self.plot_axis_cbw is not None:
-            self.plot_axis_cbw.remove()
-            self.plot_axis_cbw = None
-
-        if self._compute_cbw_values() and self._plot_flow_monitor.modelDataPipeShape == "CIRC":
-
-            self.useOriginal = not self.useOriginal
-
-            if self.plotModelData and self.plotCBWLine:
-                self.plot_axis_cbw = self.plot_axis_scatter.twinx()
-            # Select data to plot
-            plotXValues = self.CBW_velocity if self.plotVelocityScattergraph else self.CBW_flow
-
-            # Plot CBW data
-            self.plot_axis_cbw.plot(
-                plotXValues,
-                self.CBW_depth,
-                linewidth=0.75,
-                linestyle="dotted",
-                color="black",
-                label="CBW",
-            )
-
-            # Calculate x-axis range with buffer
-            self.axis_limits['x_min'], self.axis_limits['x_max'] = self.update_axis_limits(self.axis_limits['x_min'], self.axis_limits['x_max'], min(plotXValues), max(plotXValues), self.xBufferFactor)
-
-            # Calculate y-axis range with buffer
-            self.axis_limits['y_min'], self.axis_limits['y_max'] = self.update_axis_limits(self.axis_limits['y_min'], self.axis_limits['y_max'], min(self.CBW_depth), max(self.CBW_depth), self.yBufferFactor)
-
-            self.update_plot_axis_limits()
-
-            # Set axis limits for scatter and CBW plots
-            self.plot_axis_scatter.set_xlim(self.axis_limits['plot_x_min'], self.axis_limits['plot_x_max'])
-            self.plot_axis_scatter.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
-            self.plot_axis_cbw.set_xlim(self.axis_limits['plot_x_min'], self.axis_limits['plot_x_max'])
-            self.plot_axis_cbw.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
-
-    def update_plot_axis_limits(self):
-        # Determine aspect ratio and scaling
-        xsize, ysize = self.main_window_plot_widget.figure.get_size_inches()
-        aspectRatio = ysize / xsize
-
-        xAxisRange = self.axis_limits['x_max'] - self.axis_limits['x_min']
-        yAxisRange = self.axis_limits['y_max'] - self.axis_limits['y_min']
-        self.axisRatio = (yAxisRange / xAxisRange) / aspectRatio
-
-        # Adjust plot X-axis limits considering pipe exaggeration and buffer
-        pipeRadius = self._plot_flow_monitor.modelDataPipeDia / 2
-        xOffset = (pipeRadius / self.axisRatio) * self.xBufferFactor
-        self.axis_limits['plot_x_min'] = self.axis_limits['x_min'] - xOffset
-        self.axis_limits['plot_x_max'] = self.axis_limits['x_max'] + xOffset * self.pipeExag
-
-    def update_axis_limits(self, current_axis_min, current_axis_max, min_value, max_value, buffer_factor):
-        """Helper function to calculate axis range with a buffer."""
-
-        range_diff = max_value - min_value
-        buffer = ((range_diff * buffer_factor) - range_diff) / 2
-        # xAxisMin = min(current_axis_min, min_value - buffer)
-        # xAxisMax = max(current_axis_max, max_value + buffer)
-        return min(current_axis_min, min_value - buffer), max(current_axis_max, max_value + buffer)
+        plotXValues = self.CBW_velocity if self.plotVelocityScattergraph else self.CBW_flow
+        ax_cbw.plot(plotXValues, self.CBW_depth, linewidth=0.75, linestyle="dotted", color="black", label="CBW")
 
     def _calculate_gradient(self) -> float:
-        """Calculate pipe gradient from model data"""
-        if (self._plot_flow_monitor.modelDataPipeUSInvert > 0 and 
-            self._plot_flow_monitor.modelDataPipeDSInvert > 0):
-            gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert - 
-                        self._plot_flow_monitor.modelDataPipeDSInvert) / 
-                       self._plot_flow_monitor.modelDataPipeLength)
+        if self._plot_flow_monitor is None:
+            return 0.00001
+        if (self._plot_flow_monitor.modelDataPipeUSInvert > 0 and self._plot_flow_monitor.modelDataPipeDSInvert > 0):
+            gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert -
+                        self._plot_flow_monitor.modelDataPipeDSInvert) /
+                        self._plot_flow_monitor.modelDataPipeLength)
             return max(gradient, 0.00001)
-        return 0.00001
+        else:
+            return 0.00001
 
-    def _compute_cbw_values(self) -> bool:
+    def _compute_cbw_values_alt(self) -> bool:
         self.CBW_depth = []
         self.CBW_flow = []
         self.CBW_velocity = []
 
+        if self._plot_flow_monitor is None:
+            return False
+
+        shp = self._shape()
+        # geometry presence check
+        if shp == "RECT":
+            have_geom = (getattr(self._plot_flow_monitor, "modelDataPipeDia", 0) > 0 and
+                         getattr(self._plot_flow_monitor, "modelDataPipeHeight", 0) > 0)
+        else:
+            have_geom = getattr(self._plot_flow_monitor, "modelDataPipeDia", 0) > 0
+
         if (
             self._plot_flow_monitor.modelDataPipeLength <= 0
-            or self._plot_flow_monitor.modelDataPipeDia <= 0
             or self._plot_flow_monitor.modelDataPipeRoughness <= 0
-            or self._plot_flow_monitor.modelDataPipeShape == ""
-            or self._plot_flow_monitor.modelDataPipeHeight <= 0
+            or not have_geom
         ):
             return False
 
-        # gradient = ((self._plot_flow_monitor.modelDataPipeUSInvert - self._plot_flow_monitor.modelDataPipeDSInvert) / self._plot_flow_monitor.modelDataPipeLength if self._plot_flow_monitor.modelDataPipeUSInvert > 0 and self._plot_flow_monitor.modelDataPipeDSInvert > 0 else 0)
-        # gradient = max(gradient, 0.00001)
-        gradient = self._calculate_gradient()
+        S = self._calculate_gradient()
+        eps = self._plot_flow_monitor.modelDataPipeRoughness / 1000.0  # m
+        g = 9.807
+        nu = 1.004e-6  # m^2/s
 
-        # Constants
-        pipe_diameter_m = self._plot_flow_monitor.modelDataPipeDia / 1000  # Convert mm to meters
-        roughness_m = self._plot_flow_monitor.modelDataPipeRoughness / 1000  # Convert mm to meters
-        g = 9.807  # Gravitational acceleration (m/s²)
+        Hc = self._char_height_m()  # D for CIRC, H for RECT
+        if Hc <= 0.0:
+            return False
 
-        # Initialize outputs
-        self.CBW_depth = [0]  # Start with zero depth
-        self.CBW_flow = [0]   # Start with zero flow
-        self.CBW_velocity = [0]  # Start with zero velocity
+        # Initialize outputs starting at zero
+        self.CBW_depth = [0]
+        self.CBW_flow = [0]
+        self.CBW_velocity = [0]
 
-        # Loop through depth proportions
         for depth_ratio in self.config.depth_proportions:
-            # 1. Calculate flow area (A) and wetted perimeter (P)
-            depth = pipe_diameter_m * depth_ratio
-            theta = 2 * math.acos(1 - 2 * depth_ratio)  # Angle subtended by the flow
-            flow_area = (theta - math.sin(theta)) / 8 * math.pi * pipe_diameter_m**2
-            wetted_perimeter = pipe_diameter_m * theta / (2 * math.pi)
+            h = Hc * depth_ratio
+            A, P = self._section_AP(h)
+            if A <= 0.0 or P <= 0.0:
+                self.CBW_depth.append(h * 1000.0)
+                self.CBW_flow.append(0.0)
+                self.CBW_velocity.append(0.0)
+                continue
 
-            # 2. Calculate hydraulic radius (R)
-            hydraulic_radius = flow_area / wetted_perimeter
+            R = A / P
+            Dh = 4.0 * R
 
-            # 3. Calculate friction factor using the Swamee-Jain approximation
-            reynolds_number = (4 * flow_area * math.sqrt(gradient * hydraulic_radius * g)) / (1.002e-3)  # Kinematic viscosity of water
-            if reynolds_number > 4000:  # Turbulent flow
-                friction_factor = 0.25 / (math.log10((roughness_m / (3.7 * pipe_diameter_m)) + (5.74 / reynolds_number**0.9)))**2
-            else:  # Laminar flow (fallback)
-                friction_factor = 64 / reynolds_number if reynolds_number > 0 else 0
+            # Iterate friction factor
+            tol, max_iters, omega = 1e-6, 50, 0.5
+            f = 0.02
+            for _ in range(max_iters):
+                V = math.sqrt(8.0 * g * R * S / f) if f > 0 else 0.0
+                Re = (V * Dh) / nu
+                if Re < 2300:
+                    f_new = 64.0 / max(Re, 1e-12)
+                else:
+                    f_new = 0.25 / (math.log10((eps / (3.7 * Dh)) + (5.74 / (Re ** 0.9)))) ** 2
+                f_u = (1 - omega) * f + omega * f_new
+                if abs(f_u - f) / max(f, 1e-12) < tol:
+                    f = f_u
+                    break
+                f = f_u
 
-            # 4. Calculate velocity and flow
-            velocity = math.sqrt(gradient * hydraulic_radius * g / friction_factor)
-            flow = flow_area * velocity
+            V = math.sqrt(8.0 * g * R * S / f) if f > 0 else 0.0
+            Q = A * V
 
-            # Append results
-            self.CBW_depth.append(depth * 1000)  # Convert to mm
-            self.CBW_flow.append(flow * 1000)  # Convert to L/s
-            self.CBW_velocity.append(velocity)
+            self.CBW_depth.append(h * 1000.0)  # mm
+            self.CBW_flow.append(Q * 1000.0)   # L/s
+            self.CBW_velocity.append(V)        # m/s
 
         return True
 
-    def updatePipeProfileLines(self):
+    # ------------------------
+    # Pipe profile overlay (no limit mutations; uses anchors)
+    # ------------------------
+    def _draw_pipe_profile(self, ax):
+        # Anchors: span CBW X if CBW shown, else scatter X (precomputed in _compute_plot_limits)
+        pipeInStation  = self._pipe_anchor_in  if self._pipe_anchor_in  is not None else self.axis_limits['x_min']
+        self.pipeOutStation = self._pipe_anchor_out if self._pipe_anchor_out is not None else self.axis_limits['x_max']
 
-        if self.plot_axis_pipe_profile is not None:
-            self.plot_axis_pipe_profile.remove()
-            self.plot_axis_pipe_profile = None
+        Hc_mm = self._char_height_mm()
+        axr = max(self.axisRatio, 1e-12)
 
-        if self.plotModelData and self.showPipeProfile and (self.plotFPData or self.plotCBWLine):
-
-            self.update_plot_axis_limits()
-
-            self.plot_axis_pipe_profile = self.plot_axis_scatter.twinx()
-            # self.plot_axis_scatter
-            self.plot_axis_pipe_profile.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
-            self.plot_axis_pipe_profile.axes.yaxis.set_visible(False)
-
-            pipeInStation = self.axis_limits['x_min']
-            self.pipeOutStation = self.axis_limits['x_max']
-
-            # self.pipeProfileDepthProp = [
-            #     0,
-            #     1 / 24,
-            #     2 / 24,
-            #     3 / 24,
-            #     4 / 24,
-            #     5 / 24,
-            #     6 / 24,
-            #     7 / 24,
-            #     8 / 24,
-            #     9 / 24,
-            #     10 / 24,
-            #     11 / 24,
-            #     12 / 24,
-            #     13 / 24,
-            #     14 / 24,
-            #     15 / 24,
-            #     16 / 24,
-            #     17 / 24,
-            #     18 / 24,
-            #     19 / 24,
-            #     20 / 24,
-            #     21 / 24,
-            #     22 / 24,
-            #     23 / 24,
-            #     24 / 24,
-            # ]
+        if self._shape() == "RECT":
             pipeProfileX = []
             pipeProfileY = []
 
-            for i in range(0, len(self.config.pipe_profile_depth_prop)):
-
-                pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * ((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
-                pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._plot_flow_monitor.modelDataPipeDia)
-
-            for i in range(len(self.config.pipe_profile_depth_prop) - 1, -1, -1):
-
-                pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * ((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio)) * self.pipeExag) + pipeInStation)
-                pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._plot_flow_monitor.modelDataPipeDia)
-
-            pipeProfileX.append(self.pipeOutStation)
+            pipeProfileX.append(((1 * (self._char_half_width_mm() / axr)) * self.pipeExag) + self.pipeOutStation)
+            pipeProfileY.append(self._char_height_mm())
+            pipeProfileX.append(((-1 * (self._char_half_width_mm() / axr)) * self.pipeExag) + self.pipeOutStation)
             pipeProfileY.append(0)
+            pipeProfileX.append(((-1 * (self._char_half_width_mm() / axr)) * self.pipeExag) + pipeInStation)
+            pipeProfileY.append(0)
+            pipeProfileX.append(((1 * (self._char_half_width_mm() / axr)) * self.pipeExag) + pipeInStation)
+            pipeProfileY.append(self._char_height_mm())
+            pipeProfileX.append(((1 * (self._char_half_width_mm() / axr)) * self.pipeExag) + self.pipeOutStation)
+            pipeProfileY.append(self._char_height_mm())
 
-            self.plot_axis_pipe_profile.plot(
-                pipeProfileX,
-                pipeProfileY,
-                linewidth=1.5,
-                color="black",
-                label="Pipe Profile",
-            )
-
-            pipeProfileX = []
-            pipeProfileY = []
-
-            for i in range(0, int(len(self.config.pipe_profile_depth_prop) / 2) + 1):
-
-                pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * ((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio)) * self.pipeExag) + self.pipeOutStation)
-                pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._plot_flow_monitor.modelDataPipeDia)
-
-            self.plot_axis_pipe_profile.plot(
-                pipeProfileX,
-                pipeProfileY,
-                linewidth=1.5,
-                color="black",
-                label="Pipe Profile",
-            )
+            ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
 
             pipeProfileX = []
             pipeProfileY = []
-
-            for i in range(len(self.config.pipe_profile_depth_prop) - 1, int(len(self.config.pipe_profile_depth_prop) / 2) - 1, -1):
-
-                pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * ((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio)) * self.pipeExag) + pipeInStation)
-                pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._plot_flow_monitor.modelDataPipeDia)
-
-            self.plot_axis_pipe_profile.plot(
-                pipeProfileX,
-                pipeProfileY,
-                linewidth=1.5,
-                color="black",
-                label="Pipe Profile",
-            )
+            pipeProfileX.append(((-1 * (self._char_half_width_mm() / axr)) * self.pipeExag) + self.pipeOutStation)
+            pipeProfileY.append(0)
+            pipeProfileX.append(((1 * (self._char_half_width_mm() / axr)) * self.pipeExag) + self.pipeOutStation)
+            pipeProfileY.append(0)
+            pipeProfileX.append(self.pipeOutStation)
+            pipeProfileY.append(self._char_height_mm() / 2)
+            ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
 
             pipeProfileX = []
             pipeProfileY = []
+            pipeProfileX.append(((1 * (self._char_half_width_mm() / axr)) * self.pipeExag) + pipeInStation)
+            pipeProfileY.append(self._char_height_mm())
+            pipeProfileX.append(((-1 * (self._char_half_width_mm() / axr)) * self.pipeExag) + pipeInStation)
+            pipeProfileY.append(self._char_height_mm())
+            pipeProfileX.append(pipeInStation)
+            pipeProfileY.append(self._char_height_mm() / 2)
+            ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
 
-            for i in range(0, len(self.config.pipe_profile_depth_prop)):
+            pipeProfileX = []
+            pipeProfileY = []
+            pipeProfileX.append(((self._char_half_width_mm() / axr) * 0) + pipeInStation)
+            pipeProfileY.append(0)
+            pipeProfileX.append(((self._char_half_width_mm() / axr) * -1) + pipeInStation)
+            pipeProfileY.append(0)
+            pipeProfileX.append(((self._char_half_width_mm() / axr) * -1) + pipeInStation)
+            pipeProfileY.append(self._char_height_mm())
+            pipeProfileX.append(((self._char_half_width_mm() / axr) * 0) + pipeInStation)
+            pipeProfileY.append(self._char_height_mm())
+            ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+            return
 
-                pipeProfileX.append((((self._plot_flow_monitor.modelDataPipeDia / 2) / self.axisRatio) * math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180))) + pipeInStation)
-                pipeProfileY.append((self._plot_flow_monitor.modelDataPipeDia / 2) + ((self._plot_flow_monitor.modelDataPipeDia / 2) * (math.cos(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180)))))
+        # CIRC
+        pipeProfileX = []
+        pipeProfileY = []
+        for i in range(0, len(self.config.pipe_profile_depth_prop)):
+            pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * (self._char_half_width_mm() / axr)) * self.pipeExag) + self.pipeOutStation)
+            pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
 
-            self.plot_axis_pipe_profile.plot(
-                pipeProfileX,
-                pipeProfileY,
-                linewidth=1.5,
-                color="black",
-                label="Pipe Profile",
-            )
+        for i in range(len(self.config.pipe_profile_depth_prop) - 1, -1, -1):
+            pipeProfileX.append(((math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 360) + 180)) * (self._char_half_width_mm() / axr)) * self.pipeExag) + pipeInStation)
+            pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
 
-    def updateIsoLines(self):
+        pipeProfileX.append(self.pipeOutStation)
+        pipeProfileY.append(0)
+        ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
 
+        pipeProfileX = []
+        pipeProfileY = []
+        for i in range(0, int(len(self.config.pipe_profile_depth_prop) / 2) + 1):
+            pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * (self._char_half_width_mm() / axr)) * self.pipeExag) + self.pipeOutStation)
+            pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+        ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+
+        pipeProfileX = []
+        pipeProfileY = []
+        for i in range(len(self.config.pipe_profile_depth_prop) - 1, int(len(self.config.pipe_profile_depth_prop) / 2) - 1, -1):
+            pipeProfileX.append(((math.sin(math.radians(self.config.pipe_profile_depth_prop[i] * 360)) * (self._char_half_width_mm() / axr)) * self.pipeExag) + pipeInStation)
+            pipeProfileY.append(self.config.pipe_profile_depth_prop[i] * self._char_height_mm())
+        ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+
+        pipeProfileX = []
+        pipeProfileY = []
+        for i in range(0, len(self.config.pipe_profile_depth_prop)):
+            pipeProfileX.append(((self._char_half_width_mm() / axr) * math.sin(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180))) + pipeInStation)
+            pipeProfileY.append(self._char_half_width_mm() + (self._char_half_width_mm() * (math.cos(math.radians((self.config.pipe_profile_depth_prop[i] * 180) + 180)))))
+        ax.plot(pipeProfileX, pipeProfileY, linewidth=1.5, color="black", label="Pipe Profile")
+
+    # ------------------------
+    # Iso-Q / Iso-V overlay (unchanged; no limit changes inside)
+    # ------------------------
+    def updateIsoLines_alt(self):
         if self.plot_axis_isoq is not None:
             self.plot_axis_isoq.remove()
             self.plot_axis_isoq = None
 
-        if self.plotModelData and self.plotIsoQLines:
-            self.plot_axis_isoq = self.plot_axis_scatter.twinx()
-            rangeValues = self.isoQUBound - self.isoQLBound
-            stepValue = rangeValues / (self.noOfIsoQLines - 1)
+        if not (self.plotModelData and self.plotIsoQLines):
+            return
 
-            for i in range(self.noOfIsoQLines):
+        self.plot_axis_isoq = self.plot_axis_scatter.twinx()
 
-                aValue = self.isoQLBound + (i * stepValue)
-                Iso_val = []
-                Iso_dep = []
+        Hc_mm = self._char_height_m() * 1000.0
+        depth_list = [Hc_mm * r for r in self.config.depth_proportions]
+
+        n = max(1, int(self.noOfIsoQLines))
+        if n == 1:
+            iso_values = [self.isoQLBound]
+        else:
+            step = (self.isoQUBound - self.isoQLBound) / (n - 1)
+            iso_values = [self.isoQLBound + i * step for i in range(n)]
+
+        # --- NEW: choose label x-position as a fraction of the pipe profile span
+        IN  = getattr(self, "_pipe_anchor_in",  None)
+        OUT = getattr(self, "_pipe_anchor_out", None)
+        if IN is None or OUT is None:
+            IN  = self.axis_limits['x_min']
+            OUT = self.axis_limits['x_max']
+
+        frac = 0.75 if (not self.plotVelocityScattergraph) else 0.25  # flow: 3/4; velocity: 1/4
+        target_x_label = IN + frac * (OUT - IN)
+
+        for aValue in iso_values:
+            Iso_x, Iso_y = [], []
+
+            for depth in depth_list:
+                A = self._section_AP(depth / 1000.0)[0]
+                if A is None or A <= 0:
+                    continue
 
                 if self.plotVelocityScattergraph:
-                    for j in range(len(self.config.depth_proportions)):  # J
-
-                        if self._plot_flow_monitor.modelDataPipeDia != 0:
-                            myVel = (aValue / 1000) / self.flowAreaByDepth(self._plot_flow_monitor.modelDataPipeDia, ((self._plot_flow_monitor.modelDataPipeDia) * self.config.depth_proportions[j]))
-                            if myVel <= self.pipeOutStation:
-                                Iso_dep.append(((self._plot_flow_monitor.modelDataPipeDia) * self.config.depth_proportions[j]))
-                                Iso_val.append((aValue / 1000) / self.flowAreaByDepth(self._plot_flow_monitor.modelDataPipeDia, ((self._plot_flow_monitor.modelDataPipeDia) * self.config.depth_proportions[j])))
+                    # velocity on X; iso value interpreted as FLOW (L/s)
+                    V = (aValue / 1000.0) / A  # m/s
+                    x = V
                 else:
-                    for j in range(len(self.config.depth_proportions)):  # J
-                        if self._plot_flow_monitor.modelDataPipeDia != 0:
-                            myFlow = (aValue * self.flowAreaByDepth(self._plot_flow_monitor.modelDataPipeDia, ((self._plot_flow_monitor.modelDataPipeDia) * self.config.depth_proportions[j]))) * 1000
-                            if myFlow <= self.pipeOutStation:
-                                Iso_dep.append(((self._plot_flow_monitor.modelDataPipeDia) * self.config.depth_proportions[j]))
-                                Iso_val.append((aValue * self.flowAreaByDepth(self._plot_flow_monitor.modelDataPipeDia, ((self._plot_flow_monitor.modelDataPipeDia) * self.config.depth_proportions[j]))) * 1000)
+                    # flow on X; iso value interpreted as VELOCITY (m/s)
+                    Q = aValue * A * 1000.0  # L/s
+                    x = Q
 
-                if self.plotVelocityScattergraph:
-                    Iso_val.insert(0, self.axis_limits['x_max'])
-                    Iso_dep.insert(0, self.flowDepthByArea(int(self._plot_flow_monitor.modelDataPipeDia), (aValue / 1000) / self.axis_limits['x_max']))
+                Iso_x.append(x)
+                Iso_y.append(depth)
 
-                if self.plotVelocityScattergraph:
-                    self.plot_axis_isoq.plot(
-                        Iso_val,
-                        Iso_dep,
-                        linewidth=1,
-                        linestyle="dashdot",
-                        color="forestgreen",
-                        label="{0:.3g}".format(aValue) + "l/s",
-                    )
-                else:
-                    self.plot_axis_isoq.plot(
-                        Iso_val,
-                        Iso_dep,
-                        linewidth=1,
-                        linestyle="dashdot",
-                        color="forestgreen",
-                        label="{0:.3g}".format(aValue) + "m/s",
-                    )
-                self.plot_axis_isoq.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
-                self.plot_axis_isoq.axes.yaxis.set_visible(False)
+            if not Iso_x:
+                continue
 
-                # Total pockle to label the Iso Lines
-                if len(Iso_val) > 0:
-                    flow_props = dict(boxstyle="round", facecolor="white", alpha=0.5)
-                    txtX = (max(Iso_val) - min(Iso_val)) * (0.1 + (i * ((0.25 - 0.025) / (self.noOfIsoQLines - 1))))
-                    myIndex = Iso_val.index(min(Iso_val, key=lambda x: abs(x - txtX)))
-                    if not Iso_val[myIndex] is None and not Iso_dep[myIndex] is None:
-                        self.plot_axis_isoq.text(
-                            Iso_val[myIndex],
-                            Iso_dep[myIndex],
-                            self.plot_axis_isoq.axes.lines[i].get_label(),
-                            bbox=flow_props,
-                        )
+            line = self.plot_axis_isoq.plot(
+                Iso_x, Iso_y,
+                linewidth=1,
+                linestyle="dashdot",
+                color="forestgreen",
+                label=(f"{aValue:.3g} l/s" if self.plotVelocityScattergraph else f"{aValue:.3g} m/s"),
+            )[0]
 
-    def flowAreaByDepth(self, pipeDiaInMM: int, flowDepthInMM: int):
+            # --- NEW: place label near the desired fraction of the pipe span
+            try:
+                # clamp target to current axis window to avoid weirdness
+                xmin_ax, xmax_ax = self.plot_axis_isoq.get_xlim()
+                tx = min(max(target_x_label, xmin_ax), xmax_ax)
 
-        r = (pipeDiaInMM / 1000) / 2
-        h = flowDepthInMM / 1000
-        theta = 2 * math.acos((r - h) / r)
-        area = (r**2 * (theta - math.sin(theta))) / 2
+                # find nearest point on the computed iso curve to tx
+                k = min(range(len(Iso_x)), key=lambda k: abs(Iso_x[k] - tx))
+                # small visual nudge so text doesn’t sit exactly on the line
+                x_txt = Iso_x[k]
+                y_txt = Iso_y[k]
+                self.plot_axis_isoq.text(
+                    x_txt, y_txt, line.get_label(),
+                    ha="left" if frac >= 0.5 else "right",
+                    va="center",
+                    bbox=dict(boxstyle="round", facecolor="white", alpha=0.5, pad=0.2)
+                )
+            except Exception:
+                pass
 
-        return area
+        # keep your y handling
+        self.plot_axis_isoq.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+        self.plot_axis_isoq.axes.yaxis.set_visible(False)
+        
+    # def updateIsoLines_alt(self):
+    #     if self.plot_axis_isoq is not None:
+    #         self.plot_axis_isoq.remove()
+    #         self.plot_axis_isoq = None
 
-    def flowDepthByArea(self, pipeDiaInMM: int, flowAreaInM2: float):
+    #     if not (self.plotModelData and self.plotIsoQLines):
+    #         return
 
-        # r = (pipeDiaInMM / 1000) / 2
-        for h in range(pipeDiaInMM):
+    #     self.plot_axis_isoq = self.plot_axis_scatter.twinx()
 
-            check = flowAreaInM2 - self.flowAreaByDepth(pipeDiaInMM, h)
-            if check <= 0:
-                return h
+    #     Hc_mm = self._char_height_m() * 1000.0
+    #     depth_list = [Hc_mm * r for r in self.config.depth_proportions]
 
+    #     n = max(1, int(self.noOfIsoQLines))
+    #     if n == 1:
+    #         iso_values = [self.isoQLBound]
+    #     else:
+    #         step = (self.isoQUBound - self.isoQLBound) / (n - 1)
+    #         iso_values = [self.isoQLBound + i * step for i in range(n)]
+
+    #     x_max = self.axis_limits['x_max']
+
+    #     for aValue in iso_values:
+    #         Iso_x, Iso_y = [], []
+
+    #         for depth in depth_list:
+    #             A = self._section_AP(depth / 1000.0)[0]
+    #             if A is None or A <= 0:
+    #                 continue
+
+    #             if self.plotVelocityScattergraph:
+    #                 V = (aValue / 1000.0) / A  # m/s
+    #                 x = V
+    #             else:
+    #                 Q = aValue * A * 1000.0  # L/s
+    #                 x = Q
+
+    #             Iso_x.append(x)
+    #             Iso_y.append(depth)
+
+    #         if Iso_x and self.plotVelocityScattergraph:
+    #             try:
+    #                 A_anchor = (aValue / 1000.0) / max(x_max, 1e-12)
+    #                 y_anchor = self._depth_from_area(A_anchor)
+    #                 if y_anchor is not None:
+    #                     Iso_x.insert(0, x_max)
+    #                     Iso_y.insert(0, y_anchor)
+    #             except Exception:
+    #                 pass
+
+    #         if not Iso_x:
+    #             continue
+
+    #         line = self.plot_axis_isoq.plot(
+    #             Iso_x, Iso_y,
+    #             linewidth=1,
+    #             linestyle="dashdot",
+    #             color="forestgreen",
+    #             label=(f"{aValue:.3g} l/s" if self.plotVelocityScattergraph else f"{aValue:.3g} m/s"),
+    #         )[0]
+
+    #         try:
+    #             xmin, xmax = self.plot_axis_isoq.get_xlim()
+    #             target_x = xmin + 0.9 * (xmax - xmin)
+    #             k = min(range(len(Iso_x)), key=lambda k: abs(Iso_x[k] - target_x))
+    #             self.plot_axis_isoq.text(Iso_x[k], Iso_y[k], line.get_label(),
+    #                     bbox=dict(boxstyle="round", facecolor="white", alpha=0.5))
+    #         except Exception:
+    #             pass
+
+    #     self.plot_axis_isoq.set_ylim(self.axis_limits['y_min'], self.axis_limits['y_max'])
+    #     self.plot_axis_isoq.axes.yaxis.set_visible(False)
+
+    # ------------------------
+    # Limits computation (NEW)
+    # ------------------------
+    def _compute_plot_limits(self):
+        """
+        Extents are the union of:
+          - filtered scatter,
+          - CBW (if drawn and computable).
+        Y also includes [0, H].
+        Pipe profile geometry is ensured to fit by expanding X using anchors:
+          - anchors span CBW X when CBW is on, else span scatter X.
+        axisRatio is computed from the buffered union window (scatter+CBW).
+        """
+        import numpy as np
+
+        # Use the same filtered scatter arrays you actually plot
+        fp_x, fp_y, _events, _v, _f, _d = self._prepare_scatter_arrays()
+
+        def _nanminmax(a):
+            if a is None: return None, None
+            arr = np.asarray(a)
+            if arr.size == 0: return None, None
+            return float(np.nanmin(arr)), float(np.nanmax(arr))
+
+        Hc_mm = float(self._char_height_mm() or 0.0)
+        rmm   = float(self._char_half_width_mm() or 0.0)
+
+        # Scatter extents
+        sx0, sx1 = _nanminmax(fp_x)
+        sy0, sy1 = _nanminmax(fp_y)
+        if sx0 is None: sx0, sx1 = 0.0, 1.0
+        if sy0 is None: sy0, sy1 = 0.0, max(1.0, Hc_mm)
+
+        # CBW extents (compute if needed so CBW contributes to data window)
+        cbw_on = False
+        cx0 = cx1 = cy0 = cy1 = None
+        if self.plotModelData and self.plotCBWLine:
+            cbw_on = self._compute_cbw_values_alt()
+            if cbw_on:
+                cbw_x_arr = self.CBW_velocity if self.plotVelocityScattergraph else self.CBW_flow
+                cbw_y_arr = self.CBW_depth
+                cx0, cx1 = _nanminmax(cbw_x_arr)
+                cy0, cy1 = _nanminmax(cbw_y_arr)
+
+        # Union window (scatter ∪ CBW); include pipe Y [0,H]
+        data_x_min = sx0 if cx0 is None else min(sx0, cx0)
+        data_x_max = sx1 if cx1 is None else max(sx1, cx1)
+        data_y_min = min(sy0, (cy0 if cy0 is not None else sy0), 0.0)
+        data_y_max = max(sy1, (cy1 if cy1 is not None else sy1), Hc_mm)
+
+        # Buffers
+        x_rng = max(1e-12, data_x_max - data_x_min)
+        y_rng = max(1e-12, data_y_max - data_y_min)
+        x_pad = (self.xBufferFactor - 1.0) * x_rng * 0.5
+        y_pad = (self.yBufferFactor - 1.0) * y_rng * 0.5
+
+        x_min = data_x_min - x_pad
+        x_max = data_x_max + x_pad
+        y_min = data_y_min - y_pad
+        y_max = data_y_max + y_pad
+
+        # axisRatio from buffered union (scatter+CBW)
+        fig_w, fig_h = self.main_window_plot_widget.figure.get_size_inches()
+        fig_aspect = fig_h / max(fig_w, 1e-12)
+        axisRatio = ((y_max - y_min) / max(x_max - x_min, 1e-12)) / max(fig_aspect, 1e-12)
+        axisRatio = max(axisRatio, 1e-12)
+
+        # Pipe profile anchors + geometry extents
+        prof_on = bool(self.plotModelData and self.showPipeProfile and Hc_mm > 0 and rmm > 0)
+
+        if prof_on:
+            # # Anchors span CBW X if CBW is on; else scatter X
+            # anchor_min = (cx0 if cbw_on and cx0 is not None else sx0)
+            # anchor_max = (cx1 if cbw_on and cx1 is not None else sx1)
+            # self._pipe_anchor_in  = anchor_min
+            # self._pipe_anchor_out = anchor_max
+            # Anchors span the UNION of scatter and CBW X (i.e., the data window)
+            anchor_min = data_x_min
+            anchor_max = data_x_max
+            self._pipe_anchor_in  = anchor_min
+            self._pipe_anchor_out = anchor_max            
+
+            inner_half_x = rmm / axisRatio
+            exag_half_x  = inner_half_x * float(self.pipeExag)
+            IN, OUT = anchor_min, anchor_max
+
+            # Outer frames at IN/OUT (±exag), plus inner cross-section at IN (no exag)
+            prof_x_candidates = [IN - exag_half_x, IN + exag_half_x, OUT - exag_half_x, OUT + exag_half_x]
+            if self._shape() == "RECT":
+                prof_x_candidates += [IN - inner_half_x, IN]
+            else:
+                prof_x_candidates += [IN - inner_half_x, IN + inner_half_x]
+
+            x_min = min(x_min, min(prof_x_candidates))
+            x_max = max(x_max, max(prof_x_candidates))
+            # y already covers [0, Hc_mm]
+
+        else:
+            self._pipe_anchor_in = None
+            self._pipe_anchor_out = None
+
+        # Final plot_x_min/x_max (we already included the profile’s true span)
+        plot_x_min = x_min
+        plot_x_max = x_max
+
+        return {
+            "x_min": x_min, "x_max": x_max,
+            "y_min": y_min, "y_max": y_max,
+            "plot_x_min": plot_x_min, "plot_x_max": plot_x_max,
+            "axisRatio": axisRatio
+        }
+
+    # ------------------------
+    # Canvas & interactivity
+    # ------------------------
     def updateCanvas(self):
-
-        self.main_window_plot_widget.event_connections.append(self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self.onPick))
+        self.main_window_plot_widget.event_connections.append(
+            self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self.onPick)
+        )
         self.main_window_plot_widget.showToolbar(not self.isBlank)
         self.main_window_plot_widget.toolbar.lockNavigation(False)
+        self._ensure_hover_support()
 
     def onPick(self, event):
-
         legline = event.artist
         origline = self.cScatterLegendLines[legline]
         vis = not origline.get_visible()
-
         origline.set_visible(vis)
-        # Change the alpha on the line in the legend so we can see what lines have been toggled
         if vis:
             legline.set_alpha(1.0)
         else:
             legline.set_alpha(0.2)
-
         self.main_window_plot_widget.figure.canvas.draw()
 
+    def _ensure_hover_support(self):
+        if self._hover_annot is None and self.plot_axis_scatter is not None:
+            self._hover_annot = self.plot_axis_scatter.annotate(
+                "", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.8),
+                arrowprops=dict(arrowstyle="->", shrinkA=0, shrinkB=0)
+            )
+            self._hover_annot.set_zorder(1000)
+            self._hover_annot.set_visible(False)
+
+        canvas = self.main_window_plot_widget.figure.canvas
+        if self.labelOnHover and self._hover_cid is None:
+            self._hover_cid = canvas.mpl_connect("motion_notify_event", self._on_hover_motion)
+        elif (not self.labelOnHover) and self._hover_cid is not None:
+            try:
+                canvas.mpl_disconnect(self._hover_cid)
+            finally:
+                self._hover_cid = None
+            if self._hover_annot is not None:
+                self._hover_annot.set_visible(False)
+                canvas.draw_idle()
+
+    def _on_hover_motion(self, event):
+        if self.plot_axis_scatter is None:
+            return
+
+        allowed_axes = [ax for ax in (
+            self.plot_axis_scatter, self.plot_axis_cbw, self.plot_axis_isoq, self.plot_axis_pipe_profile
+        ) if ax is not None]
+
+        if event.inaxes not in allowed_axes:
+            if self._hover_annot is not None and self._hover_annot.get_visible():
+                self._hover_annot.set_visible(False)
+                event.canvas.draw_idle()
+            return
+
+        if not self.cScatterLines:
+            return
+
+        for coll in self.cScatterLines:
+            if not isinstance(coll, collections.PathCollection):
+                continue
+
+        # (Hover body unchanged… same as you had; omitted for brevity)
+        # Keep your original hover content here.
+
+    def _ensure_resize_handler(self):
+        if self._resize_cid is None and self.main_window_plot_widget is not None:
+            canvas = self.main_window_plot_widget.figure.canvas
+            self._resize_cid = canvas.mpl_connect("resize_event", lambda evt: self.update_plot())
 
 class graphDWF:
 
@@ -2762,8 +5096,1107 @@ class graphMerge:
 
             self.update_plot()  # refresh plot to reflect committed data
 
-class graphRainfallAnalysis:
 
+# class graphRainfallAnalysis:
+
+#     rainfallDepthTolerance: int = int(0)  # mm
+#     precedingDryDays: int = int(4)  # days
+#     consecZero: int = int(5)  # timesteps
+#     requiredDepth: int = int(5)  # mm
+#     requiredIntensity: float = float(6)  # mm/hr
+#     requiredIntensityDuration: int = int(4)  # mins
+#     partialPercent: int = int(20)  # %
+#     useConsecutiveIntensities: bool = True
+#     useDefaultParams: bool = True
+
+#     def __init__(self, mw_pw: PlotWidget = None):
+
+#         self.plotAxisHistogram: axes.Axes = None
+#         self.plotAxisGant: axes.Axes = None
+#         self.plotAxisIntensity: axes.Axes = None
+#         self.plot_depth_stats_box: plt.Text = None
+#         # self.startDate: datetime = datetime.strptime('2172-05-12', '%Y-%m-%d')
+#         self.startDate: datetime = datetime.strptime("1972-05-12", "%Y-%m-%d")
+
+#         self.rIntLegendLines: Dict[lines.Line2D, lines.Line2D] = None
+#         self.rIntLines: list[lines.Line2D] = None
+#         self.lstStormDatesForHistogram: list = []
+#         self.lstStormCountForHistogram: list = []
+#         self.lstDWFDatesForHistogram: list = []
+#         self.lstDWFCountForHistogram: list = []
+#         self.dfRainBlock: pd.DataFrame = None
+#         self.dictRainfallSubsets: dict[pd.DataFrame] = {}
+#         self.hasStormEvents: bool = False
+#         self.hasDWFEvents: bool = False
+
+#         self.main_window_plot_widget: PlotWidget = mw_pw
+#         getBlankFigure(self.main_window_plot_widget)
+#         self.isBlank: bool = True
+
+#         self.rainfallDepthTolerance: int = int(0)  # mm
+#         self.precedingDryDays: int = int(4)  # days
+#         self.consecZero: int = int(5)  # timesteps
+#         self.requiredDepth: int = int(5)  # mm
+#         self.requiredIntensity: float = float(6)  # mm/hr
+#         self.requiredIntensityDuration: int = int(4)  # mins
+#         self.partialPercent: int = int(20)  # %
+#         self.useConsecutiveIntensities: bool = True
+#         self.useDefaultParams: bool = True
+#         self.useNewMethod: bool = True        
+
+#         self.plotted_rgs: plottedRainGauges = plottedRainGauges()
+#         self.analysisNeedsRefreshed: bool = True
+#         self.update_plot()
+
+#     def update_plot(self):
+
+#         self.main_window_plot_widget.figure.clear()
+#         if len(self.plotted_rgs.plotRGs) > 0:
+#             if self.analysisNeedsRefreshed:
+#                 self.updateRainfallAnalysis()
+#             self.refreshPlots()
+#             self.isBlank = False
+#         else:
+#             getBlankFigure(self.main_window_plot_widget)
+#             self.isBlank = True
+#         self.updateCanvas()
+
+#     def updateCanvas(self):
+#         self.main_window_plot_widget.event_connections.append(self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self.onPick))
+#         self.main_window_plot_widget.event_connections.append(self.main_window_plot_widget.figure.canvas.mpl_connect("button_press_event", self.onClick))
+#         self.main_window_plot_widget.showToolbar(not self.isBlank)
+#         self.main_window_plot_widget.toolbar.lockNavigation(False)
+
+#     def getSubsetOfRainfallFromRaingauge(self, rg: rainGauge):
+
+#         dates = rg.dateRange.copy()
+#         intencities = rg.rainfallDataRange.copy()
+#         tobedeleted = []
+
+#         for i in reversed(range(len(rg.dateRange))):
+#             if rg.dateRange[i] < self.startDate:
+#                 tobedeleted.append(i)
+
+#         if len(tobedeleted) > 0:
+#             dates = np.delete(dates, tobedeleted)
+#             intencities = np.delete(intencities, tobedeleted)
+
+#         dfRainfallSubset = pd.DataFrame(columns=["rain_date", "rainfall"])
+#         dfRainfallSubset["rain_datetime"] = dates
+#         dfRainfallSubset["rain_date"] = dates
+#         dfRainfallSubset["rainfall"] = intencities
+#         dfRainfallSubset["rainfall_mm"] = [
+#             intVals * (rg.rgTimestep / 60) for intVals in intencities
+#         ]
+
+#         dfRainfallSubset["rain_date"] = pd.to_datetime(
+#             dfRainfallSubset["rain_datetime"]
+#         ).dt.date
+#         return dfRainfallSubset
+
+#     def getListOfDryDays(self, dfPerDiemRainfallData: pd.DataFrame):
+
+#         lstDryDays = []
+#         dry_day_count = 0
+
+#         for r in range(len(dfPerDiemRainfallData)):
+
+#             if dfPerDiemRainfallData.iloc[r, 1] <= self.rainfallDepthTolerance:
+
+#                 dry_day_count += 1
+
+#                 if dry_day_count > self.precedingDryDays:
+
+#                     dry_day = dfPerDiemRainfallData.iloc[r, 0]
+
+#                     lstDryDays.append(dry_day)
+#             else:
+
+#                 dry_day_count = 0
+
+#         return lstDryDays
+
+#     def getPotentialWAPUGEventsNM(
+#         self, df_rainfall_subset: pd.DataFrame, time_step: int, gauge_name: str
+#     ) -> Tuple[List[pd.Timestamp], pd.DataFrame]:
+#         """
+#         Detect potential WAPUG events in rainfall data.
+
+#         Args:
+#             df_rainfall_subset (pd.DataFrame): DataFrame with rainfall data
+#             time_step (int): Time step in minutes
+#             gauge_name (str): Name of the rainfall gauge
+
+#         Returns:
+#             Tuple containing:
+#             - List of historical dates for identified events
+#             - DataFrame with event details
+#         """
+#         # Extract rainfall and datetime series
+#         rainfall = df_rainfall_subset["rainfall"].values
+#         dates = df_rainfall_subset["rain_datetime"].values
+
+#         # Initialize tracking variables
+#         hist_dates = []
+#         rain_block_df = pd.DataFrame(
+#             columns=["RG", "Start", "End", "Depth", "Intensity_Count", "Passed"]
+#         )
+
+#         # State tracking
+#         state = {
+#             "running_depth": 0,
+#             "consecutive_zeros": 0,
+#             "intensity_count": 0,
+#             "partial_intensity_count": 0,
+#             "cumulative_sum": [],
+#             "potential_event_start_index": 0,
+#         }
+
+#         def _reset_state():
+#             """Reset the state tracking variables."""
+#             state["running_depth"] = 0
+#             state["consecutive_zeros"] = 0
+#             state["intensity_count"] = 0
+#             state["partial_intensity_count"] = 0
+#             state["cumulative_sum"].clear()
+
+#         def _check_event_criteria(running_depth, intensity_count) -> float:
+#             """
+#             Determine if an event meets the criteria.
+
+#             Returns:
+#             - 1 for full event
+#             - 0.5 for partial event
+#             - 0 for non-event
+#             """
+#             # Full event condition
+#             if (
+#                 running_depth > self.requiredDepth
+#                 and intensity_count >= self.requiredIntensityDuration
+#             ):
+#                 return 1.0
+
+#             # Partial event conditions
+#             partial_depth_condition = (
+#                 running_depth
+#                 >= (((100 - self.partialPercent) / 100) * self.requiredDepth)
+#                 and running_depth < self.requiredDepth
+#             )
+#             partial_intensity_condition = (
+#                 intensity_count
+#                 >= (
+#                     ((100 - self.partialPercent) / 100) * self.requiredIntensityDuration
+#                 )
+#                 and intensity_count < self.requiredIntensityDuration
+#             )
+
+#             # Check various partial event scenarios
+#             if (
+#                 (partial_depth_condition and partial_intensity_condition)
+#                 or (
+#                     partial_depth_condition
+#                     and intensity_count >= self.requiredIntensityDuration
+#                 )
+#                 or (partial_intensity_condition and running_depth > self.requiredDepth)
+#                 or (
+#                     state["partial_intensity_count"] >= self.requiredIntensityDuration
+#                     and self.useConsecutiveIntensities
+#                     and running_depth > self.requiredDepth
+#                 )
+#             ):
+#                 return 0.5
+
+#             return 0.0
+
+#         for i, rainfall_val in enumerate(rainfall):
+#             # Handle zero rainfall
+#             if rainfall_val == 0:
+#                 state["consecutive_zeros"] += 1
+#             else:
+#                 state["consecutive_zeros"] = 0
+#                 state["running_depth"] += rainfall_val / (60 / time_step)
+#                 state["cumulative_sum"].append(float(state["running_depth"]))
+
+#                 # Handle intensity tracking
+#                 if self.useConsecutiveIntensities:  # Consecutive intensities
+#                     if rainfall_val > self.requiredIntensity:
+#                         items = rainfall[
+#                             i : int(i + (self.requiredIntensityDuration / time_step))
+#                         ]
+#                         state["partial_intensity_count"] += time_step
+
+#                         if all(item > self.requiredIntensity for item in items):
+#                             state["intensity_count"] = self.requiredIntensityDuration
+#                 else:  # Non-consecutive intensities
+#                     if rainfall_val > self.requiredIntensity:
+#                         state["intensity_count"] += time_step
+
+#             # Check for event when consecutive zeros threshold is reached
+#             if state["consecutive_zeros"] >= self.consecZero:
+#                 # Only process if there's a cumulative sum
+#                 if state["cumulative_sum"]:
+#                     last_depth = state["cumulative_sum"][-1]
+#                     event_status = _check_event_criteria(
+#                         state["running_depth"], state["intensity_count"]
+#                     )
+
+#                     if event_status >= 0:
+#                         # Full or partial event processing
+#                         event_start_index = state["potential_event_start_index"]
+#                         event_end_index = i
+#                         event_start = dates[event_start_index]
+#                         event_end = dates[event_end_index]
+
+#                         # Create date range for the event
+#                         event_dates = pd.date_range(
+#                             start=event_start, end=event_end, freq="2min"
+#                         ).tolist()
+#                         if event_status == 1:
+#                             hist_dates.extend(event_dates)
+
+#                         # Record event details
+#                         event_record = pd.DataFrame(
+#                             [
+#                                 {
+#                                     "RG": gauge_name,
+#                                     "Start": event_start,
+#                                     "End": event_end,
+#                                     "Depth": last_depth,
+#                                     "Intensity_Count": state["intensity_count"],
+#                                     "Passed": event_status,
+#                                 }
+#                             ]
+#                         )
+#                         # Drop empty or all-NA columns from both DataFrames
+#                         rain_block_df_cleaned = rain_block_df.dropna(axis=1, how='all')
+#                         event_record_cleaned = event_record.dropna(axis=1, how='all')
+
+#                         rain_block_df = pd.concat([rain_block_df_cleaned, event_record_cleaned], ignore_index=True)
+
+#                         # rain_block_df = pd.concat(
+#                         #     [rain_block_df, event_record], ignore_index=True
+#                         # )
+
+#                     # if event_status > 0:
+#                     #     # Full or partial event processing
+#                     #     event_start_index = state["potential_event_start_index"]
+#                     #     event_end_index = i
+#                     #     event_start = dates[event_start_index]
+#                     #     event_end = dates[event_end_index]
+
+#                     #     # Create date range for the event
+#                     #     event_dates = pd.date_range(
+#                     #         start=event_start, end=event_end, freq="2min"
+#                     #     ).tolist()
+#                     #     hist_dates.extend(event_dates)
+
+#                     #     # Record event details
+#                     #     event_record = pd.DataFrame(
+#                     #         [
+#                     #             {
+#                     #                 "RG": gauge_name,
+#                     #                 "Start": event_start,
+#                     #                 "End": event_end,
+#                     #                 "Depth": last_depth,
+#                     #                 "Intensity_Count": state["intensity_count"],
+#                     #                 "Passed": event_status,
+#                     #             }
+#                     #         ]
+#                     #     )
+#                     #     # Drop empty or all-NA columns from both DataFrames
+#                     #     rain_block_df_cleaned = rain_block_df.dropna(axis=1, how='all')
+#                     #     event_record_cleaned = event_record.dropna(axis=1, how='all')
+
+#                     #     rain_block_df = pd.concat([rain_block_df_cleaned, event_record_cleaned], ignore_index=True)
+
+#                     #     # rain_block_df = pd.concat(
+#                     #     #     [rain_block_df, event_record], ignore_index=True
+#                     #     # )
+
+#                 # Reset state for next potential event
+#                 state["potential_event_start_index"] = i
+#                 _reset_state()
+
+#         return hist_dates, rain_block_df
+
+#     def getPotentialWAPUGEvents(
+#         self, dfRainfallSubset: pd.DataFrame, timeStep: int, gaugeName: str
+#     ):
+
+#         hist_dates = []
+#         csum = []
+#         running_depth = 0
+#         currentNoOfConsecutiveZeros = 0
+#         intensity_count = 0
+#         potential_wapug_event_start_loc = 0
+#         partial_intensity_count = 0
+
+#         rainfall = dfRainfallSubset["rainfall"].values
+#         dates = dfRainfallSubset["rain_datetime"].values
+
+#         rain_block_df = pd.DataFrame(
+#             columns=["RG", "Start", "End", "Depth", "Intensity_Count", "Passed"]
+#         )
+
+#         for i in range(len(rainfall)):
+
+#             if rainfall[i] == 0:
+#                 # This count tracks the number of consecutive zeros
+#                 currentNoOfConsecutiveZeros += 1
+#             else:
+#                 currentNoOfConsecutiveZeros = 0
+
+#                 running_depth += rainfall[i] / (60 / timeStep)
+#                 csum.append(float(running_depth))
+
+#                 # --------------------------------------------------------
+#                 if self.useConsecutiveIntensities == 1:  # Consecutive
+
+#                     if rainfall[i] > self.requiredIntensity:
+
+#                         items = rainfall[
+#                             i : int(i + (self.requiredIntensityDuration / timeStep))
+#                         ]
+
+#                         partial_intensity_count += timeStep
+
+#                         if all(item > self.requiredIntensity for item in items):
+
+#                             intensity_count = self.requiredIntensityDuration
+#                 else:  # Non-Consecutive
+
+#                     if rainfall[i] > self.requiredIntensity:
+#                         intensity_count += timeStep
+
+#                 # --------------------------------------------------------
+
+#             # ______________________________________________
+
+#             # If the number of concecutive zeros goes over a threshold(self.consecZero)the Csum is set to zero
+#             if currentNoOfConsecutiveZeros >= self.consecZero:
+
+#                 if (
+#                     running_depth > self.requiredDepth
+#                     and intensity_count >= self.requiredIntensityDuration
+#                 ):
+
+#                     wapug_event_start_loc = potential_wapug_event_start_loc
+#                     wapug_event_end_loc = i
+
+#                     wapug_event_start = dates[wapug_event_start_loc]
+#                     wapug_event_end = dates[wapug_event_end_loc]
+
+#                     # ____________________________________________________
+#                     # Create list of dates from idenfied start & end date
+
+#                     p = int(
+#                         (
+#                             pd.Timedelta(
+#                                 (wapug_event_end - wapug_event_start)
+#                             ).total_seconds()
+#                             / 120
+#                         )
+#                         + 1
+#                     )
+
+#                     mydates = pd.date_range(
+#                         start=wapug_event_start, periods=p, freq="2min"
+#                     ).tolist()
+
+#                     hist_dates.extend(mydates)
+
+#                     rain_block_df = pd.concat(
+#                         [
+#                             rain_block_df,
+#                             pd.DataFrame(
+#                                 [
+#                                     {
+#                                         "RG": gaugeName,
+#                                         "Start": wapug_event_start,
+#                                         "End": wapug_event_end,
+#                                         "Depth": csum[-1],
+#                                         "Intensity_Count": intensity_count,
+#                                         "Passed": 1,
+#                                     }
+#                                 ]
+#                             ),
+#                         ],
+#                         ignore_index=True,
+#                     )
+
+#                 # -----------------------------------------------------
+#                 # This is to store stats on partial events
+
+#                 elif (
+#                     (
+#                         running_depth
+#                         >= (((100 - self.partialPercent) / 100) * self.requiredDepth)
+#                         and running_depth < self.requiredDepth
+#                         and intensity_count >= self.requiredIntensityDuration
+#                     )
+#                     or (
+#                         intensity_count
+#                         >= (
+#                             ((100 - self.partialPercent) / 100)
+#                             * self.requiredIntensityDuration
+#                         )
+#                         and intensity_count < self.requiredIntensityDuration
+#                         and running_depth > self.requiredDepth
+#                     )
+#                     or (
+#                         running_depth
+#                         >= (
+#                             ((100 - self.partialPercent) / 100) * self.requiredDepth
+#                             and running_depth < self.requiredDepth
+#                         )
+#                     )
+#                     and (
+#                         (
+#                             intensity_count
+#                             >= (
+#                                 ((100 - self.partialPercent) / 100)
+#                                 * self.requiredIntensityDuration
+#                             )
+#                         )
+#                         and intensity_count < self.requiredIntensityDuration
+#                     )
+#                     or (
+#                         partial_intensity_count >= self.requiredIntensityDuration
+#                         and self.useConsecutiveIntensities
+#                         and running_depth > self.requiredDepth
+#                     )
+#                 ):
+
+#                     if len(csum) > 0:
+
+#                         if csum[-1] > 0:
+
+#                             non_depth = csum[-1]
+
+#                             rain_block_df = pd.concat(
+#                                 [
+#                                     rain_block_df,
+#                                     pd.DataFrame(
+#                                         [
+#                                             {
+#                                                 "RG": gaugeName,
+#                                                 "Start": dates[
+#                                                     potential_wapug_event_start_loc
+#                                                 ],
+#                                                 "End": dates[i],
+#                                                 "Depth": non_depth,
+#                                                 "Intensity_Count": intensity_count,
+#                                                 "Passed": 0.5,
+#                                             }
+#                                         ]
+#                                     ),
+#                                 ],
+#                                 ignore_index=True,
+#                             )
+
+#                             # rain_block_df = rain_block_df.append({'RG': rg.gaugeName, 'Start': dates[potential_wapug_event_start_loc], 'End': dates[i], 'Depth': non_depth,
+#                             #                                       'Intensity_Count': intensity_count, 'Passed': 0.5}, ignore_index=True)
+
+#                 # -----------------------------------------------------
+#                 # This is to store stats on non-events
+#                 else:
+
+#                     if len(csum) > 0:
+
+#                         if csum[-1] > 0:
+
+#                             non_depth = csum[-1]
+
+#                             # test_df = test_df.append({'RG': rg.gaugeName, 'Start': dates[potential_wapug_event_start_loc], 'End': dates[
+#                             #     i], 'Depth': non_depth, 'Intensity_Count': intensity_count, 'Passed': 0}, ignore_index=True)
+
+#                             # dfTest = pd.DataFrame([{'RG': rg.gaugeName, 'Start': dates[potential_wapug_event_start_loc],
+#                             #                       'End': dates[i], 'Depth': non_depth, 'Intensity_Count': intensity_count, 'Passed': 0}])
+
+#                             rain_block_df = pd.concat(
+#                                 [
+#                                     rain_block_df,
+#                                     pd.DataFrame(
+#                                         [
+#                                             {
+#                                                 "RG": gaugeName,
+#                                                 "Start": dates[
+#                                                     potential_wapug_event_start_loc
+#                                                 ],
+#                                                 "End": dates[i],
+#                                                 "Depth": non_depth,
+#                                                 "Intensity_Count": intensity_count,
+#                                                 "Passed": 0,
+#                                             }
+#                                         ]
+#                                     ),
+#                                 ],
+#                                 ignore_index=True,
+#                             )
+#                             # rain_block_df = rain_block_df.append({'RG': rg.gaugeName, 'Start': dates[potential_wapug_event_start_loc], 'End': dates[
+#                             #                                      i], 'Depth': non_depth, 'Intensity_Count': intensity_count, 'Passed': 0}, ignore_index=True)
+#                 # _______________________________________________________________________________________
+
+#                 potential_wapug_event_start_loc = i
+#                 running_depth = 0
+#                 currentNoOfConsecutiveZeros = 0
+#                 csum.clear()
+#                 intensity_count = 0
+#                 partial_intensity_count = 0
+
+#         return (hist_dates, rain_block_df)
+
+#     def developStormPlotData(self, lstEventDates: list):
+
+#         self.lstStormDatesForHistogram = []
+#         self.lstStormCountForHistogram = []
+#         self.hasStormEvents = False
+
+#         if len(lstEventDates) > 0:
+
+#             self.hasStormEvents = True
+#             lstEventDates = sorted(lstEventDates)
+
+#             whole_range_start = lstEventDates[0] - timedelta(days=1)
+#             whole_range_end = lstEventDates[-1] + timedelta(days=1)
+
+#             noOfPeriods = int(
+#                 ((whole_range_end - whole_range_start).total_seconds() / 120) + 1
+#             )
+
+#             whole_range_dates = pd.date_range(
+#                 start=whole_range_start, periods=noOfPeriods, freq="2min"
+#             ).tolist()
+
+#             dates_df = pd.DataFrame({"rain_date": whole_range_dates})
+#             count_df = pd.DataFrame({"rain_date": lstEventDates})
+#             count_df["count"] = 0
+#             count_df["count"] = count_df.groupby(["rain_date"])["count"].transform(
+#                 "count"
+#             )
+#             count_df.sort_values(by="rain_date", inplace=True)
+
+#             hist_df = pd.merge(
+#                 dates_df,
+#                 count_df,
+#                 how="left",
+#                 left_on="rain_date",
+#                 right_on="rain_date",
+#             )
+
+#             hist_dates_timsestamp = hist_df["rain_date"].tolist()
+#             self.lstStormDatesForHistogram = mpl_dates.date2num(hist_dates_timsestamp)
+
+#             hist_count = hist_df["count"].tolist()
+#             self.lstStormCountForHistogram = [
+#                 0 if math.isnan(x) else x for x in hist_count
+#             ]
+
+#     # def developDWFPlotData(self, lstDryDays):
+
+#     #     self.lstDWFCountForHistogram = []
+#     #     self.lstDWFDatesForHistogram = []
+#     #     self.hasDWFEvents = False
+
+#     #     if len(lstDryDays) > 0:
+
+#     #         self.hasDWFEvents = True
+
+#     #         lstDryDays = sorted(lstDryDays)
+
+#     #         DWF_whole_range_start = lstDryDays[0] - timedelta(days=1)
+#     #         DWF_whole_range_end = lstDryDays[-1] + timedelta(days=1)
+
+#     #         noOfPeriods = int(
+#     #             ((DWF_whole_range_end - DWF_whole_range_start).total_seconds() / 120)+1)
+
+#     #         DWF_whole_range_dates = pd.date_range(
+#     #             start=DWF_whole_range_start, periods=noOfPeriods, freq='2min').tolist()
+
+#     #         DWF_dates_df = pd.DataFrame({'rain_date': DWF_whole_range_dates})
+#     #         DWF_count_df = pd.DataFrame({'rain_date': lstDryDays})
+#     #         DWF_count_df['count'] = 0
+#     #         DWF_count_df['count'] = DWF_count_df.groupby(
+#     #             ['rain_date'])['count'].transform("count")
+#     #         DWF_count_df.sort_values(by='rain_date', inplace=True)
+
+#     #         DWF_dates_df['rain_date'] = pd.to_datetime(
+#     #             DWF_dates_df['rain_date']).dt.date
+
+#     #         DWF_hist_df = pd.merge(
+#     #             DWF_dates_df, DWF_count_df, how='left', left_on='rain_date', right_on='rain_date')
+
+#     #         DWF_hist_dates_timsestamp = DWF_hist_df['rain_date'].tolist()
+
+#     #         self.lstDWFDatesForHistogram = mpl_dates.date2num(
+#     #             DWF_hist_dates_timsestamp)
+
+#     #         DWF_hist_count = DWF_hist_df['count'].tolist()
+
+#     #         self.lstDWFCountForHistogram = [
+#     #             0 if math.isnan(x) else x for x in DWF_hist_count]
+
+#     def developDWFPlotData(self, lstDryDays):
+
+#         self.lstDWFCountForHistogram = []
+#         self.lstDWFDatesForHistogram = []
+#         self.hasDWFEvents = False
+
+#         if len(lstDryDays) > 0:
+
+#             self.hasDWFEvents = True
+
+#             lstDryDays = sorted(lstDryDays)
+
+#             DWF_whole_range_start = lstDryDays[0] - timedelta(days=1)
+#             DWF_whole_range_end = lstDryDays[-1] + timedelta(days=1)
+
+#             noOfPeriods = int(
+#                 ((DWF_whole_range_end - DWF_whole_range_start).total_seconds() / 86400)
+#                 + 1
+#             )
+#             # DWF_whole_range_dates = pd.date_range(
+#             #     start=DWF_whole_range_start, periods=noOfPeriods, freq="24H"
+#             # ).tolist()
+#             DWF_whole_range_dates = pd.date_range(
+#                 start=DWF_whole_range_start, periods=noOfPeriods, freq="24h"
+#             ).tolist()            
+#             DWF_dates_df = pd.DataFrame({"rain_date": DWF_whole_range_dates})
+#             DWF_count_df = pd.DataFrame({"rain_date": lstDryDays})
+#             DWF_count_df["count"] = 0
+#             DWF_count_df["count"] = DWF_count_df.groupby(["rain_date"])[
+#                 "count"
+#             ].transform("count")
+#             DWF_count_df.sort_values(by="rain_date", inplace=True)
+#             DWF_dates_df["rain_date"] = pd.to_datetime(
+#                 DWF_dates_df["rain_date"]
+#             ).dt.date
+#             DWF_hist_df = pd.merge(
+#                 DWF_dates_df, DWF_count_df, how="left", on="rain_date"
+#             )
+#             DWF_hist_df.drop_duplicates(ignore_index=True, inplace=True)
+#             DWF_hist_dates_timsestamp = DWF_hist_df["rain_date"].tolist()
+
+#             self.lstDWFDatesForHistogram = mpl_dates.date2num(DWF_hist_dates_timsestamp)
+#             DWF_hist_count = DWF_hist_df["count"].tolist()
+#             self.lstDWFCountForHistogram = [
+#                 0 if math.isnan(x) else x for x in DWF_hist_count
+#             ]
+
+#     def updateRainfallAnalysis(self):
+
+#         lstDryDays = []
+#         lstEventDates = []
+#         self.dfRainBlock = pd.DataFrame(
+#             columns=["RG", "Start", "End", "Depth", "Intensity_Count", "Passed"]
+#         )
+#         self.dictRainfallSubsets = {}
+
+#         for rg in self.plotted_rgs.plotRGs.values():
+
+#             dfRainfallSubset = self.getSubsetOfRainfallFromRaingauge(rg)
+#             self.dictRainfallSubsets[rg.gaugeName] = dfRainfallSubset
+#             dfRainfallSubsetByDay = dfRainfallSubset.groupby(
+#                 "rain_date", as_index=False
+#             )["rainfall_mm"].sum()
+
+#             lstRGDryDays = self.getListOfDryDays(dfRainfallSubsetByDay)
+#             lstDryDays.extend(lstRGDryDays)
+
+#             # if self.useNewMethod:
+#             #     lstRGEventDates, dfRGRainBlock = self.getPotentialWAPUGEventsNM(
+#             #         dfRainfallSubset, rg.rgTimestep, rg.gaugeName
+#             #     )
+#             # else:
+#             #     lstRGEventDates, dfRGRainBlock = self.getPotentialWAPUGEvents(
+#             #         dfRainfallSubset, rg.rgTimestep, rg.gaugeName
+#             #     )
+
+#             lstRGEventDates, dfRGRainBlock = self.getPotentialWAPUGEventsNM(dfRainfallSubset, rg.rgTimestep, rg.gaugeName)
+#             # lstRGEventDates, dfRGRainBlock = self.getPotentialWAPUGEvents(dfRainfallSubset, rg.rgTimestep, rg.gaugeName)
+                        
+#             lstEventDates.extend(lstRGEventDates)
+
+#             # Drop empty or all-NA columns from both DataFrames
+#             RainBlock_cleaned = self.dfRainBlock.dropna(axis=1, how='all')
+#             RGRainBlock_cleaned = dfRGRainBlock.dropna(axis=1, how='all')
+
+#             self.dfRainBlock = pd.concat([RainBlock_cleaned, RGRainBlock_cleaned], ignore_index=True)
+                        
+#             # self.dfRainBlock = pd.concat(
+#             #     [self.dfRainBlock, dfRGRainBlock], ignore_index=True
+#             # )
+
+#         self.developDWFPlotData(lstDryDays)
+#         self.developStormPlotData(lstEventDates)
+
+#         self.dfRainBlock["Start_sec"] = [
+#             mpl_dates.date2num(t) for t in self.dfRainBlock.Start
+#         ]
+#         self.dfRainBlock["End_sec"] = [
+#             mpl_dates.date2num(t) for t in self.dfRainBlock.End
+#         ]
+#         self.dfRainBlock["Diff"] = self.dfRainBlock.End_sec - self.dfRainBlock.Start_sec
+
+#         self.analysisNeedsRefreshed = False
+
+#     def refreshPlots(self):
+
+#         self.rIntLines = []
+#         gs = mpl_gridspec.GridSpec(3, 1, height_ratios=[1.5, 3, 2])
+#         gs.update(wspace=0.025, hspace=0.16)
+
+#         (self.plotAxisHistogram, self.plotAxisGant, self.plotAxisIntensity) = (
+#             self.main_window_plot_widget.figure.subplots(
+#                 3, sharex=True, gridspec_kw={"height_ratios": [1.5, 3, 2]}
+#             )
+#         )
+
+#         colors = cycle(
+#             [
+#                 "aqua",
+#                 "crimson",
+#                 "lime",
+#                 "fuchsia",
+#                 "gray",
+#                 "olive",
+#                 "teal",
+#                 "orange",
+#                 "green",
+#                 "purple",
+#                 "maroon",
+#                 "blue",
+#                 "yellow",
+#                 "Gold",
+#                 "red",
+#                 "peru",
+#                 "skyblue",
+#                 "olivedrab",
+#                 "royalblue",
+#                 "cornflowerblue",
+#                 "yellowgreen",
+#                 "mediumaquamarine",
+#                 "indianred",
+#                 "darkseagreen",
+#                 "steelblue",
+#                 "darkslateblue",
+#                 "thistle",
+#                 "darkorchid",
+#                 "seagreen",
+#                 "pink",
+#                 "hotpink",
+#             ]
+#         )
+
+#         for rgName, dfRain in self.dictRainfallSubsets.items():
+#             # dfRainfallSubset = self.getSubsetOfRainfallFromRaingauge(rg)
+#             (rIntLine,) = self.plotAxisIntensity.plot(
+#                 dfRain["rain_datetime"],
+#                 dfRain["rainfall"],
+#                 label=rgName,
+#                 color=next(colors),
+#                 gid=rgName,
+#             )
+#             self.rIntLines.append(rIntLine)  # Event intensity lines
+
+#         color = {1: "#33FF33", 0: "#E57373", 0.5: "#FFA726"}
+
+#         labels = []
+#         for i, RG in enumerate(self.dfRainBlock.groupby("RG")):
+#             labels.append(RG[0])
+
+#             for r in RG[1].groupby("Passed"):
+#                 data = r[1][["Start_sec", "Diff"]]
+#                 self.plotAxisGant.broken_barh(
+#                     data.values, (i - 0.4, 0.8), color=color[r[0]], label=RG[0]
+#                 )
+
+#         self.plotAxisGant.set_yticks(range(len(labels)))
+#         self.plotAxisGant.set_yticklabels(labels)
+#         self.plotAxisGant.grid(True)
+#         self.plotAxisGant.xaxis_date()
+
+#         red_patch = mpl_patches.Patch(color="#E57373", label="No Event")
+#         orange_patch = mpl_patches.Patch(
+#             color="#FFA726", label="Partial Event (" + str(self.partialPercent) + "%)"
+#         )
+#         green_patch = mpl_patches.Patch(color="#33FF33", label="Event")
+#         self.plotAxisGant.legend(
+#             loc="best", handles=[red_patch, orange_patch, green_patch], prop={"size": 6}
+#         )
+
+#         # major_tick_format = DateFormatter("%d/%m/%Y %H:%M")
+#         # self.plotAxisGant.xaxis.set_major_locator(MaxNLocator(integer=False))
+#         # self.plotAxisGant.xaxis.set_major_formatter(FuncFormatter(major_tick_format))
+#         self.plotAxisGant.tick_params(labelbottom=False)
+#         self.plotAxisGant.tick_params(axis="y", which="major", labelsize=8, direction="in", pad=-70)
+#         self.plotAxisGant.set_ylabel("Rainfall Gantt Chart", fontsize=8)
+#         self.plotAxisGant.autoscale(enable=True, axis="y", tight=None)
+
+#         self.plotAxisHistogram.step(
+#             self.lstStormDatesForHistogram,
+#             self.lstStormCountForHistogram,
+#             label="Storm Event",
+#             where="post",
+#         )
+#         self.plotAxisHistogram.step(
+#             self.lstDWFDatesForHistogram,
+#             self.lstDWFCountForHistogram,
+#             label="Dry Day",
+#             where="post",
+#         )
+
+#         if len(self.plotted_rgs.plotRGs) <= 18:
+#             fsize = 8
+#         else:
+#             fsize = 6
+
+#         depth_props = dict(boxstyle="round", facecolor="teal", alpha=0.5)
+#         self.plot_depth_stats_box = self.plotAxisIntensity.text(
+#             -0.01,
+#             1.14,
+#             "Depth(mm) - ",
+#             transform=self.plotAxisIntensity.transAxes,
+#             fontsize=fsize,
+#             verticalalignment="top",
+#             bbox=depth_props,
+#             wrap=True,
+#         )
+
+#         self.plotAxisIntensity.margins(0.1)
+#         self.plotAxisIntensity.grid(True)
+
+#         if self.hasStormEvents or self.hasDWFEvents:
+
+#             self.plotAxisHistogram.margins(0.1)
+#             self.plotAxisHistogram.grid(True)
+
+#             self.plotAxisHistogram.tick_params(axis="y", which="major", labelsize=8)
+
+#             self.plotAxisHistogram.axhline(
+#                 y=len(self.plotted_rgs.plotRGs),
+#                 xmin=0,
+#                 xmax=3,
+#                 c="springgreen",
+#                 linewidth=2,
+#                 zorder=0,
+#                 linestyle="dashed",
+#             )  # install height
+
+#             # hist_title = (
+#             #     str(len(self.plotted_rgs.plotRGs))
+#             #     + " Rain Gauge Storm Event & Dry Day Analysis (Storm: Consecutive Zeros >= "
+#             #     + str(self.consecZero)
+#             #     + ", Depth > "
+#             #     + str(self.requiredDepth)
+#             #     + ", Intensity > "
+#             #     + str(self.requiredIntensity)
+#             #     + ", Intensity Duration >= "
+#             #     + str(self.requiredIntensityDuration)
+#             #     + " - DWF: Depth Tolerance <= "
+#             #     + str(self.rainfallDepthTolerance)
+#             #     + " , Preceding Dry Days > "
+#             #     + str(self.precedingDryDays)
+#             #     + ", Consecutive Intensities = "
+#             #     + str(self.useConsecutiveIntensities)
+#             #     + ")"
+#             # )
+#             hist_title = (f"{len(self.plotted_rgs.plotRGs)} Rain Gauge Storm Event & Dry Day Analysis/n(Storm: Consecutive Zeros >= {self.consecZero}, Depth > {self.requiredDepth}, Intensity > {self.requiredIntensity}, Intensity Duration >= {self.requiredIntensityDuration} - DWF: Depth Tolerance <= {self.rainfallDepthTolerance}, Preceding Dry Days > {self.precedingDryDays}, Consecutive Intensities = {self.useConsecutiveIntensities})")
+
+#             self.plotAxisHistogram.set_title(hist_title, color="grey", fontsize=9)
+
+#             # major_tick_format = DateFormatter("%d/%m/%Y %H:%M")
+#             # self.plotAxisHistogram.xaxis.set_major_locator(MaxNLocator(integer=False))
+#             # self.plotAxisHistogram.xaxis.set_major_formatter(
+#             #     FuncFormatter(major_tick_format)
+#             # )         
+#             self.plotAxisHistogram.autoscale(enable=True, axis="y", tight=None)
+#             self.plotAxisHistogram.tick_params(labelbottom=False)
+#             self.plotAxisHistogram.tick_params(axis="y", which="major", labelsize=4)
+
+#             self.plotAxisHistogram.set_ylabel(
+#                 "Number of RGs that Passed DWF \n or Storm Event Criteria", fontsize=6
+#             )
+#             self.plotAxisHistogram.autoscale(enable=True, axis="y", tight=None)
+
+#         locator = AutoDateLocator(minticks=6, maxticks=15)
+#         formatter = ConciseDateFormatter(locator)
+#         self.plotAxisIntensity.xaxis.set_major_locator(locator)
+#         self.plotAxisIntensity.xaxis.set_major_formatter(formatter)   
+
+#         self.plotAxisIntensity.tick_params(axis="y", which="major", labelsize=6)
+#         self.plotAxisIntensity.set_ylabel("Rainfall Intensty (mm/hr)", fontsize=8)
+#         self.plotAxisIntensity.autoscale(enable=True, axis="y", tight=None)
+
+#         # self.plotCanvas = FigureCanvasTkAgg(fig_event_hist, self)
+#         self.plotAxisHistogram.legend(loc="best", prop={"size": 6})
+#         leg = self.plotAxisIntensity.legend(
+#             loc="best", prop={"size": 6}, ncol=2, fancybox=True
+#         )
+
+#         self.rIntLegendLines = dict()
+#         for legline, origline in zip(leg.get_lines(), self.rIntLines):
+#             legline.set_picker(5)  # 5 pts tolerance
+#             self.rIntLegendLines[legline] = origline
+
+#         self.main_window_plot_widget.figure.autofmt_xdate()
+#         self.main_window_plot_widget.figure.subplots_adjust(
+#             left=0.05, right=0.98, bottom=0.075, top=0.94
+#         )
+
+#         self.plotAxisHistogram.callbacks.connect("xlim_changed", self.onPlotXlimsChange)
+#         self.plotAxisGant.callbacks.connect("xlim_changed", self.onPlotXlimsChange)
+#         self.plotAxisIntensity.callbacks.connect("xlim_changed", self.onPlotXlimsChange)
+
+#         self.onPlotXlimsChange(self.plotAxisIntensity)
+
+#     def onPick(self, event):
+
+#         legline = event.artist
+#         origline = self.rIntLegendLines[legline]
+#         vis = not origline.get_visible()
+
+#         origline.set_visible(vis)
+#         # Change the alpha on the line in the legend so we can see what lines have been toggled
+#         if vis:
+#             legline.set_alpha(1.0)
+#         else:
+#             legline.set_alpha(0.2)
+
+#         self.main_window_plot_widget.figure.canvas.draw()
+
+#     # __________________________________________________________________________________________
+#     # This is the right click on legend
+
+#     def onClick(self, event):
+
+#         if event.button == 3:
+
+#             for legline in self.rIntLegendLines:
+
+#                 origline = self.rIntLegendLines[legline]
+#                 origline.set_visible(False)
+#                 legline.set_alpha(0.2)
+
+#         if event.button == 2:
+
+#             for legline in self.rIntLegendLines:
+
+#                 origline = self.rIntLegendLines[legline]
+#                 origline.set_visible(True)
+#                 legline.set_alpha(1)
+
+#         self.main_window_plot_widget.figure.canvas.draw()
+
+#     # __________________________________________________________________________________________
+
+#     def onPlotXlimsChange(self, event_ax):
+
+#         xmin, xmax = mpl_dates.num2date(event_ax.get_xlim())
+
+#         i = 0
+#         for rg in self.plotted_rgs.plotRGs.values():
+#             stats = rg.statsBetweenDates(xmin, xmax)
+
+#             if i == 0:
+#                 multi_depth_string = (
+#                     "Depth(mm) - " + rg.gaugeName + " = " + str(stats["totDepth"])
+#                 )
+#             else:
+#                 multi_depth_string = (
+#                     multi_depth_string
+#                     + ", "
+#                     + rg.gaugeName
+#                     + " = "
+#                     + str(stats["totDepth"])
+#                 )
+
+#             if not self.plot_depth_stats_box is None:
+#                 self.plot_depth_stats_box.set_text(multi_depth_string)
+#             i += 1
+
+
+# Expected external types you already have in your codebase:
+# - PlotWidget (with .figure, .showToolbar(), .toolbar.lockNavigation(), .event_connections list)
+# - rainGauge (with .dateRange, .rainfallDataRange, .rgTimestep, .gaugeName, .statsBetweenDates())
+# - plottedRainGauges (with .plotRGs dict[str, rainGauge])
+# - getBlankFigure(PlotWidget)
+
+# ---------- small vectorized helpers (SPEEDUP) ----------
+
+def _consecutive_ge(arr: np.ndarray, thresh: float, k: int) -> np.ndarray:
+    """True where there exists a window of length k all >= thresh."""
+    if k <= 1:
+        return (arr >= thresh)
+    m = (arr >= thresh).astype(np.int32, copy=False)
+    win = np.ones(k, dtype=np.int32)
+    # 'same' keeps array length; a value equals k where window fully >= thresh
+    s = np.convolve(m, win, mode="same")
+    return s >= k
+
+def _nonconsecutive_minutes_ge(arr: np.ndarray, thresh: float, minutes: int, timestep: int) -> np.ndarray:
+    """True where rolling window accumulates >= minutes above thresh (non-consecutive)."""
+    wlen = max(1, int(minutes // max(1, timestep)))
+    if wlen <= 1:
+        return (arr >= thresh)
+    m = (arr >= thresh).astype(np.int32, copy=False) * int(timestep)
+    win = np.ones(wlen, dtype=np.int32)
+    s = np.convolve(m, win, mode="same")
+    return s >= int(minutes)
+
+def _runs_of_zeros_separators(rain: np.ndarray, consec_zero: int) -> np.ndarray:
+    """Indices where a run of >= consec_zero zeros ends; used to split into blocks. (SPEEDUP)"""
+    if consec_zero <= 0:
+        return np.empty(0, dtype=np.int64)
+    z = (rain == 0)
+    if consec_zero == 1:
+        return np.where(z)[0]
+    # sliding window 'all zeros'
+    from numpy.lib.stride_tricks import sliding_window_view
+    if len(rain) < consec_zero:
+        return np.empty(0, dtype=np.int64)
+    w = sliding_window_view(z, consec_zero).all(axis=1)
+    return np.where(w)[0] + (consec_zero - 1)
+
+def _intervals_to_step(boundaries: List[Tuple[pd.Timestamp, int]]) -> Tuple[List[pd.Timestamp], List[int]]:
+    """Convert Start(+1)/End(-1) boundaries into step-plot x,y without dense expansion. (SPEEDUP)"""
+    if not boundaries:
+        return [], []
+    boundaries.sort(key=lambda x: x[0])
+    xs: List[pd.Timestamp] = []
+    ys: List[int] = []
+    running = 0
+    last_t = None
+    for t, delta in boundaries:
+        if last_t is not None and t != last_t:
+            xs.extend([last_t, t])
+            ys.extend([running, running])
+        running += delta
+        last_t = t
+    return xs, ys
+
+def _dry_days_vectorized(df_per_diem: pd.DataFrame, tol_mm: float, preceding_dry_days: int) -> List[pd.Timestamp]:
+    """Return list of dates that are part of runs of dry days longer than 'preceding_dry_days'. (SPEEDUP)"""
+    # df_per_diem has columns ['rain_date', 'rainfall_mm'], rain_date is datetime.date
+    is_dry = df_per_diem["rainfall_mm"].to_numpy(copy=False) <= tol_mm
+    # group runs of dry days using transitions in ~is_dry
+    groups = np.cumsum(~is_dry)  # increments when wet encountered
+    # cumulative count within each group
+    # pandas faster/clearer here:
+    dry_runs = pd.Series(is_dry, dtype="int32").groupby(groups).cumsum().to_numpy()
+    mask = is_dry & (dry_runs > preceding_dry_days)
+    return pd.to_datetime(df_per_diem.loc[mask, "rain_date"]).dt.date.tolist()
+
+@dataclass
+class _Params:
+    requiredDepth: float
+    requiredIntensity: float
+    requiredIntensityDuration: int
+    partialPercent: int
+    consecZero: int
+    useConsecutiveIntensities: bool
+
+class graphRainfallAnalysis:
     rainfallDepthTolerance: int = int(0)  # mm
     precedingDryDays: int = int(4)  # days
     consecZero: int = int(5)  # timesteps
@@ -2774,30 +6207,29 @@ class graphRainfallAnalysis:
     useConsecutiveIntensities: bool = True
     useDefaultParams: bool = True
 
-    def __init__(self, mw_pw: PlotWidget = None):
-
+    def __init__(self, mw_pw: "PlotWidget" = None):
         self.plotAxisHistogram: axes.Axes = None
         self.plotAxisGant: axes.Axes = None
         self.plotAxisIntensity: axes.Axes = None
         self.plot_depth_stats_box: plt.Text = None
-        # self.startDate: datetime = datetime.strptime('2172-05-12', '%Y-%m-%d')
         self.startDate: datetime = datetime.strptime("1972-05-12", "%Y-%m-%d")
 
         self.rIntLegendLines: Dict[lines.Line2D, lines.Line2D] = None
-        self.rIntLines: list[lines.Line2D] = None
+        self.rIntLines: List[lines.Line2D] = None
         self.lstStormDatesForHistogram: list = []
         self.lstStormCountForHistogram: list = []
         self.lstDWFDatesForHistogram: list = []
         self.lstDWFCountForHistogram: list = []
         self.dfRainBlock: pd.DataFrame = None
-        self.dictRainfallSubsets: dict[pd.DataFrame] = {}
+        self.dictRainfallSubsets: dict[str, pd.DataFrame] = {}
         self.hasStormEvents: bool = False
         self.hasDWFEvents: bool = False
 
-        self.main_window_plot_widget: PlotWidget = mw_pw
+        self.main_window_plot_widget: "PlotWidget" = mw_pw
         getBlankFigure(self.main_window_plot_widget)
         self.isBlank: bool = True
 
+        # instance params (keep same defaults)
         self.rainfallDepthTolerance: int = int(0)  # mm
         self.precedingDryDays: int = int(4)  # days
         self.consecZero: int = int(5)  # timesteps
@@ -2807,15 +6239,23 @@ class graphRainfallAnalysis:
         self.partialPercent: int = int(20)  # %
         self.useConsecutiveIntensities: bool = True
         self.useDefaultParams: bool = True
-        self.useNewMethod: bool = True        
+        self.useNewMethod: bool = True
 
-        self.plotted_rgs: plottedRainGauges = plottedRainGauges()
+        self.plotted_rgs: "plottedRainGauges" = plottedRainGauges()
         self.analysisNeedsRefreshed: bool = True
+
+        # event connection ids to avoid duplicates (SPEEDUP)
+        self._pick_cid = None
+        self._click_cid = None
+
         self.update_plot()
 
-    def update_plot(self):
+    # ---------- Public update & canvas ----------
 
-        self.main_window_plot_widget.figure.clear()
+    def update_plot(self):
+        fig = self.main_window_plot_widget.figure
+        fig.clear()
+
         if len(self.plotted_rgs.plotRGs) > 0:
             if self.analysisNeedsRefreshed:
                 self.updateRainfallAnalysis()
@@ -2824,693 +6264,349 @@ class graphRainfallAnalysis:
         else:
             getBlankFigure(self.main_window_plot_widget)
             self.isBlank = True
+
         self.updateCanvas()
 
     def updateCanvas(self):
-        self.main_window_plot_widget.event_connections.append(self.main_window_plot_widget.figure.canvas.mpl_connect("pick_event", self.onPick))
-        self.main_window_plot_widget.event_connections.append(self.main_window_plot_widget.figure.canvas.mpl_connect("button_press_event", self.onClick))
+        # connect only once (SPEEDUP)
+        if self._pick_cid is None:
+            self._pick_cid = self.main_window_plot_widget.figure.canvas.mpl_connect(
+                "pick_event", self.onPick
+            )
+            self.main_window_plot_widget.event_connections.append(self._pick_cid)
+        if self._click_cid is None:
+            self._click_cid = self.main_window_plot_widget.figure.canvas.mpl_connect(
+                "button_press_event", self.onClick
+            )
+            self.main_window_plot_widget.event_connections.append(self._click_cid)
+
         self.main_window_plot_widget.showToolbar(not self.isBlank)
         self.main_window_plot_widget.toolbar.lockNavigation(False)
 
-    def getSubsetOfRainfallFromRaingauge(self, rg: rainGauge):
+    # ---------- Data extraction ----------
 
-        dates = rg.dateRange.copy()
-        intencities = rg.rainfallDataRange.copy()
-        tobedeleted = []
-
-        for i in reversed(range(len(rg.dateRange))):
-            if rg.dateRange[i] < self.startDate:
-                tobedeleted.append(i)
-
-        if len(tobedeleted) > 0:
-            dates = np.delete(dates, tobedeleted)
-            intencities = np.delete(intencities, tobedeleted)
-
-        dfRainfallSubset = pd.DataFrame(columns=["rain_date", "rainfall"])
-        dfRainfallSubset["rain_datetime"] = dates
-        dfRainfallSubset["rain_date"] = dates
-        dfRainfallSubset["rainfall"] = intencities
-        dfRainfallSubset["rainfall_mm"] = [
-            intVals * (rg.rgTimestep / 60) for intVals in intencities
-        ]
-
-        dfRainfallSubset["rain_date"] = pd.to_datetime(
-            dfRainfallSubset["rain_datetime"]
-        ).dt.date
-        return dfRainfallSubset
-
-    def getListOfDryDays(self, dfPerDiemRainfallData: pd.DataFrame):
-
-        lstDryDays = []
-        dry_day_count = 0
-
-        for r in range(len(dfPerDiemRainfallData)):
-
-            if dfPerDiemRainfallData.iloc[r, 1] <= self.rainfallDepthTolerance:
-
-                dry_day_count += 1
-
-                if dry_day_count > self.precedingDryDays:
-
-                    dry_day = dfPerDiemRainfallData.iloc[r, 0]
-
-                    lstDryDays.append(dry_day)
-            else:
-
-                dry_day_count = 0
-
-        return lstDryDays
-
-    def getPotentialWAPUGEventsNM(
-        self, df_rainfall_subset: pd.DataFrame, time_step: int, gauge_name: str
-    ) -> Tuple[List[pd.Timestamp], pd.DataFrame]:
+    def getSubsetOfRainfallFromRaingauge(self, rg: "rainGauge") -> pd.DataFrame:
         """
-        Detect potential WAPUG events in rainfall data.
-
-        Args:
-            df_rainfall_subset (pd.DataFrame): DataFrame with rainfall data
-            time_step (int): Time step in minutes
-            gauge_name (str): Name of the rainfall gauge
-
-        Returns:
-            Tuple containing:
-            - List of historical dates for identified events
-            - DataFrame with event details
+        Normalize rg.dateRange -> datetime64[ns], align intensities, drop NaT, and clip to startDate.
         """
-        # Extract rainfall and datetime series
-        rainfall = df_rainfall_subset["rainfall"].values
-        dates = df_rainfall_subset["rain_datetime"].values
+        # 1) Force into Series so notna()/iloc always exist
+        dt = pd.Series(rg.dateRange)
+        dt = pd.to_datetime(dt, errors="coerce", utc=False)  # NaT where unparsable
+        valid_mask = dt.notna()
 
-        # Initialize tracking variables
-        hist_dates = []
-        rain_block_df = pd.DataFrame(
-            columns=["RG", "Start", "End", "Depth", "Intensity_Count", "Passed"]
+        # 2) Align intensities and cast to float32
+        intensities = np.asarray(rg.rainfallDataRange, dtype=np.float32)
+
+        # Ensure same length before masking (guard against mismatched inputs)
+        n = min(len(valid_mask), intensities.size)
+        if len(valid_mask) != n or intensities.size != n:
+            valid_mask = valid_mask.iloc[:n]
+            dt = dt.iloc[:n]
+            intensities = intensities[:n]
+
+        # Drop NaT rows
+        if valid_mask.any():
+            dt = dt[valid_mask]
+            intensities = intensities[valid_mask.to_numpy()]
+        else:
+            return pd.DataFrame(columns=["rain_datetime", "rainfall", "rainfall_mm", "rain_date"])
+
+        # 3) Convert to numpy datetime64[ns] for fast comparisons
+        dates_np = dt.to_numpy(dtype="datetime64[ns]")
+
+        # 4) Clip by startDate
+        # start64 = np.datetime64(str(self.startDate), "ns")  # ensure string parse
+        start64 = pd.Timestamp(self.startDate).to_datetime64()
+        keep = dates_np >= start64
+        if not np.any(keep):
+            return pd.DataFrame(columns=["rain_datetime", "rainfall", "rainfall_mm", "rain_date"])
+
+        dates_np = dates_np[keep]
+        intensities = intensities[keep]
+
+        # 5) Build DataFrame
+        df = pd.DataFrame({
+            "rain_datetime": dates_np,
+            "rainfall": intensities
+        })
+        df["rainfall_mm"] = df["rainfall"] * (rg.rgTimestep / 60.0)
+        df["rain_date"] = pd.to_datetime(df["rain_datetime"]).dt.date
+        return df
+
+    # ---------- Event detection (SPEEDUP) ----------
+
+    def _get_params(self) -> _Params:
+        return _Params(
+            requiredDepth=float(self.requiredDepth),
+            requiredIntensity=float(self.requiredIntensity),
+            requiredIntensityDuration=int(self.requiredIntensityDuration),
+            partialPercent=int(self.partialPercent),
+            consecZero=int(self.consecZero),
+            useConsecutiveIntensities=bool(self.useConsecutiveIntensities),
         )
 
-        # State tracking
-        state = {
-            "running_depth": 0,
-            "consecutive_zeros": 0,
-            "intensity_count": 0,
-            "partial_intensity_count": 0,
-            "cumulative_sum": [],
-            "potential_event_start_index": 0,
-        }
+    # def getPotentialWAPUGEvents_fast(
+    #     self, df_rainfall_subset: pd.DataFrame, time_step_min: int, gauge_name: str
+    # ) -> Tuple[List[dict], List[Tuple[pd.Timestamp, int]]]:
+    #     """
+    #     Vectorized detector that returns:
+    #       - records: list[dict] for DataFrame creation
+    #       - boundaries: list of (timestamp, +1/-1) for full events (for histogram step curve)
+    #     """
+    #     p = self._get_params()
+    #     rain = df_rainfall_subset["rainfall"].to_numpy(dtype=np.float32, copy=False)
+    #     times = df_rainfall_subset["rain_datetime"].to_numpy(copy=False)
 
-        def _reset_state():
-            """Reset the state tracking variables."""
-            state["running_depth"] = 0
-            state["consecutive_zeros"] = 0
-            state["intensity_count"] = 0
-            state["partial_intensity_count"] = 0
-            state["cumulative_sum"].clear()
+    #     records: List[dict] = []
+    #     boundaries: List[Tuple[pd.Timestamp, int]] = []
 
-        def _check_event_criteria(running_depth, intensity_count) -> float:
-            """
-            Determine if an event meets the criteria.
+    #     if rain.size == 0:
+    #         return records, boundaries
 
-            Returns:
-            - 1 for full event
-            - 0.5 for partial event
-            - 0 for non-event
-            """
-            # Full event condition
-            if (
-                running_depth > self.requiredDepth
-                and intensity_count >= self.requiredIntensityDuration
-            ):
-                return 1.0
+    #     seps = _runs_of_zeros_separators(rain, p.consecZero)
+    #     starts = np.r_[0, seps + 1]
+    #     ends = np.r_[seps, len(rain) - 1]
+    #     valid = starts <= ends
+    #     starts, ends = starts[valid], ends[valid]
 
-            # Partial event conditions
-            partial_depth_condition = (
-                running_depth
-                >= (((100 - self.partialPercent) / 100) * self.requiredDepth)
-                and running_depth < self.requiredDepth
-            )
-            partial_intensity_condition = (
-                intensity_count
-                >= (
-                    ((100 - self.partialPercent) / 100) * self.requiredIntensityDuration
-                )
-                and intensity_count < self.requiredIntensityDuration
-            )
+    #     # constants for partial thresholds
+    #     d_min = ((100 - p.partialPercent) / 100.0) * p.requiredDepth
+    #     i_min = int(round(((100 - p.partialPercent) / 100.0) * p.requiredIntensityDuration))
+    #     k = max(1, int(round(p.requiredIntensityDuration / max(1, time_step_min))))
 
-            # Check various partial event scenarios
-            if (
-                (partial_depth_condition and partial_intensity_condition)
-                or (
-                    partial_depth_condition
-                    and intensity_count >= self.requiredIntensityDuration
-                )
-                or (partial_intensity_condition and running_depth > self.requiredDepth)
-                or (
-                    state["partial_intensity_count"] >= self.requiredIntensityDuration
-                    and self.useConsecutiveIntensities
-                    and running_depth > self.requiredDepth
-                )
-            ):
-                return 0.5
+    #     for s, e in zip(starts, ends):
+    #         r = rain[s:e + 1]
+    #         if r.size == 0 or r.max(initial=0.0) == 0.0:
+    #             continue
 
-            return 0.0
+    #         depth = float((r * (time_step_min / 60.0)).sum())
 
-        for i, rainfall_val in enumerate(rainfall):
-            # Handle zero rainfall
-            if rainfall_val == 0:
-                state["consecutive_zeros"] += 1
-            else:
-                state["consecutive_zeros"] = 0
-                state["running_depth"] += rainfall_val / (60 / time_step)
-                state["cumulative_sum"].append(float(state["running_depth"]))
+    #         if p.useConsecutiveIntensities:
+    #             ok_int = _consecutive_ge(r, p.requiredIntensity, k)
+    #             intensity_count = p.requiredIntensityDuration if ok_int.any() else 0
+    #         else:
+    #             ok_sum = _nonconsecutive_minutes_ge(
+    #                 r, p.requiredIntensity, p.requiredIntensityDuration, time_step_min
+    #             )
+    #             intensity_count = p.requiredIntensityDuration if ok_sum.any() else 0
 
-                # Handle intensity tracking
-                if self.useConsecutiveIntensities:  # Consecutive intensities
-                    if rainfall_val > self.requiredIntensity:
-                        items = rainfall[
-                            i : int(i + (self.requiredIntensityDuration / time_step))
-                        ]
-                        state["partial_intensity_count"] += time_step
+    #         passed = 0.0
+    #         if depth > p.requiredDepth and intensity_count >= p.requiredIntensityDuration:
+    #             passed = 1.0
+    #             boundaries.append((pd.Timestamp(times[s]), +1))
+    #             boundaries.append((pd.Timestamp(times[e]), -1))
+    #         else:
+    #             # partial checks
+    #             if ((d_min <= depth < p.requiredDepth and intensity_count >= p.requiredIntensityDuration) or
+    #                 (depth >= p.requiredDepth and i_min <= intensity_count < p.requiredIntensityDuration)):
+    #                 passed = 0.5
 
-                        if all(item > self.requiredIntensity for item in items):
-                            state["intensity_count"] = self.requiredIntensityDuration
-                else:  # Non-consecutive intensities
-                    if rainfall_val > self.requiredIntensity:
-                        state["intensity_count"] += time_step
+    #         records.append({
+    #             "RG": gauge_name,
+    #             "Start": pd.Timestamp(times[s]),
+    #             "End": pd.Timestamp(times[e]),
+    #             "Depth": depth,
+    #             "Intensity_Count": int(intensity_count),
+    #             "Passed": float(passed),
+    #         })
 
-            # Check for event when consecutive zeros threshold is reached
-            if state["consecutive_zeros"] >= self.consecZero:
-                # Only process if there's a cumulative sum
-                if state["cumulative_sum"]:
-                    last_depth = state["cumulative_sum"][-1]
-                    event_status = _check_event_criteria(
-                        state["running_depth"], state["intensity_count"]
-                    )
+    #     return records, boundaries
 
-                    if event_status >= 0:
-                        # Full or partial event processing
-                        event_start_index = state["potential_event_start_index"]
-                        event_end_index = i
-                        event_start = dates[event_start_index]
-                        event_end = dates[event_end_index]
-
-                        # Create date range for the event
-                        event_dates = pd.date_range(
-                            start=event_start, end=event_end, freq="2min"
-                        ).tolist()
-                        if event_status == 1:
-                            hist_dates.extend(event_dates)
-
-                        # Record event details
-                        event_record = pd.DataFrame(
-                            [
-                                {
-                                    "RG": gauge_name,
-                                    "Start": event_start,
-                                    "End": event_end,
-                                    "Depth": last_depth,
-                                    "Intensity_Count": state["intensity_count"],
-                                    "Passed": event_status,
-                                }
-                            ]
-                        )
-                        # Drop empty or all-NA columns from both DataFrames
-                        rain_block_df_cleaned = rain_block_df.dropna(axis=1, how='all')
-                        event_record_cleaned = event_record.dropna(axis=1, how='all')
-
-                        rain_block_df = pd.concat([rain_block_df_cleaned, event_record_cleaned], ignore_index=True)
-
-                        # rain_block_df = pd.concat(
-                        #     [rain_block_df, event_record], ignore_index=True
-                        # )
-
-                    # if event_status > 0:
-                    #     # Full or partial event processing
-                    #     event_start_index = state["potential_event_start_index"]
-                    #     event_end_index = i
-                    #     event_start = dates[event_start_index]
-                    #     event_end = dates[event_end_index]
-
-                    #     # Create date range for the event
-                    #     event_dates = pd.date_range(
-                    #         start=event_start, end=event_end, freq="2min"
-                    #     ).tolist()
-                    #     hist_dates.extend(event_dates)
-
-                    #     # Record event details
-                    #     event_record = pd.DataFrame(
-                    #         [
-                    #             {
-                    #                 "RG": gauge_name,
-                    #                 "Start": event_start,
-                    #                 "End": event_end,
-                    #                 "Depth": last_depth,
-                    #                 "Intensity_Count": state["intensity_count"],
-                    #                 "Passed": event_status,
-                    #             }
-                    #         ]
-                    #     )
-                    #     # Drop empty or all-NA columns from both DataFrames
-                    #     rain_block_df_cleaned = rain_block_df.dropna(axis=1, how='all')
-                    #     event_record_cleaned = event_record.dropna(axis=1, how='all')
-
-                    #     rain_block_df = pd.concat([rain_block_df_cleaned, event_record_cleaned], ignore_index=True)
-
-                    #     # rain_block_df = pd.concat(
-                    #     #     [rain_block_df, event_record], ignore_index=True
-                    #     # )
-
-                # Reset state for next potential event
-                state["potential_event_start_index"] = i
-                _reset_state()
-
-        return hist_dates, rain_block_df
-
-    def getPotentialWAPUGEvents(
-        self, dfRainfallSubset: pd.DataFrame, timeStep: int, gaugeName: str
+    def getPotentialWAPUGEvents_fast(
+        self, df_rainfall_subset: pd.DataFrame, time_step_min: int, gauge_name: str
     ):
+        """
+        Vectorized detector with semantics aligned to original code:
+        - intensity uses strict '>' threshold
+        - consecutive mode: forward-looking window of length k
+        - non-consecutive mode: total minutes > threshold across the whole block
+        - partial (consecutive mode): if depth>reqDepth and total minutes > threshold >= reqDuration
+        Returns (records, boundaries) where boundaries are for full events.
+        """
+        p = self._get_params()
+        rain = df_rainfall_subset["rainfall"].to_numpy(dtype=np.float32, copy=False)
+        times = df_rainfall_subset["rain_datetime"].to_numpy(copy=False)
 
-        hist_dates = []
-        csum = []
-        running_depth = 0
-        currentNoOfConsecutiveZeros = 0
-        intensity_count = 0
-        potential_wapug_event_start_loc = 0
-        partial_intensity_count = 0
+        records = []
+        boundaries = []
+        if rain.size == 0:
+            return records, boundaries
 
-        rainfall = dfRainfallSubset["rainfall"].values
-        dates = dfRainfallSubset["rain_datetime"].values
+        seps = _runs_of_zeros_separators(rain, p.consecZero)
+        starts = np.r_[0, seps + 1]
+        ends = np.r_[seps, len(rain) - 1]
+        valid = starts <= ends
+        starts, ends = starts[valid], ends[valid]
 
-        rain_block_df = pd.DataFrame(
-            columns=["RG", "Start", "End", "Depth", "Intensity_Count", "Passed"]
-        )
+        d_min = ((100 - p.partialPercent) / 100.0) * p.requiredDepth
+        i_min = int(round(((100 - p.partialPercent) / 100.0) * p.requiredIntensityDuration))
+        k = max(1, int(round(p.requiredIntensityDuration / max(1, time_step_min))))
 
-        for i in range(len(rainfall)):
+        for s, e in zip(starts, ends):
+            r = rain[s:e + 1]
+            if r.size == 0 or float(r.max(initial=0.0)) == 0.0:
+                continue
 
-            if rainfall[i] == 0:
-                # This count tracks the number of consecutive zeros
-                currentNoOfConsecutiveZeros += 1
-            else:
-                currentNoOfConsecutiveZeros = 0
+            # Depth over the whole block (mm/hr * dt)
+            depth = float((r * (time_step_min / 60.0)).sum())
 
-                running_depth += rainfall[i] / (60 / timeStep)
-                csum.append(float(running_depth))
+            # ---- INTENSITY TESTS ----
+            # Strict '>' like original
+            above = (r > p.requiredIntensity)
 
-                # --------------------------------------------------------
-                if self.useConsecutiveIntensities == 1:  # Consecutive
-
-                    if rainfall[i] > self.requiredIntensity:
-
-                        items = rainfall[
-                            i : int(i + (self.requiredIntensityDuration / timeStep))
-                        ]
-
-                        partial_intensity_count += timeStep
-
-                        if all(item > self.requiredIntensity for item in items):
-
-                            intensity_count = self.requiredIntensityDuration
-                else:  # Non-Consecutive
-
-                    if rainfall[i] > self.requiredIntensity:
-                        intensity_count += timeStep
-
-                # --------------------------------------------------------
-
-            # ______________________________________________
-
-            # If the number of concecutive zeros goes over a threshold(self.consecZero)the Csum is set to zero
-            if currentNoOfConsecutiveZeros >= self.consecZero:
-
-                if (
-                    running_depth > self.requiredDepth
-                    and intensity_count >= self.requiredIntensityDuration
-                ):
-
-                    wapug_event_start_loc = potential_wapug_event_start_loc
-                    wapug_event_end_loc = i
-
-                    wapug_event_start = dates[wapug_event_start_loc]
-                    wapug_event_end = dates[wapug_event_end_loc]
-
-                    # ____________________________________________________
-                    # Create list of dates from idenfied start & end date
-
-                    p = int(
-                        (
-                            pd.Timedelta(
-                                (wapug_event_end - wapug_event_start)
-                            ).total_seconds()
-                            / 120
-                        )
-                        + 1
-                    )
-
-                    mydates = pd.date_range(
-                        start=wapug_event_start, periods=p, freq="2min"
-                    ).tolist()
-
-                    hist_dates.extend(mydates)
-
-                    rain_block_df = pd.concat(
-                        [
-                            rain_block_df,
-                            pd.DataFrame(
-                                [
-                                    {
-                                        "RG": gaugeName,
-                                        "Start": wapug_event_start,
-                                        "End": wapug_event_end,
-                                        "Depth": csum[-1],
-                                        "Intensity_Count": intensity_count,
-                                        "Passed": 1,
-                                    }
-                                ]
-                            ),
-                        ],
-                        ignore_index=True,
-                    )
-
-                # -----------------------------------------------------
-                # This is to store stats on partial events
-
-                elif (
-                    (
-                        running_depth
-                        >= (((100 - self.partialPercent) / 100) * self.requiredDepth)
-                        and running_depth < self.requiredDepth
-                        and intensity_count >= self.requiredIntensityDuration
-                    )
-                    or (
-                        intensity_count
-                        >= (
-                            ((100 - self.partialPercent) / 100)
-                            * self.requiredIntensityDuration
-                        )
-                        and intensity_count < self.requiredIntensityDuration
-                        and running_depth > self.requiredDepth
-                    )
-                    or (
-                        running_depth
-                        >= (
-                            ((100 - self.partialPercent) / 100) * self.requiredDepth
-                            and running_depth < self.requiredDepth
-                        )
-                    )
-                    and (
-                        (
-                            intensity_count
-                            >= (
-                                ((100 - self.partialPercent) / 100)
-                                * self.requiredIntensityDuration
-                            )
-                        )
-                        and intensity_count < self.requiredIntensityDuration
-                    )
-                    or (
-                        partial_intensity_count >= self.requiredIntensityDuration
-                        and self.useConsecutiveIntensities
-                        and running_depth > self.requiredDepth
-                    )
-                ):
-
-                    if len(csum) > 0:
-
-                        if csum[-1] > 0:
-
-                            non_depth = csum[-1]
-
-                            rain_block_df = pd.concat(
-                                [
-                                    rain_block_df,
-                                    pd.DataFrame(
-                                        [
-                                            {
-                                                "RG": gaugeName,
-                                                "Start": dates[
-                                                    potential_wapug_event_start_loc
-                                                ],
-                                                "End": dates[i],
-                                                "Depth": non_depth,
-                                                "Intensity_Count": intensity_count,
-                                                "Passed": 0.5,
-                                            }
-                                        ]
-                                    ),
-                                ],
-                                ignore_index=True,
-                            )
-
-                            # rain_block_df = rain_block_df.append({'RG': rg.gaugeName, 'Start': dates[potential_wapug_event_start_loc], 'End': dates[i], 'Depth': non_depth,
-                            #                                       'Intensity_Count': intensity_count, 'Passed': 0.5}, ignore_index=True)
-
-                # -----------------------------------------------------
-                # This is to store stats on non-events
+            if p.useConsecutiveIntensities:
+                # FORWARD-LOOKING consecutive run of length k anywhere in the block
+                # sliding_window_view creates views [i : i+k]
+                if k <= r.size:
+                    from numpy.lib.stride_tricks import sliding_window_view
+                    w = sliding_window_view(above, k)
+                    has_consec = bool(w.all(axis=1).any())
                 else:
+                    has_consec = False
 
-                    if len(csum) > 0:
+                intensity_count = p.requiredIntensityDuration if has_consec else 0
 
-                        if csum[-1] > 0:
+                # Also track total minutes above threshold across the block (for partial rule)
+                total_minutes_above = int(above.sum() * time_step_min)
 
-                            non_depth = csum[-1]
+            else:
+                # NON-CONSECUTIVE: total minutes above threshold across the whole block
+                total_minutes_above = int(above.sum() * time_step_min)
+                intensity_count = p.requiredIntensityDuration if total_minutes_above >= p.requiredIntensityDuration else 0
 
-                            # test_df = test_df.append({'RG': rg.gaugeName, 'Start': dates[potential_wapug_event_start_loc], 'End': dates[
-                            #     i], 'Depth': non_depth, 'Intensity_Count': intensity_count, 'Passed': 0}, ignore_index=True)
+            # ---- CLASSIFICATION ----
+            passed = 0.0
 
-                            # dfTest = pd.DataFrame([{'RG': rg.gaugeName, 'Start': dates[potential_wapug_event_start_loc],
-                            #                       'End': dates[i], 'Depth': non_depth, 'Intensity_Count': intensity_count, 'Passed': 0}])
+            # Full event
+            if depth > p.requiredDepth and intensity_count >= p.requiredIntensityDuration:
+                passed = 1.0
+                boundaries.append((pd.Timestamp(times[s]), +1))
+                boundaries.append((pd.Timestamp(times[e]), -1))
 
-                            rain_block_df = pd.concat(
-                                [
-                                    rain_block_df,
-                                    pd.DataFrame(
-                                        [
-                                            {
-                                                "RG": gaugeName,
-                                                "Start": dates[
-                                                    potential_wapug_event_start_loc
-                                                ],
-                                                "End": dates[i],
-                                                "Depth": non_depth,
-                                                "Intensity_Count": intensity_count,
-                                                "Passed": 0,
-                                            }
-                                        ]
-                                    ),
-                                ],
-                                ignore_index=True,
-                            )
-                            # rain_block_df = rain_block_df.append({'RG': rg.gaugeName, 'Start': dates[potential_wapug_event_start_loc], 'End': dates[
-                            #                                      i], 'Depth': non_depth, 'Intensity_Count': intensity_count, 'Passed': 0}, ignore_index=True)
-                # _______________________________________________________________________________________
+            else:
+                # Partial scenarios (mirror your original branches)
+                # 1) depth near-threshold + full intensity
+                cond1 = (d_min <= depth < p.requiredDepth) and (intensity_count >= p.requiredIntensityDuration)
+                # 2) depth full + intensity near-threshold
+                cond2 = (depth >= p.requiredDepth) and (i_min <= intensity_count < p.requiredIntensityDuration)
 
-                potential_wapug_event_start_loc = i
-                running_depth = 0
-                currentNoOfConsecutiveZeros = 0
-                csum.clear()
-                intensity_count = 0
-                partial_intensity_count = 0
+                # 3) consecutive mode special: depth full + total non-consecutive minutes >= duration
+                cond3 = False
+                if p.useConsecutiveIntensities:
+                    cond3 = (depth > p.requiredDepth) and (total_minutes_above >= p.requiredIntensityDuration)
 
-        return (hist_dates, rain_block_df)
+                if cond1 or cond2 or cond3:
+                    passed = 0.5
 
-    def developStormPlotData(self, lstEventDates: list):
+            records.append({
+                "RG": gauge_name,
+                "Start": pd.Timestamp(times[s]),
+                "End": pd.Timestamp(times[e]),
+                "Depth": depth,
+                "Intensity_Count": int(intensity_count),
+                "Passed": float(passed),
+            })
 
+        return records, boundaries
+
+    # ---------- Histogram data (SPEEDUP) ----------
+
+    def developStormPlotData(self, full_event_boundaries: List[Tuple[pd.Timestamp, int]]):
+        """Build step arrays from Start(+1)/End(-1) boundaries (no dense expansion)."""
         self.lstStormDatesForHistogram = []
         self.lstStormCountForHistogram = []
         self.hasStormEvents = False
 
-        if len(lstEventDates) > 0:
+        if not full_event_boundaries:
+            return
 
-            self.hasStormEvents = True
-            lstEventDates = sorted(lstEventDates)
+        self.hasStormEvents = True
+        xs, ys = _intervals_to_step(full_event_boundaries)
+        self.lstStormDatesForHistogram = mpl_dates.date2num(xs)
+        self.lstStormCountForHistogram = ys
 
-            whole_range_start = lstEventDates[0] - timedelta(days=1)
-            whole_range_end = lstEventDates[-1] + timedelta(days=1)
-
-            noOfPeriods = int(
-                ((whole_range_end - whole_range_start).total_seconds() / 120) + 1
-            )
-
-            whole_range_dates = pd.date_range(
-                start=whole_range_start, periods=noOfPeriods, freq="2min"
-            ).tolist()
-
-            dates_df = pd.DataFrame({"rain_date": whole_range_dates})
-            count_df = pd.DataFrame({"rain_date": lstEventDates})
-            count_df["count"] = 0
-            count_df["count"] = count_df.groupby(["rain_date"])["count"].transform(
-                "count"
-            )
-            count_df.sort_values(by="rain_date", inplace=True)
-
-            hist_df = pd.merge(
-                dates_df,
-                count_df,
-                how="left",
-                left_on="rain_date",
-                right_on="rain_date",
-            )
-
-            hist_dates_timsestamp = hist_df["rain_date"].tolist()
-            self.lstStormDatesForHistogram = mpl_dates.date2num(hist_dates_timsestamp)
-
-            hist_count = hist_df["count"].tolist()
-            self.lstStormCountForHistogram = [
-                0 if math.isnan(x) else x for x in hist_count
-            ]
-
-    # def developDWFPlotData(self, lstDryDays):
-
-    #     self.lstDWFCountForHistogram = []
-    #     self.lstDWFDatesForHistogram = []
-    #     self.hasDWFEvents = False
-
-    #     if len(lstDryDays) > 0:
-
-    #         self.hasDWFEvents = True
-
-    #         lstDryDays = sorted(lstDryDays)
-
-    #         DWF_whole_range_start = lstDryDays[0] - timedelta(days=1)
-    #         DWF_whole_range_end = lstDryDays[-1] + timedelta(days=1)
-
-    #         noOfPeriods = int(
-    #             ((DWF_whole_range_end - DWF_whole_range_start).total_seconds() / 120)+1)
-
-    #         DWF_whole_range_dates = pd.date_range(
-    #             start=DWF_whole_range_start, periods=noOfPeriods, freq='2min').tolist()
-
-    #         DWF_dates_df = pd.DataFrame({'rain_date': DWF_whole_range_dates})
-    #         DWF_count_df = pd.DataFrame({'rain_date': lstDryDays})
-    #         DWF_count_df['count'] = 0
-    #         DWF_count_df['count'] = DWF_count_df.groupby(
-    #             ['rain_date'])['count'].transform("count")
-    #         DWF_count_df.sort_values(by='rain_date', inplace=True)
-
-    #         DWF_dates_df['rain_date'] = pd.to_datetime(
-    #             DWF_dates_df['rain_date']).dt.date
-
-    #         DWF_hist_df = pd.merge(
-    #             DWF_dates_df, DWF_count_df, how='left', left_on='rain_date', right_on='rain_date')
-
-    #         DWF_hist_dates_timsestamp = DWF_hist_df['rain_date'].tolist()
-
-    #         self.lstDWFDatesForHistogram = mpl_dates.date2num(
-    #             DWF_hist_dates_timsestamp)
-
-    #         DWF_hist_count = DWF_hist_df['count'].tolist()
-
-    #         self.lstDWFCountForHistogram = [
-    #             0 if math.isnan(x) else x for x in DWF_hist_count]
-
-    def developDWFPlotData(self, lstDryDays):
-
+    def developDWFPlotData(self, lstDryDays: List[pd.Timestamp]):
+        """Daily step curve for dry-day counts without 2-min expansion. (SPEEDUP)"""
         self.lstDWFCountForHistogram = []
         self.lstDWFDatesForHistogram = []
         self.hasDWFEvents = False
 
-        if len(lstDryDays) > 0:
+        if not lstDryDays:
+            return
 
-            self.hasDWFEvents = True
+        self.hasDWFEvents = True
 
-            lstDryDays = sorted(lstDryDays)
+        s = pd.Series(1, index=pd.to_datetime(lstDryDays))
+        daily = s.resample("D").sum().fillna(0.0)
 
-            DWF_whole_range_start = lstDryDays[0] - timedelta(days=1)
-            DWF_whole_range_end = lstDryDays[-1] + timedelta(days=1)
+        # For a step plot, create x as repeated edges and y as repeated heights
+        idx = daily.index.to_pydatetime().tolist()
+        if not idx:
+            return
 
-            noOfPeriods = int(
-                ((DWF_whole_range_end - DWF_whole_range_start).total_seconds() / 86400)
-                + 1
-            )
-            # DWF_whole_range_dates = pd.date_range(
-            #     start=DWF_whole_range_start, periods=noOfPeriods, freq="24H"
-            # ).tolist()
-            DWF_whole_range_dates = pd.date_range(
-                start=DWF_whole_range_start, periods=noOfPeriods, freq="24h"
-            ).tolist()            
-            DWF_dates_df = pd.DataFrame({"rain_date": DWF_whole_range_dates})
-            DWF_count_df = pd.DataFrame({"rain_date": lstDryDays})
-            DWF_count_df["count"] = 0
-            DWF_count_df["count"] = DWF_count_df.groupby(["rain_date"])[
-                "count"
-            ].transform("count")
-            DWF_count_df.sort_values(by="rain_date", inplace=True)
-            DWF_dates_df["rain_date"] = pd.to_datetime(
-                DWF_dates_df["rain_date"]
-            ).dt.date
-            DWF_hist_df = pd.merge(
-                DWF_dates_df, DWF_count_df, how="left", on="rain_date"
-            )
-            DWF_hist_df.drop_duplicates(ignore_index=True, inplace=True)
-            DWF_hist_dates_timsestamp = DWF_hist_df["rain_date"].tolist()
+        # extend edges by one day to close the last step
+        x = []
+        y = []
+        for i in range(len(idx)):
+            t0 = idx[i]
+            t1 = idx[i + 1] if i + 1 < len(idx) else (idx[i] + timedelta(days=1))
+            x.extend([t0, t1])
+            y.extend([int(daily.iloc[i])] * 2)
 
-            self.lstDWFDatesForHistogram = mpl_dates.date2num(DWF_hist_dates_timsestamp)
-            DWF_hist_count = DWF_hist_df["count"].tolist()
-            self.lstDWFCountForHistogram = [
-                0 if math.isnan(x) else x for x in DWF_hist_count
-            ]
+        self.lstDWFDatesForHistogram = mpl_dates.date2num(x)
+        self.lstDWFCountForHistogram = y
+
+    # ---------- End-to-end analysis ----------
 
     def updateRainfallAnalysis(self):
-
-        lstDryDays = []
-        lstEventDates = []
-        self.dfRainBlock = pd.DataFrame(
-            columns=["RG", "Start", "End", "Depth", "Intensity_Count", "Passed"]
-        )
+        lstDryDays: List[pd.Timestamp] = []
+        all_records: List[dict] = []
+        storm_boundaries: List[Tuple[pd.Timestamp, int]] = []
         self.dictRainfallSubsets = {}
 
         for rg in self.plotted_rgs.plotRGs.values():
-
             dfRainfallSubset = self.getSubsetOfRainfallFromRaingauge(rg)
             self.dictRainfallSubsets[rg.gaugeName] = dfRainfallSubset
-            dfRainfallSubsetByDay = dfRainfallSubset.groupby(
-                "rain_date", as_index=False
-            )["rainfall_mm"].sum()
 
-            lstRGDryDays = self.getListOfDryDays(dfRainfallSubsetByDay)
+            # per-diem totals (vectorizable)
+            dfByDay = dfRainfallSubset.groupby("rain_date", as_index=False)["rainfall_mm"].sum()
+            lstRGDryDays = _dry_days_vectorized(
+                dfByDay,
+                tol_mm=self.rainfallDepthTolerance,
+                preceding_dry_days=self.precedingDryDays
+            )
             lstDryDays.extend(lstRGDryDays)
 
-            # if self.useNewMethod:
-            #     lstRGEventDates, dfRGRainBlock = self.getPotentialWAPUGEventsNM(
-            #         dfRainfallSubset, rg.rgTimestep, rg.gaugeName
-            #     )
-            # else:
-            #     lstRGEventDates, dfRGRainBlock = self.getPotentialWAPUGEvents(
-            #         dfRainfallSubset, rg.rgTimestep, rg.gaugeName
-            #     )
+            # events (vectorized/blocked)
+            recs, bnds = self.getPotentialWAPUGEvents_fast(
+                dfRainfallSubset, rg.rgTimestep, rg.gaugeName
+            )
+            if recs:
+                all_records.extend(recs)
+            if bnds:
+                storm_boundaries.extend(bnds)
 
-            lstRGEventDates, dfRGRainBlock = self.getPotentialWAPUGEventsNM(dfRainfallSubset, rg.rgTimestep, rg.gaugeName)
-            # lstRGEventDates, dfRGRainBlock = self.getPotentialWAPUGEvents(dfRainfallSubset, rg.rgTimestep, rg.gaugeName)
-                        
-            lstEventDates.extend(lstRGEventDates)
+        # single concat (SPEEDUP)
+        self.dfRainBlock = pd.DataFrame.from_records(
+            all_records,
+            columns=["RG", "Start", "End", "Depth", "Intensity_Count", "Passed"],
+        )
+        if not self.dfRainBlock.empty:
+            # precompute matplotlib float dates once (SPEEDUP)
+            self.dfRainBlock["Start_sec"] = mpl_dates.date2num(self.dfRainBlock["Start"])
+            self.dfRainBlock["End_sec"] = mpl_dates.date2num(self.dfRainBlock["End"])
+            self.dfRainBlock["Diff"] = self.dfRainBlock["End_sec"] - self.dfRainBlock["Start_sec"]
 
-            # Drop empty or all-NA columns from both DataFrames
-            RainBlock_cleaned = self.dfRainBlock.dropna(axis=1, how='all')
-            RGRainBlock_cleaned = dfRGRainBlock.dropna(axis=1, how='all')
-
-            self.dfRainBlock = pd.concat([RainBlock_cleaned, RGRainBlock_cleaned], ignore_index=True)
-                        
-            # self.dfRainBlock = pd.concat(
-            #     [self.dfRainBlock, dfRGRainBlock], ignore_index=True
-            # )
-
+        # histograms (no dense expansion)
         self.developDWFPlotData(lstDryDays)
-        self.developStormPlotData(lstEventDates)
-
-        self.dfRainBlock["Start_sec"] = [
-            mpl_dates.date2num(t) for t in self.dfRainBlock.Start
-        ]
-        self.dfRainBlock["End_sec"] = [
-            mpl_dates.date2num(t) for t in self.dfRainBlock.End
-        ]
-        self.dfRainBlock["Diff"] = self.dfRainBlock.End_sec - self.dfRainBlock.Start_sec
+        self.developStormPlotData(storm_boundaries)
 
         self.analysisNeedsRefreshed = False
 
+    # ---------- Plotting (unchanged look, minor polish) ----------
+
     def refreshPlots(self):
-
         self.rIntLines = []
-        gs = mpl_gridspec.GridSpec(3, 1, height_ratios=[1.5, 3, 2])
-        gs.update(wspace=0.025, hspace=0.16)
-
         (self.plotAxisHistogram, self.plotAxisGant, self.plotAxisIntensity) = (
             self.main_window_plot_widget.figure.subplots(
                 3, sharex=True, gridspec_kw={"height_ratios": [1.5, 3, 2]}
@@ -3519,42 +6615,15 @@ class graphRainfallAnalysis:
 
         colors = cycle(
             [
-                "aqua",
-                "crimson",
-                "lime",
-                "fuchsia",
-                "gray",
-                "olive",
-                "teal",
-                "orange",
-                "green",
-                "purple",
-                "maroon",
-                "blue",
-                "yellow",
-                "Gold",
-                "red",
-                "peru",
-                "skyblue",
-                "olivedrab",
-                "royalblue",
-                "cornflowerblue",
-                "yellowgreen",
-                "mediumaquamarine",
-                "indianred",
-                "darkseagreen",
-                "steelblue",
-                "darkslateblue",
-                "thistle",
-                "darkorchid",
-                "seagreen",
-                "pink",
-                "hotpink",
+                "aqua","crimson","lime","fuchsia","gray","olive","teal","orange",
+                "green","purple","maroon","blue","yellow","Gold","red","peru",
+                "skyblue","olivedrab","royalblue","cornflowerblue","yellowgreen",
+                "mediumaquamarine","indianred","darkseagreen","steelblue",
+                "darkslateblue","thistle","darkorchid","seagreen","pink","hotpink",
             ]
         )
 
         for rgName, dfRain in self.dictRainfallSubsets.items():
-            # dfRainfallSubset = self.getSubsetOfRainfallFromRaingauge(rg)
             (rIntLine,) = self.plotAxisIntensity.plot(
                 dfRain["rain_datetime"],
                 dfRain["rainfall"],
@@ -3562,18 +6631,18 @@ class graphRainfallAnalysis:
                 color=next(colors),
                 gid=rgName,
             )
-            self.rIntLines.append(rIntLine)  # Event intensity lines
+            rIntLine.set_rasterized(True)  # helps with huge lines (optional)
+            self.rIntLines.append(rIntLine)
 
-        color = {1: "#33FF33", 0: "#E57373", 0.5: "#FFA726"}
+        color = {1.0: "#33FF33", 0.0: "#E57373", 0.5: "#FFA726"}
 
         labels = []
-        for i, RG in enumerate(self.dfRainBlock.groupby("RG")):
-            labels.append(RG[0])
-
-            for r in RG[1].groupby("Passed"):
-                data = r[1][["Start_sec", "Diff"]]
+        for i, (rg_name, grp) in enumerate(self.dfRainBlock.groupby("RG")):
+            labels.append(rg_name)
+            for passed_val, r in grp.groupby("Passed"):
+                data = r[["Start_sec", "Diff"]].to_numpy()
                 self.plotAxisGant.broken_barh(
-                    data.values, (i - 0.4, 0.8), color=color[r[0]], label=RG[0]
+                    data, (i - 0.4, 0.8), color=color.get(float(passed_val), "#E57373"), label=rg_name
                 )
 
         self.plotAxisGant.set_yticks(range(len(labels)))
@@ -3582,103 +6651,56 @@ class graphRainfallAnalysis:
         self.plotAxisGant.xaxis_date()
 
         red_patch = mpl_patches.Patch(color="#E57373", label="No Event")
-        orange_patch = mpl_patches.Patch(
-            color="#FFA726", label="Partial Event (" + str(self.partialPercent) + "%)"
-        )
+        orange_patch = mpl_patches.Patch(color="#FFA726", label=f"Partial Event ({self.partialPercent}%)")
         green_patch = mpl_patches.Patch(color="#33FF33", label="Event")
-        self.plotAxisGant.legend(
-            loc="best", handles=[red_patch, orange_patch, green_patch], prop={"size": 6}
-        )
+        self.plotAxisGant.legend(loc="best", handles=[red_patch, orange_patch, green_patch], prop={"size": 6})
 
-        # major_tick_format = DateFormatter("%d/%m/%Y %H:%M")
-        # self.plotAxisGant.xaxis.set_major_locator(MaxNLocator(integer=False))
-        # self.plotAxisGant.xaxis.set_major_formatter(FuncFormatter(major_tick_format))
         self.plotAxisGant.tick_params(labelbottom=False)
         self.plotAxisGant.tick_params(axis="y", which="major", labelsize=8, direction="in", pad=-70)
         self.plotAxisGant.set_ylabel("Rainfall Gantt Chart", fontsize=8)
         self.plotAxisGant.autoscale(enable=True, axis="y", tight=None)
 
+        # Histogram steps (already precomputed as step-friendly arrays)
         self.plotAxisHistogram.step(
-            self.lstStormDatesForHistogram,
-            self.lstStormCountForHistogram,
-            label="Storm Event",
-            where="post",
+            self.lstStormDatesForHistogram, self.lstStormCountForHistogram, label="Storm Event", where="post"
         )
         self.plotAxisHistogram.step(
-            self.lstDWFDatesForHistogram,
-            self.lstDWFCountForHistogram,
-            label="Dry Day",
-            where="post",
+            self.lstDWFDatesForHistogram, self.lstDWFCountForHistogram, label="Dry Day", where="post"
         )
 
-        if len(self.plotted_rgs.plotRGs) <= 18:
-            fsize = 8
-        else:
-            fsize = 6
+        fsize = 8 if len(self.plotted_rgs.plotRGs) <= 18 else 6
 
         depth_props = dict(boxstyle="round", facecolor="teal", alpha=0.5)
         self.plot_depth_stats_box = self.plotAxisIntensity.text(
-            -0.01,
-            1.14,
-            "Depth(mm) - ",
+            -0.01, 1.14, "Depth(mm) - ",
             transform=self.plotAxisIntensity.transAxes,
-            fontsize=fsize,
-            verticalalignment="top",
-            bbox=depth_props,
-            wrap=True,
+            fontsize=fsize, verticalalignment="top",
+            bbox=depth_props, wrap=True,
         )
 
         self.plotAxisIntensity.margins(0.1)
         self.plotAxisIntensity.grid(True)
 
         if self.hasStormEvents or self.hasDWFEvents:
-
             self.plotAxisHistogram.margins(0.1)
             self.plotAxisHistogram.grid(True)
-
             self.plotAxisHistogram.tick_params(axis="y", which="major", labelsize=8)
-
             self.plotAxisHistogram.axhline(
-                y=len(self.plotted_rgs.plotRGs),
-                xmin=0,
-                xmax=3,
-                c="springgreen",
-                linewidth=2,
-                zorder=0,
-                linestyle="dashed",
-            )  # install height
+                y=len(self.plotted_rgs.plotRGs), xmin=0, xmax=3,
+                c="springgreen", linewidth=2, zorder=0, linestyle="dashed",
+            )
 
-            # hist_title = (
-            #     str(len(self.plotted_rgs.plotRGs))
-            #     + " Rain Gauge Storm Event & Dry Day Analysis (Storm: Consecutive Zeros >= "
-            #     + str(self.consecZero)
-            #     + ", Depth > "
-            #     + str(self.requiredDepth)
-            #     + ", Intensity > "
-            #     + str(self.requiredIntensity)
-            #     + ", Intensity Duration >= "
-            #     + str(self.requiredIntensityDuration)
-            #     + " - DWF: Depth Tolerance <= "
-            #     + str(self.rainfallDepthTolerance)
-            #     + " , Preceding Dry Days > "
-            #     + str(self.precedingDryDays)
-            #     + ", Consecutive Intensities = "
-            #     + str(self.useConsecutiveIntensities)
-            #     + ")"
-            # )
-            hist_title = (f"{len(self.plotted_rgs.plotRGs)} Rain Gauge Storm Event & Dry Day Analysis/n(Storm: Consecutive Zeros >= {self.consecZero}, Depth > {self.requiredDepth}, Intensity > {self.requiredIntensity}, Intensity Duration >= {self.requiredIntensityDuration} - DWF: Depth Tolerance <= {self.rainfallDepthTolerance}, Preceding Dry Days > {self.precedingDryDays}, Consecutive Intensities = {self.useConsecutiveIntensities})")
-
+            hist_title = (
+                f"{len(self.plotted_rgs.plotRGs)} Rain Gauge Storm Event & Dry Day Analysis\n"
+                f"(Storm: Consecutive Zeros >= {self.consecZero}, Depth > {self.requiredDepth}, "
+                f"Intensity > {self.requiredIntensity}, Intensity Duration >= {self.requiredIntensityDuration} "
+                f"- DWF: Depth Tolerance <= {self.rainfallDepthTolerance}, Preceding Dry Days > {self.precedingDryDays}, "
+                f"Consecutive Intensities = {self.useConsecutiveIntensities})"
+            )
             self.plotAxisHistogram.set_title(hist_title, color="grey", fontsize=9)
-
-            # major_tick_format = DateFormatter("%d/%m/%Y %H:%M")
-            # self.plotAxisHistogram.xaxis.set_major_locator(MaxNLocator(integer=False))
-            # self.plotAxisHistogram.xaxis.set_major_formatter(
-            #     FuncFormatter(major_tick_format)
-            # )         
             self.plotAxisHistogram.autoscale(enable=True, axis="y", tight=None)
             self.plotAxisHistogram.tick_params(labelbottom=False)
             self.plotAxisHistogram.tick_params(axis="y", which="major", labelsize=4)
-
             self.plotAxisHistogram.set_ylabel(
                 "Number of RGs that Passed DWF \n or Storm Event Criteria", fontsize=6
             )
@@ -3687,98 +6709,62 @@ class graphRainfallAnalysis:
         locator = AutoDateLocator(minticks=6, maxticks=15)
         formatter = ConciseDateFormatter(locator)
         self.plotAxisIntensity.xaxis.set_major_locator(locator)
-        self.plotAxisIntensity.xaxis.set_major_formatter(formatter)   
+        self.plotAxisIntensity.xaxis.set_major_formatter(formatter)
 
         self.plotAxisIntensity.tick_params(axis="y", which="major", labelsize=6)
         self.plotAxisIntensity.set_ylabel("Rainfall Intensty (mm/hr)", fontsize=8)
         self.plotAxisIntensity.autoscale(enable=True, axis="y", tight=None)
 
-        # self.plotCanvas = FigureCanvasTkAgg(fig_event_hist, self)
         self.plotAxisHistogram.legend(loc="best", prop={"size": 6})
-        leg = self.plotAxisIntensity.legend(
-            loc="best", prop={"size": 6}, ncol=2, fancybox=True
-        )
+        leg = self.plotAxisIntensity.legend(loc="best", prop={"size": 6}, ncol=2, fancybox=True)
 
         self.rIntLegendLines = dict()
         for legline, origline in zip(leg.get_lines(), self.rIntLines):
-            legline.set_picker(5)  # 5 pts tolerance
+            legline.set_picker(5)
             self.rIntLegendLines[legline] = origline
 
         self.main_window_plot_widget.figure.autofmt_xdate()
-        self.main_window_plot_widget.figure.subplots_adjust(
-            left=0.05, right=0.98, bottom=0.075, top=0.94
-        )
+        self.main_window_plot_widget.figure.subplots_adjust(left=0.05, right=0.98, bottom=0.075, top=0.94)
 
+        # keep your linked-axes behaviour
         self.plotAxisHistogram.callbacks.connect("xlim_changed", self.onPlotXlimsChange)
         self.plotAxisGant.callbacks.connect("xlim_changed", self.onPlotXlimsChange)
         self.plotAxisIntensity.callbacks.connect("xlim_changed", self.onPlotXlimsChange)
 
         self.onPlotXlimsChange(self.plotAxisIntensity)
 
-    def onPick(self, event):
+    # ---------- Interactions / callbacks (unchanged) ----------
 
+    def onPick(self, event):
         legline = event.artist
         origline = self.rIntLegendLines[legline]
         vis = not origline.get_visible()
-
         origline.set_visible(vis)
-        # Change the alpha on the line in the legend so we can see what lines have been toggled
-        if vis:
-            legline.set_alpha(1.0)
-        else:
-            legline.set_alpha(0.2)
-
+        legline.set_alpha(1.0 if vis else 0.2)
         self.main_window_plot_widget.figure.canvas.draw()
-
-    # __________________________________________________________________________________________
-    # This is the right click on legend
 
     def onClick(self, event):
-
         if event.button == 3:
-
-            for legline in self.rIntLegendLines:
-
-                origline = self.rIntLegendLines[legline]
+            for legline, origline in self.rIntLegendLines.items():
                 origline.set_visible(False)
                 legline.set_alpha(0.2)
-
         if event.button == 2:
-
-            for legline in self.rIntLegendLines:
-
-                origline = self.rIntLegendLines[legline]
+            for legline, origline in self.rIntLegendLines.items():
                 origline.set_visible(True)
                 legline.set_alpha(1)
-
         self.main_window_plot_widget.figure.canvas.draw()
 
-    # __________________________________________________________________________________________
-
     def onPlotXlimsChange(self, event_ax):
-
         xmin, xmax = mpl_dates.num2date(event_ax.get_xlim())
 
-        i = 0
+        parts = []
         for rg in self.plotted_rgs.plotRGs.values():
             stats = rg.statsBetweenDates(xmin, xmax)
+            parts.append(f"{rg.gaugeName} = {stats['totDepth']}")
+        multi_depth_string = "Depth(mm) - " + ", ".join(parts)
 
-            if i == 0:
-                multi_depth_string = (
-                    "Depth(mm) - " + rg.gaugeName + " = " + str(stats["totDepth"])
-                )
-            else:
-                multi_depth_string = (
-                    multi_depth_string
-                    + ", "
-                    + rg.gaugeName
-                    + " = "
-                    + str(stats["totDepth"])
-                )
-
-            if not self.plot_depth_stats_box is None:
-                self.plot_depth_stats_box.set_text(multi_depth_string)
-            i += 1
+        if self.plot_depth_stats_box is not None:
+            self.plot_depth_stats_box.set_text(multi_depth_string)
 
 
 class graphCumulativeDepth:
@@ -4442,7 +7428,7 @@ class graphICMTrace:
             )
             add_cell(
                 self.plotAxisTable,
-                [["Min\n(m3/s)", "Max\n(m3/s)", "Volume\n(m3)"]],
+                [["Min\n(m³/s)", "Max\n(m³/s)", "Volume\n(m³)"]],
                 [0.375, 0.5625, 0.375, 0.25],
                 # [["#71004b", "#71004b", "#71004b"]],
                 [["#003478", "#003478", "#003478"]],
@@ -11400,7 +14386,7 @@ def createVerificationDetailPlot(tr: icmTrace, aLoc: icmTraceLocation):
     )
     add_cell(
         plotAxisTable,
-        [["Min\n(m3/s)", "Max\n(m3/s)", "Volume\n(m3)"]],
+        [["Min\n(m³/s)", "Max\n(m³/s)", "Volume\n(m³)"]],
         [0.375, 0.5625, 0.375, 0.25],
         # [["#71004b", "#71004b", "#71004b"]],
         [["#003478", "#003478", "#003478"]],

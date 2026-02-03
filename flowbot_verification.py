@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from PyQt5.QtGui import (QColor)
 from PyQt5.QtWidgets import (QMessageBox, QInputDialog)
-from typing import Dict, Union, Optional
+from typing import Dict, Union, Optional, List
 from datetime import datetime
 import time
 import sqlite3
@@ -870,227 +870,549 @@ class icmTraces():
         else:
             return False
 
+    # def getTracesFromCSVFile(self, fileSpec: str, defaultSmoothing: Dict[str, float]) -> Optional[icmTrace]:
+
+    #     dfTrace = pd.read_csv(fileSpec, skiprows=1, nrows=10)
+
+    #     i = 0
+    #     # idxObsRainfall = -1
+    #     idxObsVel = -1
+    #     idxPredVelBase = -1
+    #     iPredColCount = 0
+    #     for col in dfTrace.columns:
+    #         if col == "Observed Rainfall (Rainfall intensity (mm/hr))":
+    #             pass
+    #             # idxObsRainfall = i
+    #         if col == "Observed Velocity (Velocity (m/s))":
+    #             idxObsVel = i
+    #         if col[0:9] == "Predicted":
+    #             if idxPredVelBase == -1:
+    #                 idxPredVelBase = i
+    #             iPredColCount += 1
+    #         i += 1
+
+    #     if dfTrace.columns[idxObsVel - 2][0:4] == "Date":
+    #         idxObsDate = idxObsVel - 2
+    #     else:
+    #         idxObsDate = 0
+
+    #     strObsDate = dfTrace.columns[idxObsDate]
+    #     strObsTime = dfTrace.columns[idxObsDate + 1]
+    #     obsColsToUse = [idxObsDate, idxObsDate + 1,
+    #                     idxObsVel, idxObsVel + 1, idxObsVel + 2]
+
+    #     NoOfPred = int(iPredColCount / 3)
+
+    #     iPredToUse = 1
+
+    #     if NoOfPred > 1:
+    #         itemList = []
+
+    #         for i in range(NoOfPred):
+    #             idx = idxPredVelBase + (1 * ((i+1) - 1))
+    #             itemString = str(dfTrace.columns[idx]).split(
+    #                 "Predicted Velocity, ")[1].split(" (Velocity (m/s))")[0]
+    #             itemList.append(itemString)
+
+    #         items = tuple(itemList)
+
+    #         item, ok = QInputDialog.getItem(None,
+    #                                         "Select Predicted Profile",
+    #                                         f"{NoOfPred} Predicted Profiles Found\n\n"
+    #                                         "FlowBot currently only supports analysis\n"
+    #                                         "of one predicted profile at a time.\n\n"
+    #                                         "Select which profile number to import:",
+    #                                         items,
+    #                                         0,
+    #                                         False)
+    #         if ok and item:
+    #             iPredToUse = itemList.index(item)+1
+    #         else:
+    #             return
+
+    #     idxPredDate = idxPredVelBase - 2
+
+    #     strPredDate = dfTrace.columns[idxPredDate]
+    #     strPredTime = dfTrace.columns[idxPredDate + 1]
+
+    #     idxPredVelBase = idxPredVelBase + (0 * NoOfPred)
+    #     idxPredVel = idxPredVelBase + (1 * (iPredToUse - 1))
+    #     idxPredFlowBase = idxPredVelBase + (1 * NoOfPred)
+    #     idxPredFlow = idxPredFlowBase + (1 * (iPredToUse - 1))
+    #     idxPredDepthBase = idxPredVelBase + (2 * NoOfPred)
+    #     idxPredDepth = idxPredDepthBase + (1 * (iPredToUse - 1))
+
+    #     predColsToUse = [idxPredDate, idxPredDate +
+    #                      1, idxPredVel, idxPredFlow, idxPredDepth]
+
+    #     dfObsTrace = pd.read_csv(fileSpec, skiprows=1, usecols=obsColsToUse,
+    #                              parse_dates=[[strObsDate, strObsTime]], low_memory=False, dayfirst=True)
+
+    #     dfObsTrace = dfObsTrace.set_axis(['DateTime', 'ObsVel', 'ObsFlow', 'ObsDep'], axis=1)
+    #     dfObsTrace['DateTime'] = pd.to_datetime(dfObsTrace['DateTime'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+    #     dfObsTrace['ObsVel'] = pd.to_numeric(
+    #         dfObsTrace['ObsVel'], downcast='float', errors='coerce')
+    #     dfObsTrace['ObsFlow'] = pd.to_numeric(
+    #         dfObsTrace['ObsFlow'], downcast='float', errors='coerce')
+    #     dfObsTrace['ObsDep'] = pd.to_numeric(
+    #         dfObsTrace['ObsDep'], downcast='float', errors='coerce')
+    #     dfObsTrace.dropna(subset=['DateTime'], inplace=True)
+
+    #     dfPredTrace = pd.read_csv(
+    #         fileSpec, skiprows=1, usecols=predColsToUse, parse_dates=[[strPredDate, strPredTime]], low_memory=False)
+    #     dfPredTrace = dfPredTrace.set_axis(['DateTime', 'PredVel', 'PredFlow', 'PredDep'], axis=1)
+    #     dfPredTrace['DateTime'] = pd.to_datetime(
+    #         dfPredTrace['DateTime'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+    #     dfPredTrace['PredVel'] = pd.to_numeric(
+    #         dfPredTrace['PredVel'], downcast='float', errors='coerce')
+    #     dfPredTrace['PredFlow'] = pd.to_numeric(
+    #         dfPredTrace['PredFlow'], downcast='float', errors='coerce')
+    #     dfPredTrace['PredDep'] = pd.to_numeric(
+    #         dfPredTrace['PredDep'], downcast='float', errors='coerce')
+    #     dfPredTrace.dropna(subset=['DateTime'], inplace=True)
+
+    #     start_date = min(dfPredTrace["DateTime"])
+    #     end_date = max(dfPredTrace["DateTime"])
+
+    #     dfSplits = dfObsTrace[dfObsTrace.DateTime ==
+    #                           dfObsTrace['DateTime'][0]].copy()
+    #     dfSplits.reset_index(inplace=True)
+
+    #     dfPageTitles = pd.read_fwf(fileSpec, header=None, usecols=[0])
+    #     dfPageTitles = dfPageTitles.set_axis(['PageTitle'], axis=1)
+    #     dfPageTitles = dfPageTitles[dfPageTitles['PageTitle'].str[:10] == 'Page title'].copy(
+    #     )
+    #     dfPageTitles.reset_index(inplace=True, drop=True)
+
+    #     newTrace = icmTrace()
+    #     newTrace.traceID = os.path.splitext(os.path.basename(fileSpec))[0]
+    #     newTrace.csvFileSpec = fileSpec
+
+    #     for i in range(len(dfSplits.index)):
+    #         if i < len(dfSplits.index)-1:
+    #             aDF = dfObsTrace[np.logical_and(
+    #                 dfObsTrace.index >= dfSplits['index'][i], dfObsTrace.index < dfSplits['index'][i+1])].copy()
+    #         else:
+    #             aDF = dfObsTrace[dfObsTrace.index >=
+    #                              dfSplits['index'][i]].copy()
+
+    #         mask = (aDF["DateTime"] > start_date) & (
+    #             aDF["DateTime"] <= end_date)
+    #         aDF = aDF.loc[mask]
+
+    #         dfObsTimeResampled = aDF.set_index("DateTime")
+    #         dfObsTimeResampled = dfObsTimeResampled.resample(rule="1min").fillna("pad")
+
+    #         if "DateTime" not in dfObsTimeResampled.columns:
+    #             dfObsTimeResampled = dfObsTimeResampled.reset_index()
+
+    #         dfObsPrefixed = aDF.add_prefix("Orig_")
+    #         dfObsResampled = pd.merge_asof(dfObsTimeResampled, dfObsPrefixed, left_on="DateTime",
+    #                                        right_on="Orig_DateTime", tolerance=pd.Timedelta("0.5min"))
+    #         dfObsResampled["Orig_ObsVel"] = dfObsResampled["Orig_ObsVel"].interpolate(
+    #             method='linear')
+    #         dfObsResampled["Orig_ObsFlow"] = dfObsResampled["Orig_ObsFlow"].interpolate(
+    #             method='linear')
+    #         dfObsResampled["Orig_ObsDep"] = dfObsResampled["Orig_ObsDep"].interpolate(
+    #             method='linear')
+
+    #         dfObsResampled = dfObsResampled.drop(
+    #             columns=["Orig_DateTime", "ObsVel", "ObsFlow", "ObsDep"])
+    #         dfObsResampled = dfObsResampled.set_axis(['DateTime', 'ObsVel', 'ObsFlow', 'ObsDep'], axis=1)
+
+    #         if i < len(dfSplits.index)-1:
+    #             aDF = dfPredTrace[np.logical_and(
+    #                 dfPredTrace.index >= dfSplits['index'][i], dfPredTrace.index < dfSplits['index'][i+1])].copy()
+    #         else:
+    #             aDF = dfPredTrace[dfPredTrace.index >=
+    #                               dfSplits['index'][i]].copy()
+
+    #         if aDF.empty:
+    #             continue   # skip this split entirely
+    #         dfPredTimeResampled = aDF.set_index("DateTime")
+    #         dfPredTimeResampled = dfPredTimeResampled.resample("1min").fillna("pad")
+
+    #         dfPredTimeResampled.index.name = None
+
+    #         dfPredTimeResampled = dfPredTimeResampled.reset_index()
+    #         dfPredTimeResampled.rename(columns={"index": "DateTime"}, inplace=True)
+
+    #         dfPredPrefixed = aDF.add_prefix("Orig_")
+    #         dfPredResampled = pd.merge_asof(dfPredTimeResampled, dfPredPrefixed, left_on="DateTime",
+    #                                         right_on="Orig_DateTime", tolerance=pd.Timedelta("0.5min"))
+    #         dfPredResampled["Orig_PredVel"] = dfPredResampled["Orig_PredVel"].interpolate(
+    #             method='linear')
+    #         dfPredResampled["Orig_PredFlow"] = dfPredResampled["Orig_PredFlow"].interpolate(
+    #             method='linear')
+    #         dfPredResampled["Orig_PredDep"] = dfPredResampled["Orig_PredDep"].interpolate(
+    #             method='linear')
+
+    #         dfPredResampled = dfPredResampled.drop(
+    #             columns=["Orig_DateTime", "PredVel", "PredFlow", "PredDep"])
+    #         dfPredResampled = dfPredResampled.set_axis(['DateTime', 'PredVel', 'PredFlow', 'PredDep'], axis=1)
+
+    #         dfCompPrefixed = dfPredResampled.add_prefix("Orig_")
+    #         dfCompare = pd.merge_asof(dfObsResampled, dfCompPrefixed, left_on="DateTime",
+    #                                   right_on="Orig_DateTime", tolerance=pd.Timedelta("0.5min"))
+    #         dfCompare = dfCompare.drop(columns=["Orig_DateTime"])
+    #         dfCompare = dfCompare.set_axis(['DateTime', 'ObsVel', 'ObsFlow', 'ObsDep', 'PredVel', 'PredFlow', 'PredDep'], axis=1)
+
+    #         newTraceLoc = icmTraceLocation()
+    #         newTraceLoc.index = i
+    #         newTraceLoc.pageTitle = dfPageTitles['PageTitle'][i]
+    #         newTraceLoc.obsLocation = str(dfPageTitles['PageTitle'][i])[len('Page title is, "Flow Survey Location (Obs.) '):str(
+    #             dfPageTitles['PageTitle'][i]).find(', Model Location (Pred.) ')]
+    #         newTraceLoc.upstreamEnd = str(dfPageTitles['PageTitle'][i])[str(dfPageTitles['PageTitle'][i]).find(
+    #             ', Model Location (Pred.) ') + len(', Model Location (Pred.) '):
+    #             (str(dfPageTitles['PageTitle'][i]).find(', Model Location (Pred.) ') +
+    #              len(', Model Location (Pred.) ')+3)] == "U/S"
+    #         if newTraceLoc.upstreamEnd:
+    #             title = str(dfPageTitles['PageTitle'][i])
+    #             us_index = title.find("U/S") + 4
+    #             comma_index = title.find(",")
+    #             if comma_index >= 0:
+    #                 newTraceLoc.predLocation = title[us_index:len(title)-1][:comma_index]
+    #             else:
+    #                 newTraceLoc.predLocation = title[us_index:len(title)-1]
+    #         else:
+    #             title = str(dfPageTitles['PageTitle'][i])
+    #             ds_index = title.find("D/S") + 4
+    #             substring = title[ds_index:len(title)-1]
+    #             comma_index = substring.find(",")
+
+    #             newTraceLoc.predLocation = substring[:comma_index] if comma_index >= 0 else substring
+
+    #         newTraceLoc.shortTitle = newTraceLoc.obsLocation + \
+    #             ' (' + newTraceLoc.predLocation + ' - U/S)' if newTraceLoc.upstreamEnd else newTraceLoc.obsLocation + \
+    #             ' (' + newTraceLoc.predLocation + ' - D/S)'
+
+    #         newTraceLoc.trTimestep = int(
+    #             (dfCompare['DateTime'][1] - dfCompare['DateTime'][0]).seconds/60)
+
+    #         newTraceLoc.dates = dfCompare['DateTime'].tolist()
+    #         newTraceLoc.rawData = [dfCompare['ObsFlow'].tolist(), dfCompare['PredFlow'].tolist(), dfCompare['ObsDep'].tolist(
+    #         ), dfCompare['PredDep'].tolist(), dfCompare['ObsVel'].tolist(), dfCompare['PredVel'].tolist()]
+
+    #         newTraceLoc.frac = [defaultSmoothing['Observed'], defaultSmoothing['Predicted'],
+    #                             defaultSmoothing['Observed'], defaultSmoothing['Predicted']]
+
+    #         newTrace.dictLocations[newTraceLoc.index] = newTraceLoc
+
+    #     self.addTrace(newTrace)
+    #     return newTrace
     def getTracesFromCSVFile(self, fileSpec: str, defaultSmoothing: Dict[str, float]) -> Optional[icmTrace]:
+        """
+        Read a CSV exported trace file, extract observed / predicted profiles,
+        resample to 1-minute timesteps, and build an icmTrace with locations.
+        """
 
-        dfTrace = pd.read_csv(fileSpec, skiprows=1, nrows=10)
+        # ---- 1. Peek at the header to work out column indices ----
+        df_head = pd.read_csv(fileSpec, skiprows=1, nrows=10)
+        cols = list(df_head.columns)
 
-        i = 0
-        # idxObsRainfall = -1
-        idxObsVel = -1
-        idxPredVelBase = -1
-        iPredColCount = 0
-        for col in dfTrace.columns:
-            if col == "Observed Rainfall (Rainfall intensity (mm/hr))":
-                pass
-                # idxObsRainfall = i
+        idx_obs_vel = -1
+        idx_pred_vel_base = -1
+        pred_col_count = 0
+
+        for i, col in enumerate(cols):
             if col == "Observed Velocity (Velocity (m/s))":
-                idxObsVel = i
-            if col[0:9] == "Predicted":
-                if idxPredVelBase == -1:
-                    idxPredVelBase = i
-                iPredColCount += 1
-            i += 1
+                idx_obs_vel = i
+            if col.startswith("Predicted"):
+                if idx_pred_vel_base == -1:
+                    idx_pred_vel_base = i
+                pred_col_count += 1
 
-        if dfTrace.columns[idxObsVel - 2][0:4] == "Date":
-            idxObsDate = idxObsVel - 2
+        if idx_obs_vel == -1 or idx_pred_vel_base == -1 or pred_col_count == 0:
+            # Structure not as expected
+            return None
+
+        # Observed date/time are assumed to be 2 columns before observed velocity
+        if cols[idx_obs_vel - 2].startswith("Date"):
+            idx_obs_date = idx_obs_vel - 2
         else:
-            idxObsDate = 0
+            idx_obs_date = 0  # Fallback if structure differs
 
-        strObsDate = dfTrace.columns[idxObsDate]
-        strObsTime = dfTrace.columns[idxObsDate + 1]
-        obsColsToUse = [idxObsDate, idxObsDate + 1,
-                        idxObsVel, idxObsVel + 1, idxObsVel + 2]
+        str_obs_date = cols[idx_obs_date]
+        str_obs_time = cols[idx_obs_date + 1]
 
-        NoOfPred = int(iPredColCount / 3)
+        obs_cols_to_use = [
+            idx_obs_date,            # date
+            idx_obs_date + 1,        # time
+            idx_obs_vel,             # velocity
+            idx_obs_vel + 1,         # flow
+            idx_obs_vel + 2,         # depth
+        ]
 
-        iPredToUse = 1
+        # ---- 2. Work out how many predicted profiles exist & which one to use ----
+        no_of_pred = int(pred_col_count / 3)  # Vel/Flow/Depth for each profile
+        pred_to_use = 1
 
-        if NoOfPred > 1:
-            itemList = []
+        if no_of_pred > 1:
+            # Build list of profile descriptions from predicted velocity columns
+            item_list: List[str] = []
+            for j in range(no_of_pred):
+                idx = idx_pred_vel_base + j  # velocity cols are the first block
+                col_name = str(cols[idx])
+                # Expect something like "Predicted Velocity, <label> (Velocity (m/s))"
+                try:
+                    item_string = col_name.split("Predicted Velocity, ")[1].split(" (Velocity (m/s))")[0]
+                except IndexError:
+                    item_string = f"Profile {j+1}"
+                item_list.append(item_string)
 
-            for i in range(NoOfPred):
-                idx = idxPredVelBase + (1 * ((i+1) - 1))
-                itemString = str(dfTrace.columns[idx]).split(
-                    "Predicted Velocity, ")[1].split(" (Velocity (m/s))")[0]
-                itemList.append(itemString)
+            items = tuple(item_list)
+            item, ok = QInputDialog.getItem(
+                None,
+                "Select Predicted Profile",
+                f"{no_of_pred} Predicted Profiles Found\n\n"
+                "FlowBot currently only supports analysis\n"
+                "of one predicted profile at a time.\n\n"
+                "Select which profile number to import:",
+                items,
+                0,
+                False,
+            )
 
-            items = tuple(itemList)
+            if not (ok and item):
+                return None
 
-            item, ok = QInputDialog.getItem(None,
-                                            "Select Predicted Profile",
-                                            f"{NoOfPred} Predicted Profiles Found\n\n"
-                                            "FlowBot currently only supports analysis\n"
-                                            "of one predicted profile at a time.\n\n"
-                                            "Select which profile number to import:",
-                                            items,
-                                            0,
-                                            False)
-            if ok and item:
-                iPredToUse = itemList.index(item)+1
-            else:
-                return
+            pred_to_use = item_list.index(item) + 1
 
-        idxPredDate = idxPredVelBase - 2
+        # ---- 3. Derive predicted column indices for the chosen profile ----
+        idx_pred_date = idx_pred_vel_base - 2
+        str_pred_date = cols[idx_pred_date]
+        str_pred_time = cols[idx_pred_date + 1]
 
-        strPredDate = dfTrace.columns[idxPredDate]
-        strPredTime = dfTrace.columns[idxPredDate + 1]
+        # Velocity block
+        idx_pred_vel = idx_pred_vel_base + (pred_to_use - 1)
+        # Flow block
+        idx_pred_flow_base = idx_pred_vel_base + no_of_pred
+        idx_pred_flow = idx_pred_flow_base + (pred_to_use - 1)
+        # Depth block
+        idx_pred_depth_base = idx_pred_vel_base + 2 * no_of_pred
+        idx_pred_depth = idx_pred_depth_base + (pred_to_use - 1)
 
-        idxPredVelBase = idxPredVelBase + (0 * NoOfPred)
-        idxPredVel = idxPredVelBase + (1 * (iPredToUse - 1))
-        idxPredFlowBase = idxPredVelBase + (1 * NoOfPred)
-        idxPredFlow = idxPredFlowBase + (1 * (iPredToUse - 1))
-        idxPredDepthBase = idxPredVelBase + (2 * NoOfPred)
-        idxPredDepth = idxPredDepthBase + (1 * (iPredToUse - 1))
+        pred_cols_to_use = [
+            idx_pred_date,           # date
+            idx_pred_date + 1,       # time
+            idx_pred_vel,            # vel
+            idx_pred_flow,           # flow
+            idx_pred_depth,          # dep
+        ]
 
-        predColsToUse = [idxPredDate, idxPredDate +
-                         1, idxPredVel, idxPredFlow, idxPredDepth]
-
-        dfObsTrace = pd.read_csv(fileSpec, skiprows=1, usecols=obsColsToUse,
-                                 parse_dates=[[strObsDate, strObsTime]], low_memory=False, dayfirst=True)
-
-        dfObsTrace = dfObsTrace.set_axis(['DateTime', 'ObsVel', 'ObsFlow', 'ObsDep'], axis=1)
-        dfObsTrace['DateTime'] = pd.to_datetime(dfObsTrace['DateTime'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
-        dfObsTrace['ObsVel'] = pd.to_numeric(
-            dfObsTrace['ObsVel'], downcast='float', errors='coerce')
-        dfObsTrace['ObsFlow'] = pd.to_numeric(
-            dfObsTrace['ObsFlow'], downcast='float', errors='coerce')
-        dfObsTrace['ObsDep'] = pd.to_numeric(
-            dfObsTrace['ObsDep'], downcast='float', errors='coerce')
-        dfObsTrace.dropna(subset=['DateTime'], inplace=True)
-
-        dfPredTrace = pd.read_csv(
-            fileSpec, skiprows=1, usecols=predColsToUse, parse_dates=[[strPredDate, strPredTime]], low_memory=False)
-        dfPredTrace = dfPredTrace.set_axis(['DateTime', 'PredVel', 'PredFlow', 'PredDep'], axis=1)
-        dfPredTrace['DateTime'] = pd.to_datetime(
-            dfPredTrace['DateTime'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
-        dfPredTrace['PredVel'] = pd.to_numeric(
-            dfPredTrace['PredVel'], downcast='float', errors='coerce')
-        dfPredTrace['PredFlow'] = pd.to_numeric(
-            dfPredTrace['PredFlow'], downcast='float', errors='coerce')
-        dfPredTrace['PredDep'] = pd.to_numeric(
-            dfPredTrace['PredDep'], downcast='float', errors='coerce')
-        dfPredTrace.dropna(subset=['DateTime'], inplace=True)
-
-        start_date = min(dfPredTrace["DateTime"])
-        end_date = max(dfPredTrace["DateTime"])
-
-        dfSplits = dfObsTrace[dfObsTrace.DateTime ==
-                              dfObsTrace['DateTime'][0]].copy()
-        dfSplits.reset_index(inplace=True)
-        # myObsDFs = []
-
-        dfPageTitles = pd.read_fwf(fileSpec, header=None, usecols=[0])
-        dfPageTitles = dfPageTitles.set_axis(['PageTitle'], axis=1)
-        dfPageTitles = dfPageTitles[dfPageTitles['PageTitle'].str[:10] == 'Page title'].copy(
+        # ---- 4. Load full observed & predicted traces ----
+        # Observed
+        dfObsTrace = pd.read_csv(
+            fileSpec,
+            skiprows=1,
+            usecols=obs_cols_to_use,
+            parse_dates=[[str_obs_date, str_obs_time]],
+            low_memory=False,
+            dayfirst=True,
         )
-        dfPageTitles.reset_index(inplace=True, drop=True)
+        dfObsTrace = dfObsTrace.set_axis(["DateTime", "ObsVel", "ObsFlow", "ObsDep"], axis=1)
 
+        dfObsTrace["DateTime"] = pd.to_datetime(
+            dfObsTrace["DateTime"], format="%d/%m/%Y %H:%M:%S", errors="coerce"
+        )
+        dfObsTrace["ObsVel"] = pd.to_numeric(dfObsTrace["ObsVel"], downcast="float", errors="coerce")
+        dfObsTrace["ObsFlow"] = pd.to_numeric(dfObsTrace["ObsFlow"], downcast="float", errors="coerce")
+        dfObsTrace["ObsDep"] = pd.to_numeric(dfObsTrace["ObsDep"], downcast="float", errors="coerce")
+        dfObsTrace.dropna(subset=["DateTime"], inplace=True)
+
+        # Predicted
+        dfPredTrace = pd.read_csv(
+            fileSpec,
+            skiprows=1,
+            usecols=pred_cols_to_use,
+            parse_dates=[[str_pred_date, str_pred_time]],
+            low_memory=False,
+        )
+        dfPredTrace = dfPredTrace.set_axis(["DateTime", "PredVel", "PredFlow", "PredDep"], axis=1)
+
+        dfPredTrace["DateTime"] = pd.to_datetime(
+            dfPredTrace["DateTime"], format="%d/%m/%Y %H:%M:%S", errors="coerce"
+        )
+        dfPredTrace["PredVel"] = pd.to_numeric(dfPredTrace["PredVel"], downcast="float", errors="coerce")
+        dfPredTrace["PredFlow"] = pd.to_numeric(dfPredTrace["PredFlow"], downcast="float", errors="coerce")
+        dfPredTrace["PredDep"] = pd.to_numeric(dfPredTrace["PredDep"], downcast="float", errors="coerce")
+        dfPredTrace.dropna(subset=["DateTime"], inplace=True)
+
+        if dfPredTrace.empty or dfObsTrace.empty:
+            return None
+
+        pred_start = dfPredTrace["DateTime"].min()
+        pred_end = dfPredTrace["DateTime"].max()
+
+        # ---- 5. Identify "page" splits based on repeated first DateTime in observed ----
+        first_dt = dfObsTrace["DateTime"].iloc[0]
+        split_indices = dfObsTrace.index[dfObsTrace["DateTime"] == first_dt].to_list()
+        if not split_indices:
+            split_indices = [0]
+
+        # Also load page titles to match each split
+        dfPageTitles = pd.read_fwf(fileSpec, header=None, usecols=[0])
+        dfPageTitles.columns = ["PageTitle"]
+        dfPageTitles = dfPageTitles[dfPageTitles["PageTitle"].str[:10] == "Page title"].copy()
+        dfPageTitles.reset_index(drop=True, inplace=True)
+
+        # ---- Helper: resample a segment to 1-minute and interpolate ----
+        # def resample_segment(df: pd.DataFrame, value_cols: List[str]) -> Optional[pd.DataFrame]:
+        #     if df.empty:
+        #         return None
+        #     tmp = (
+        #         df.set_index("DateTime")[value_cols]
+        #         .resample("1min")
+        #         .interpolate("time")
+        #     )
+        #     tmp = tmp.reset_index()
+        #     return tmp
+
+        def resample_segment(df: pd.DataFrame, value_cols: List[str]) -> Optional[pd.DataFrame]:
+            if df.empty:
+                return None
+
+            # NEW: Remove duplicate timestamps
+            df = df.drop_duplicates(subset="DateTime", keep="last")
+            # Or use groupby if averaging is more meaningful:
+            # df = df.groupby("DateTime")[value_cols].mean().reset_index()
+
+            tmp = (
+                df.set_index("DateTime")[value_cols]
+                .resample("1min")
+                .interpolate("time")
+            )
+            return tmp.reset_index()            
+
+        # ---- 6. Build the icmTrace and each icmTraceLocation ----
         newTrace = icmTrace()
         newTrace.traceID = os.path.splitext(os.path.basename(fileSpec))[0]
         newTrace.csvFileSpec = fileSpec
 
-        for i in range(len(dfSplits.index)):
-            if i < len(dfSplits.index)-1:
-                aDF = dfObsTrace[np.logical_and(
-                    dfObsTrace.index >= dfSplits['index'][i], dfObsTrace.index < dfSplits['index'][i+1])].copy()
+        for seg_idx, start_idx in enumerate(split_indices):
+            # ---- 6a. Slice observed segment by index range ----
+            if seg_idx < len(split_indices) - 1:
+                end_idx = split_indices[seg_idx + 1]
+                obs_seg = dfObsTrace.iloc[start_idx:end_idx].copy()
             else:
-                aDF = dfObsTrace[dfObsTrace.index >=
-                                 dfSplits['index'][i]].copy()
+                obs_seg = dfObsTrace.iloc[start_idx:].copy()
 
-            mask = (aDF["DateTime"] > start_date) & (
-                aDF["DateTime"] <= end_date)
-            aDF = aDF.loc[mask]
+            # Limit observed segment to period where predicted data exists
+            obs_seg = obs_seg[(obs_seg["DateTime"] >= pred_start) & (obs_seg["DateTime"] <= pred_end)]
+            if obs_seg.empty:
+                continue
 
-            dfObsTimeResampled = aDF.set_index("DateTime")
-            dfObsTimeResampled = dfObsTimeResampled.resample(rule="1min").fillna("pad")
-            dfObsTimeResampled = dfObsTimeResampled.reset_index()
+            # ---- 6b. Slice predicted segment by overlapping DateTime range ----
+            seg_start_time = obs_seg["DateTime"].min()
+            seg_end_time = obs_seg["DateTime"].max()
 
-            dfObsPrefixed = aDF.add_prefix("Orig_")
-            dfObsResampled = pd.merge_asof(dfObsTimeResampled, dfObsPrefixed, left_on="DateTime",
-                                           right_on="Orig_DateTime", tolerance=pd.Timedelta("0.5min"))
-            dfObsResampled["Orig_ObsVel"] = dfObsResampled["Orig_ObsVel"].interpolate(
-                method='linear')
-            dfObsResampled["Orig_ObsFlow"] = dfObsResampled["Orig_ObsFlow"].interpolate(
-                method='linear')
-            dfObsResampled["Orig_ObsDep"] = dfObsResampled["Orig_ObsDep"].interpolate(
-                method='linear')
+            pred_seg = dfPredTrace[
+                (dfPredTrace["DateTime"] >= seg_start_time) &
+                (dfPredTrace["DateTime"] <= seg_end_time)
+            ].copy()
 
-            dfObsResampled = dfObsResampled.drop(
-                columns=["Orig_DateTime", "ObsVel", "ObsFlow", "ObsDep"])
-            dfObsResampled = dfObsResampled.set_axis(['DateTime', 'ObsVel', 'ObsFlow', 'ObsDep'], axis=1)
+            if pred_seg.empty:
+                # No predicted data for this segment; skip this page
+                continue
 
-            if i < len(dfSplits.index)-1:
-                aDF = dfPredTrace[np.logical_and(
-                    dfPredTrace.index >= dfSplits['index'][i], dfPredTrace.index < dfSplits['index'][i+1])].copy()
-            else:
-                aDF = dfPredTrace[dfPredTrace.index >=
-                                  dfSplits['index'][i]].copy()
-            dfPredTimeResampled = aDF.set_index("DateTime")
-            dfPredTimeResampled = dfPredTimeResampled.resample(rule="1min").fillna("pad")
-            dfPredTimeResampled = dfPredTimeResampled.reset_index()
+            # ---- 6c. Resample both segments to 1-minute and join ----
+            dfObsResampled = resample_segment(obs_seg, ["ObsVel", "ObsFlow", "ObsDep"])
+            dfPredResampled = resample_segment(pred_seg, ["PredVel", "PredFlow", "PredDep"])
 
-            dfPredPrefixed = aDF.add_prefix("Orig_")
-            dfPredResampled = pd.merge_asof(dfPredTimeResampled, dfPredPrefixed, left_on="DateTime",
-                                            right_on="Orig_DateTime", tolerance=pd.Timedelta("0.5min"))
-            dfPredResampled["Orig_PredVel"] = dfPredResampled["Orig_PredVel"].interpolate(
-                method='linear')
-            dfPredResampled["Orig_PredFlow"] = dfPredResampled["Orig_PredFlow"].interpolate(
-                method='linear')
-            dfPredResampled["Orig_PredDep"] = dfPredResampled["Orig_PredDep"].interpolate(
-                method='linear')
+            if dfObsResampled is None or dfPredResampled is None:
+                continue
 
-            dfPredResampled = dfPredResampled.drop(
-                columns=["Orig_DateTime", "PredVel", "PredFlow", "PredDep"])
-            dfPredResampled = dfPredResampled.set_axis(['DateTime', 'PredVel', 'PredFlow', 'PredDep'], axis=1)
+            # Merge on DateTime where both exist
+            dfCompare = pd.merge(
+                dfObsResampled,
+                dfPredResampled,
+                on="DateTime",
+                how="inner",
+            )
 
-            dfCompPrefixed = dfPredResampled.add_prefix("Orig_")
-            dfCompare = pd.merge_asof(dfObsResampled, dfCompPrefixed, left_on="DateTime",
-                                      right_on="Orig_DateTime", tolerance=pd.Timedelta("0.5min"))
-            dfCompare = dfCompare.drop(columns=["Orig_DateTime"])
-            dfCompare = dfCompare.set_axis(['DateTime', 'ObsVel', 'ObsFlow', 'ObsDep', 'PredVel', 'PredFlow', 'PredDep'], axis=1)
+            # Require at least two points to compute timestep etc.
+            if len(dfCompare) < 2:
+                continue
 
+            # Ensure column order is as expected
+            dfCompare = dfCompare[
+                ["DateTime", "ObsVel", "ObsFlow", "ObsDep", "PredVel", "PredFlow", "PredDep"]
+            ]
+
+            # ---- 6d. Build icmTraceLocation for this segment ----
             newTraceLoc = icmTraceLocation()
-            newTraceLoc.index = i
-            newTraceLoc.pageTitle = dfPageTitles['PageTitle'][i]
-            newTraceLoc.obsLocation = str(dfPageTitles['PageTitle'][i])[len('Page title is, "Flow Survey Location (Obs.) '):str(
-                dfPageTitles['PageTitle'][i]).find(', Model Location (Pred.) ')]
-            newTraceLoc.upstreamEnd = str(dfPageTitles['PageTitle'][i])[str(dfPageTitles['PageTitle'][i]).find(
-                ', Model Location (Pred.) ') + len(', Model Location (Pred.) '):
-                (str(dfPageTitles['PageTitle'][i]).find(', Model Location (Pred.) ') +
-                 len(', Model Location (Pred.) ')+3)] == "U/S"
-            if newTraceLoc.upstreamEnd:
-                title = str(dfPageTitles['PageTitle'][i])
-                us_index = title.find("U/S") + 4
-                comma_index = title.find(",")
-                if comma_index >= 0:
-                    newTraceLoc.predLocation = title[us_index:len(title)-1][:comma_index]
-                else:
-                    newTraceLoc.predLocation = title[us_index:len(title)-1]
-                # newTraceLoc.predLocation = str(dfPageTitles['PageTitle'][i])[(str(dfPageTitles['PageTitle'][i]).find("U/S") + 4):len(str(dfPageTitles['PageTitle'][i]))-1][0:(str(dfPageTitles['PageTitle'][i])[(str(dfPageTitles['PageTitle'][i]).find("U/S") + 4):len(str(dfPageTitles['PageTitle'][i]))-1].find(","))] if str(dfPageTitles['PageTitle'][i])[(str(dfPageTitles['PageTitle'][i]).find("U/S") + 4):len(str(dfPageTitles['PageTitle'][i]))-1].find(",") >= 0 else str(dfPageTitles['PageTitle'][i])[(str(dfPageTitles['PageTitle'][i]).find("U/S") + 4):len(str(dfPageTitles['PageTitle'][i]))-1]
+            newTraceLoc.index = seg_idx
+
+            # Page title (guard against mismatch in counts)
+            if seg_idx < len(dfPageTitles):
+                title = str(dfPageTitles["PageTitle"].iloc[seg_idx])
             else:
-                title = str(dfPageTitles['PageTitle'][i])
-                ds_index = title.find("D/S") + 4
-                substring = title[ds_index:len(title)-1]
-                comma_index = substring.find(",")
+                title = f"Page {seg_idx + 1}"
+            newTraceLoc.pageTitle = title
 
-                newTraceLoc.predLocation = substring[:comma_index] if comma_index >= 0 else substring
-                # newTraceLoc.predLocation = str(dfPageTitles['PageTitle'][i])[(str(dfPageTitles['PageTitle'][i]).find("D/S") + 4):len(str(dfPageTitles['PageTitle'][i]))-1][0:(str(dfPageTitles['PageTitle'][i])[(str(dfPageTitles['PageTitle'][i]).find("D/S") + 4):len(str(dfPageTitles['PageTitle'][i]))-1].find(","))] if str(dfPageTitles['PageTitle'][i])[(str(dfPageTitles['PageTitle'][i]).find("D/S") + 4):len(str(dfPageTitles['PageTitle'][i]))-1].find(",") >= 0 else str(dfPageTitles['PageTitle'][i])[(str(dfPageTitles['PageTitle'][i]).find("D/S") + 4):len(str(dfPageTitles['PageTitle'][i]))-1]
+            # Parse obs / pred locations from the page title
+            # Expect: 'Page title is, "Flow Survey Location (Obs.) XXX, Model Location (Pred.) YYY ...."'
+            obs_prefix = 'Page title is, "Flow Survey Location (Obs.) '
+            pred_marker = ", Model Location (Pred.) "
 
-            newTraceLoc.shortTitle = newTraceLoc.obsLocation + \
-                ' (' + newTraceLoc.predLocation + ' - U/S)' if newTraceLoc.upstreamEnd else newTraceLoc.obsLocation + \
-                ' (' + newTraceLoc.predLocation + ' - D/S)'
+            if obs_prefix in title and pred_marker in title:
+                start_obs = title.find(obs_prefix) + len(obs_prefix)
+                end_obs = title.find(pred_marker)
+                newTraceLoc.obsLocation = title[start_obs:end_obs]
 
+                pred_part_start = end_obs + len(pred_marker)
+                pred_part = title[pred_part_start:].rstrip('"')
+
+                # Upstream vs downstream
+                newTraceLoc.upstreamEnd = pred_part.startswith("U/S")
+                # Strip "U/S " or "D/S "
+                if newTraceLoc.upstreamEnd:
+                    pred_core = pred_part[4:]
+                else:
+                    pred_core = pred_part[4:] if pred_part.startswith("D/S") else pred_part
+
+                comma_index = pred_core.find(",")
+                newTraceLoc.predLocation = pred_core[:comma_index] if comma_index >= 0 else pred_core
+            else:
+                # Fallback if title format isn't as expected
+                newTraceLoc.obsLocation = "Obs"
+                newTraceLoc.predLocation = "Pred"
+                newTraceLoc.upstreamEnd = True
+
+            # Short title: Obs (Pred - U/S or D/S)
+            usds = "U/S" if newTraceLoc.upstreamEnd else "D/S"
+            newTraceLoc.shortTitle = f"{newTraceLoc.obsLocation} ({newTraceLoc.predLocation} - {usds})"
+
+            # Time step in minutes
             newTraceLoc.trTimestep = int(
-                (dfCompare['DateTime'][1] - dfCompare['DateTime'][0]).seconds/60)
+                (dfCompare["DateTime"].iloc[1] - dfCompare["DateTime"].iloc[0]).seconds / 60
+            )
 
-            newTraceLoc.dates = dfCompare['DateTime'].tolist()
-            newTraceLoc.rawData = [dfCompare['ObsFlow'].tolist(), dfCompare['PredFlow'].tolist(), dfCompare['ObsDep'].tolist(
-            ), dfCompare['PredDep'].tolist(), dfCompare['ObsVel'].tolist(), dfCompare['PredVel'].tolist()]
+            # Time series & raw data
+            newTraceLoc.dates = dfCompare["DateTime"].tolist()
+            newTraceLoc.rawData = [
+                dfCompare["ObsFlow"].tolist(),
+                dfCompare["PredFlow"].tolist(),
+                dfCompare["ObsDep"].tolist(),
+                dfCompare["PredDep"].tolist(),
+                dfCompare["ObsVel"].tolist(),
+                dfCompare["PredVel"].tolist(),
+            ]
 
-            newTraceLoc.frac = [defaultSmoothing['Observed'], defaultSmoothing['Predicted'],
-                                defaultSmoothing['Observed'], defaultSmoothing['Predicted']]
+            # Smoothing fractions
+            newTraceLoc.frac = [
+                defaultSmoothing["Observed"],
+                defaultSmoothing["Predicted"],
+                defaultSmoothing["Observed"],
+                defaultSmoothing["Predicted"],
+            ]
 
             newTrace.dictLocations[newTraceLoc.index] = newTraceLoc
+
+        # ---- 7. Register the trace with the object and return ----
+        if not newTrace.dictLocations:
+            # Nothing usable was created
+            return None
 
         self.addTrace(newTrace)
         return newTrace

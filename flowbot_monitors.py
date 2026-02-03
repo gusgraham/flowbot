@@ -688,7 +688,7 @@ class plottedFlowMonitors():
     def __init__(self):
         self.plotFMs = {}
 
-    def setPlotDateLimits(self, startDate: datetime, endDate: datetime):
+    def setPlotDateLimits(self, startDate: Optional[datetime], endDate: Optional[datetime]):
         if startDate is None:
             self.__plotCurrentStart = datetime.strptime(
                 '2172-05-12', '%Y-%m-%d')
@@ -2143,12 +2143,12 @@ class plottedRainGauges():
 
     def updatePlottedRGsMinMaxValues(self):
 
-        self.plotEarliestStart = datetime.strptime('2172-05-12', '%Y-%m-%d')
-        self.plotLatestEnd = datetime.strptime('1972-05-12', '%Y-%m-%d')
-        self.plotMinIntensity = 0
-        self.plotMaxIntensity = 0
-        self.plotTotalDepth = 0
-        self.plotReturnPeriod = 0
+        self.plotEarliestStart: datetime = datetime.strptime('2172-05-12', '%Y-%m-%d')
+        self.plotLatestEnd: datetime = datetime.strptime('1972-05-12', '%Y-%m-%d')
+        self.plotMinIntensity: float = 0
+        self.plotMaxIntensity: float = 0
+        self.plotTotalDepth: float = 0
+        self.plotReturnPeriod: float = 0
 
         for rg in self.plotRGs.values():
 
