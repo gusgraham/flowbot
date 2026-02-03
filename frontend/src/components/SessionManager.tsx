@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import api from '../api/client';
 
-const CHECK_INTERVAL_MS = 15 * 60 * 1000; // Check/Refresh every 15 minutes
+const CHECK_INTERVAL_MS = 10 * 60 * 1000; // Refresh every 10 minutes when active
 const ACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // Activity window consideration
 
 const SessionManager: React.FC = () => {

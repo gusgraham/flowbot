@@ -7,7 +7,7 @@ from domain.auth import User
 # Configuration (should be in env vars later)
 SECRET_KEY = "CHANGE_THIS_TO_A_SECURE_SECRET_KEY"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 120  # 2 hours - extended for better UX
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
